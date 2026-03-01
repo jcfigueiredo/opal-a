@@ -10,7 +10,7 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
 
 - **Readability is paramount.** Code is read far more than it is written.
 - **One explicit way.** There should be one obvious way to do something — no alternative syntax for the same operation.
-- **Software engineering concepts are first-class.** Specifications, guards, null objects, and the actor model are built into the language, not bolted on.
+- **Software engineering concepts are first-class.** Dependency injection, domain events, specifications, guards, null objects, and the actor model are built into the language, not bolted on.
 - **Batteries included.** Built-in testing, mocking, fixtures, documentation generation, project scaffolding, and package management.
 - **Gradual typing.** Write quick scripts with no annotations, then add types at module boundaries for safety.
 
@@ -51,6 +51,9 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
                    | <supervisor_def>
                    | <parallel_expr>
                    | <async_expr>
+                   | <event_def>
+                   | <emit_expr>
+                   | <on_handler>
 
 <assignment>    ::= IDENTIFIER "=" <expression>
 
@@ -117,10 +120,10 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
                    | "for" IDENTIFIER "in" <expression> NEWLINE <block> "end"
 
 <class_def>     ::= "class" IDENTIFIER ("<" IDENTIFIER)? NEWLINE <class_body> "end"
-<class_body>    ::= (<function_def> | <assignment>)*
+<class_body>    ::= (<needs_decl> | <function_def> | <assignment>)*
 
 <module_def>    ::= "module" IDENTIFIER NEWLINE <module_body> "end"
-<module_body>   ::= (<function_def> | <class_def> | <assignment>)*
+<module_body>   ::= (<needs_decl> | <function_def> | <class_def> | <assignment> | <on_handler>)*
 
 <match_expr>    ::= "match" <expression> NEWLINE <case_clause>+ "end"
 <case_clause>   ::= "case" <pattern> NEWLINE <block>
@@ -131,7 +134,7 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
                      "end"
 
 <actor_def>     ::= "actor" IDENTIFIER NEWLINE <actor_body> "end"
-<actor_body>    ::= (<function_def> | <receive_clause>)*
+<actor_body>    ::= (<needs_decl> | <function_def> | <receive_clause>)*
 <receive_clause>::= "receive" SYMBOL ("(" <params> ")")? NEWLINE <block> "end"
 
 <supervisor_def>::= "supervisor" IDENTIFIER NEWLINE <supervisor_body> "end"
@@ -144,6 +147,11 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
 
 <async_expr>    ::= "async" <expression>
 <await_expr>    ::= "await" <expression>
+
+<needs_decl>    ::= "needs" IDENTIFIER "::" TYPE ("=" <expression>)?
+<event_def>     ::= "event" IDENTIFIER "(" <params> ")"
+<emit_expr>     ::= "emit" <expression> ("await")?
+<on_handler>    ::= "on" TYPE "do" "|" IDENTIFIER "|" NEWLINE <block> "end"
 
 <block>         ::= <statement>+
 
@@ -1409,6 +1417,7 @@ Opal ships with a standard library organized into modules:
 | `Test` | Built-in test framework, assertions |
 | `Mock` | Mocking and stubbing for tests |
 | `Spec` | Specification pattern base classes |
+| `Container` | Optional dependency injection container for large apps |
 
 ```opal
 import IO
@@ -1433,6 +1442,296 @@ Test.describe("Math operations")
     Test.assert_eq(-1 + 1, 0)
   end
 end
+```
+
+### 4.23 Dependency Injection (`needs`)
+
+`needs` declares a dependency with a name and a protocol/type. Dependencies become instance variables (`.name`) and must be provided at construction time via `.new()`.
+
+```opal
+protocol Database
+  def save(record) -> Bool
+  def find(id::Int32) -> Record?
+end
+
+protocol Mailer
+  def send_confirmation(order::Order)
+end
+
+class OrderService
+  needs db::Database
+  needs mailer::Mailer
+
+  def place_order(order)
+    .db.save(order)
+    .mailer.send_confirmation(order)
+  end
+end
+
+# Explicit wiring — you see exactly what connects to what
+service = OrderService.new(
+  db: PostgresDB.new(),
+  mailer: SMTPMailer.new()
+)
+
+# Testing — swap implementations
+test_service = OrderService.new(
+  db: MockDB.new(),
+  mailer: MockMailer.new()
+)
+```
+
+`needs` works on classes, modules, and actors:
+
+```opal
+# On a module
+module Billing
+  needs payments::PaymentGateway
+
+  def charge(order)
+    .payments.charge(order.total)
+  end
+end
+
+# On an actor
+actor PaymentProcessor
+  needs gateway::PaymentGateway
+
+  receive :charge(order)
+    .gateway.charge(order.total)
+    reply :ok
+  end
+end
+```
+
+**Rules:**
+- `needs name::Protocol` declares a required dependency.
+- `needs name::Protocol = default_expr` declares an optional dependency with a default.
+- Dependencies are checked at construction — missing a required `needs` is a runtime error.
+- `needs` dependencies are accessible as `.name` (same as instance variables).
+- If the class also has `:init`, `needs` deps are injected *before* `:init` runs.
+
+#### Optional Container (for large apps)
+
+For small apps, manual wiring with `.new()` is sufficient. For large apps, the `Container` class from the standard library resolves dependencies by protocol.
+
+```opal
+import Container
+
+app = Container.new()
+app.register(Database, PostgresDB.new())
+app.register(Mailer, SMTPMailer.new())
+
+# Resolve — container fills in all `needs` automatically
+service = app.resolve(OrderService)
+# Equivalent to: OrderService.new(db: postgres, mailer: smtp)
+
+# Resolve modules — handlers are auto-registered with deps
+app.resolve(NotificationHandler)
+app.resolve(InventoryHandler)
+
+app.start!
+```
+
+```opal
+# Testing with container — swap just what you need
+test_app = Container.new()
+test_app.register(Database, MockDB.new())
+test_app.register(Mailer, MockMailer.new())
+
+test_service = test_app.resolve(OrderService)
+```
+
+`Container` is a standard library class, not a language keyword — the language stays small.
+
+### 4.24 Domain Events (`event`, `emit`, `on`)
+
+Events are declared as named, immutable data structures. They're emitted with `emit` and handled with `on`. Under the hood, events are dispatched through an actor-based event bus — handlers get supervision and fault tolerance for free.
+
+```opal
+# Declare events — they're just immutable data
+event OrderPlaced(order::Order, placed_at::Time)
+event OrderShipped(order::Order, tracking::String)
+event PaymentFailed(order::Order, reason::String)
+
+# Emit from anywhere
+class OrderService
+  needs db::Database
+
+  def place_order(order)
+    .db.save(order)
+    emit OrderPlaced.new(order: order, placed_at: Time.now())
+  end
+end
+
+# Handle in modules — deps available via needs
+module NotificationHandler
+  needs mailer::Mailer
+
+  on OrderPlaced do |e|
+    .mailer.send_confirmation(e.order)
+  end
+
+  on OrderShipped do |e|
+    .mailer.send_tracking(e.order, e.tracking)
+  end
+
+  on PaymentFailed do |e|
+    .mailer.send_payment_alert(e.order, e.reason)
+  end
+end
+
+module InventoryHandler
+  needs warehouse::WarehouseService
+
+  on OrderPlaced do |e|
+    .warehouse.reserve(e.order.items)
+  end
+end
+```
+
+Events compose with existing features:
+
+```opal
+# With pattern matching
+module AnalyticsHandler
+  needs tracker::Analytics
+
+  on OrderPlaced do |e|
+    match e.order.total
+      case amount if amount > 1000
+        .tracker.flag_high_value(e.order)
+      case _
+        .tracker.record(e.order)
+    end
+  end
+end
+
+# With guards
+@only_business_hours
+on OrderPlaced do |e|
+  notify_sales_team(e.order)
+end
+```
+
+**Rules:**
+- `event Name(fields...)` declares an event type (immutable data).
+- `emit event_instance` dispatches the event to all registered `on` handlers.
+- `on EventType do |e| ... end` registers a handler.
+- Handlers run **asynchronously** by default (fire-and-forget from the emitter).
+- Multiple handlers for the same event run **concurrently** (via actors underneath).
+- Handlers in modules have access to the module's `needs` dependencies.
+
+#### Emit and Async Interaction
+
+`emit` is async by default because events represent something that already happened. Use `emit ... await` when you need all handlers to finish first.
+
+```opal
+# Async (default) — returns immediately
+emit OrderPlaced.new(order: order)
+
+# Sync — blocks until all handlers complete
+emit OrderPlaced.new(order: order) await
+
+# Background sync — returns a Future
+delivery = async emit OrderPlaced.new(order: order) await
+do_other_work()
+await delivery  # check if handlers succeeded
+```
+
+| Pattern | Behavior |
+|---|---|
+| `emit Event.new(...)` | Async — fire and forget, returns immediately |
+| `emit Event.new(...) await` | Sync — blocks until all handlers complete |
+| `async emit Event.new(...) await` | Background sync — all handlers run, returns Future |
+| `emit` inside `parallel` | Each branch emits independently |
+| `emit` inside actor `receive` | Works normally, handlers run outside the actor |
+
+#### Complete DDD Example
+
+```opal
+import Container
+import Time
+
+# --- Domain Events ---
+event OrderPlaced(order::Order, placed_at::Time)
+event PaymentFailed(order::Order, reason::String)
+
+# --- Domain Service (with DI) ---
+class OrderService
+  needs db::Database
+  needs validator::OrderValidator
+
+  def place_order(order)
+    .validator.validate!(order)
+    .db.save(order)
+    emit OrderPlaced.new(order: order, placed_at: Time.now())
+  end
+end
+
+# --- Event Handlers (with DI) ---
+module NotificationHandler
+  needs mailer::Mailer
+
+  on OrderPlaced do |e|
+    .mailer.send_confirmation(e.order)
+  end
+
+  on PaymentFailed do |e|
+    .mailer.send_payment_alert(e.order, e.reason)
+  end
+end
+
+module InventoryHandler
+  needs warehouse::WarehouseService
+
+  on OrderPlaced do |e|
+    .warehouse.reserve(e.order.items)
+  end
+end
+
+# --- Actor for stateful concurrent work ---
+actor PaymentProcessor
+  needs gateway::PaymentGateway
+
+  receive :charge(order)
+    try
+      .gateway.charge(order.total)
+      reply :ok
+    on fail as e
+      emit PaymentFailed.new(order: order, reason: e.message)
+      reply :failed
+    end
+  end
+end
+
+# --- App Wiring ---
+app = Container.new()
+app.register(Database, PostgresDB.new())
+app.register(Mailer, SMTPMailer.new())
+app.register(OrderValidator, StrictValidator.new())
+app.register(WarehouseService, LocalWarehouse.new())
+app.register(PaymentGateway, StripeGateway.new())
+
+order_service = app.resolve(OrderService)
+app.resolve(NotificationHandler)
+app.resolve(InventoryHandler)
+payment = app.resolve(PaymentProcessor)
+
+supervisor AppSupervisor
+  strategy :one_for_one
+  supervise payment
+end
+
+AppSupervisor.start!
+
+# --- Use it ---
+order_service.place_order(new_order)
+# 1. Validates order        (via injected validator)
+# 2. Saves to DB            (via injected db)
+# 3. Emits OrderPlaced
+# 4. Sends email            (async, via NotificationHandler)
+# 5. Reserves stock         (async, via InventoryHandler)
 ```
 
 ---
