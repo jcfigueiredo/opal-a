@@ -48,6 +48,9 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
                    | <match_expr>
                    | <try_expr>
                    | <actor_def>
+                   | <supervisor_def>
+                   | <parallel_expr>
+                   | <async_expr>
 
 <assignment>    ::= IDENTIFIER "=" <expression>
 
@@ -129,7 +132,18 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
 
 <actor_def>     ::= "actor" IDENTIFIER NEWLINE <actor_body> "end"
 <actor_body>    ::= (<function_def> | <receive_clause>)*
-<receive_clause>::= "receive" SYMBOL NEWLINE <block> "end"
+<receive_clause>::= "receive" SYMBOL ("(" <params> ")")? NEWLINE <block> "end"
+
+<supervisor_def>::= "supervisor" IDENTIFIER NEWLINE <supervisor_body> "end"
+<supervisor_body>::= ("strategy" SYMBOL NEWLINE)?
+                     ("max_restarts" INTEGER "within" INTEGER NEWLINE)?
+                     ("supervise" <expression> NEWLINE)*
+
+<parallel_expr> ::= "parallel" NEWLINE <block> "end"
+                   | "parallel" ("max:" INTEGER)? "for" IDENTIFIER "in" <expression> NEWLINE <block> "end"
+
+<async_expr>    ::= "async" <expression>
+<await_expr>    ::= "await" <expression>
 
 <block>         ::= <statement>+
 
@@ -1003,9 +1017,18 @@ end
 
 `ensure` always executes, whether the block succeeded or failed.
 
-### 4.19 Concurrency (Actor Model)
+### 4.19 Concurrency
 
-Actors are concurrent entities that communicate through message passing. Each actor has its own isolated state.
+Opal's concurrency model has four layers: **actors** for stateful concurrent entities, **parallel blocks** for structured concurrency, **async/futures** for individual non-blocking calls, and **supervisors** for fault tolerance.
+
+**Core principles:**
+- **Sync by default** — all calls block and return values. Async is opt-in.
+- **No colored functions** — there is no `async def`. Any expression can be made async at the call site.
+- **Structured concurrency** — concurrent work has a parent scope. No orphaned tasks.
+
+#### 4.19.1 Actors
+
+Actors are long-lived concurrent entities with isolated state. All external interaction goes through message passing via `receive` blocks and `.send()`. Methods defined with `def` are internal only.
 
 ```opal
 actor Counter
@@ -1013,8 +1036,9 @@ actor Counter
     .count = 0
   end
 
-  def increment!()
-    .count = .count + 1
+  receive :increment
+    .count += 1
+    reply .count
   end
 
   receive :get_count
@@ -1025,41 +1049,263 @@ actor Counter
     .count = 0
     reply :ok
   end
+
+  # Internal helper — not accessible from outside
+  private def validate_count()
+    .count >= 0
+  end
 end
 
+# All interaction through .send() — sync by default
 c = Counter.new()
-c.increment!()
-c.increment!()
-c.send(:get_count)  # => 2
-c.send(:reset)      # => :ok
-c.send(:get_count)  # => 0
+c.send(:increment)     # => 1 (blocks until reply)
+c.send(:increment)     # => 2
+c.send(:get_count)     # => 2
+c.send(:reset)         # => :ok
 ```
 
 ```opal
-# Actors communicating
-actor Logger
-  receive :log(message)
-    print(f"[LOG] {message}")
+# Messages with arguments
+actor Cache
+  def :init(ttl::Int32)
+    .store = {:}
+    .ttl = ttl
+  end
+
+  receive :get(key)
+    reply .store[key]
+  end
+
+  receive :set(key, value)
+    .store[key] = value
     reply :ok
   end
 end
 
+cache = Cache.new(ttl: 60)
+cache.send(:set, "user:1", "claudio")
+cache.send(:get, "user:1")  # => "claudio"
+```
+
+#### 4.19.2 Structured Concurrency (`parallel`)
+
+The `parallel` block runs expressions concurrently and waits for all to complete.
+
+```opal
+# Fan-out: run expressions concurrently, collect all results
+users, orders, inventory = parallel
+  fetch_users()
+  fetch_orders()
+  fetch_inventory()
+end
+# Blocks until ALL complete.
+# Results returned as a tuple, matching the order of expressions.
+# If any expression fails, the others are cancelled.
+```
+
+```opal
+# Parallel iteration
+pages = parallel for url in urls
+  Net.fetch(url)
+end
+# Returns a list of responses, fetched concurrently
+
+# With a concurrency limit
+pages = parallel max: 5 for url in urls
+  Net.fetch(url)
+end
+# At most 5 fetches run at a time
+```
+
+**Cancellation rule:** if any branch in a `parallel` block fails, all sibling branches are cancelled and the failure propagates to the caller.
+
+```opal
+try
+  a, b = parallel
+    fetch_a()   # succeeds
+    fetch_b()   # fails!
+  end
+on fail as e
+  # fetch_a() is cancelled, error from fetch_b() is raised here
+  print(f"Failed: {e.message}")
+end
+```
+
+#### 4.19.3 Async / Futures
+
+For when `parallel` is too rigid and you need fine-grained control.
+
+```opal
+# async turns any expression into a Future
+user_future = async fetch_user(id)
+
+# Do other work while it runs...
+prepare_template()
+
+# Auto-await: using the future's value blocks until ready
+print(f"Hello, {user_future.name}")  # blocks here if not yet done
+
+# Explicit await (when you want to be clear about the blocking point)
+user = await user_future
+
+# Check readiness without blocking
+if user_future.ready?()
+  print("done!")
+end
+```
+
+```opal
+# Async with actors
+count_future = async counter.send(:get_count)
+# ... do other work ...
+count = await count_future
+
+# Error handling — failures surface when you await
+future = async risky_operation()
+try
+  result = await future
+on fail as e
+  print(f"Operation failed: {e.message}")
+end
+```
+
+**Rules:**
+- `async expr` returns a `Future(T)` — the expression runs concurrently.
+- **Auto-await on use:** accessing a Future's value blocks until ready.
+- `await` is available for explicit blocking points.
+- `.ready?()` checks completion without blocking.
+- Failures are captured in the Future and re-raised on await.
+
+#### 4.19.4 Supervisors
+
+Supervisors watch child actors and restart them on failure.
+
+```opal
+supervisor AppSupervisor
+  strategy :one_for_one       # only restart the failed child
+  max_restarts 3 within 60    # give up after 3 crashes in 60 seconds
+
+  supervise Logger.new()
+  supervise Cache.new(ttl: 60)
+  supervise Worker.new()
+end
+
+app = AppSupervisor.start!
+```
+
+**Strategies:**
+
+| Strategy | Behavior |
+|---|---|
+| `:one_for_one` | Restart only the crashed child. |
+| `:all_for_one` | Restart all children if one crashes. |
+| `:rest_for_one` | Restart the crashed child and all started after it. |
+
+```opal
+# Supervisor trees — supervisors can supervise other supervisors
+supervisor RootSupervisor
+  strategy :one_for_one
+
+  supervise AppSupervisor
+  supervise MetricsSupervisor
+end
+```
+
+**Actor lifecycle hooks:**
+
+```opal
 actor Worker
-  def :init(logger)
-    .logger = logger
+  def :init()
+    .jobs = []
   end
 
-  def do_work(task)
-    result = process(task)
-    .logger.send(:log, f"Completed: {task}")
-    result
+  receive :do(job)
+    .jobs.push(job)
+    process(job)
+    reply :ok
+  end
+
+  # Called before the actor stops (crash or shutdown)
+  def on_crash(reason)
+    log(f"Worker crashed: {reason}. Had {.jobs.length} pending jobs.")
+  end
+
+  # Called after a restart
+  def on_restart()
+    log("Worker restarted")
+  end
+end
+```
+
+#### 4.19.5 Complete Example
+
+```opal
+import Net
+import JSON
+
+actor RateLimiter
+  def :init(max_per_second)
+    .max = max_per_second
+    .count = 0
+  end
+
+  receive :check
+    if .count < .max
+      .count += 1
+      reply :ok
+    else
+      reply :limited
+    end
+  end
+
+  receive :reset
+    .count = 0
+    reply :ok
   end
 end
 
-logger = Logger.new()
-worker = Worker.new(logger)
-worker.do_work("build report")
+def fetch_dashboard(user_id)
+  limiter = RateLimiter.new(max_per_second: 10)
+
+  # Actor message (sync by default)
+  status = limiter.send(:check)
+  if status == :limited
+    fail RateLimitError.new("Too many requests")
+  end
+
+  # Structured concurrency
+  profile, notifications, feed = parallel
+    fetch_profile(user_id)
+    fetch_notifications(user_id)
+    fetch_feed(user_id)
+  end
+
+  # Async for background work (don't need result now)
+  async log_access(user_id)
+
+  {profile: profile, notifications: notifications, feed: feed}
+end
+
+# Supervision for production
+supervisor DashboardSupervisor
+  strategy :one_for_one
+  max_restarts 5 within 30
+
+  supervise RateLimiter.new(max_per_second: 100)
+end
 ```
+
+**Concurrency summary:**
+
+| Need | Tool | Syntax |
+|---|---|---|
+| Stateful concurrent entity | Actor | `actor`, `receive`, `.send()` |
+| Run N things concurrently, wait for all | Parallel block | `parallel ... end` |
+| Run N items concurrently | Parallel for | `parallel for x in xs ... end` |
+| Limit concurrency | Parallel max | `parallel max: N for ...` |
+| Make one call non-blocking | Async/Future | `async expr`, auto-await on use |
+| Fault tolerance | Supervisor | `supervisor`, `strategy`, `supervise` |
+| Crash recovery hooks | Lifecycle | `on_crash(reason)`, `on_restart()` |
 
 ### 4.20 Specifications
 
