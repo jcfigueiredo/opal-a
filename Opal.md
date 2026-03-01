@@ -64,10 +64,18 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
 
 <literal>       ::= INTEGER | FLOAT | CHAR | STRING | BOOL | NULL
                    | SYMBOL | <list> | <tuple> | <dict> | <range> | <regex>
+                   | <f_string> | <r_string> | <t_string>
 
 <char>          ::= "'" ( CHAR_CONTENT | ESCAPE_SEQ ) "'"
-<string>        ::= '"' ( STRING_CONTENT | ESCAPE_SEQ | INTERPOLATION )* '"'
-<f_string>      ::= 'f"' ( STRING_CONTENT | ESCAPE_SEQ | "{" <expression> "}" )* '"'
+<string>        ::= '"' ( STRING_CONTENT | ESCAPE_SEQ )* '"'
+                   | '"""' ( STRING_CONTENT | ESCAPE_SEQ | NEWLINE )* '"""'
+<f_string>      ::= 'f"' ( STRING_CONTENT | ESCAPE_SEQ | "{" <expression> FORMAT_SPEC? "}" )* '"'
+                   | 'f"""' ( STRING_CONTENT | ESCAPE_SEQ | NEWLINE | "{" <expression> FORMAT_SPEC? "}" )* '"""'
+<r_string>      ::= 'r"' RAW_CONTENT* '"'
+                   | 'r"""' RAW_CONTENT* '"""'
+<t_string>      ::= 't"' ( STRING_CONTENT | ESCAPE_SEQ | "{" <expression> "}" )* '"'
+                   | 't"""' ( STRING_CONTENT | ESCAPE_SEQ | NEWLINE | "{" <expression> "}" )* '"""'
+<format_spec>   ::= "=" | ":" FORMAT_CONTENT
 
 <list>          ::= "[" <expression> ("," <expression>)* "]"
                    | "[" "]"
@@ -233,25 +241,124 @@ Characters use single quotes. A char is a single Unicode code point.
 
 #### 4.3.5 Strings
 
-Strings are immutable sequences of characters. They use double quotes.
+Strings are immutable sequences of characters. They use double quotes. Opal provides several string prefixes for different use cases.
+
+**Regular strings** — double quotes, supports escape sequences:
 
 ```opal
 name = "claudio"
 move_message = "my move is ♘ to ♚"
 
-# Multiline (backslash continuation)
-hello = "hello world, no newlines"
-hello_multiline = "hello \
-                   world, \
-                   no newlines"
-# hello == hello_multiline
+# Escape sequences: \n, \t, \\, \", etc. (same as chars)
+tab_separated = "col1\tcol2\tcol3"
+```
 
-# Escape sequences: same as chars (\n, \t, \\, \", etc.)
+**Triple-quoted strings** — multiline without escaping:
 
-# String interpolation with f-strings
+```opal
+query = """
+  SELECT name, age
+  FROM users
+  WHERE active = true
+"""
+
+poem = """
+  Roses are red,
+  Violets are blue,
+  Opal is readable,
+  And so are you.
+"""
+```
+
+Backslash continuation still works for joining lines without newlines:
+
+```opal
+hello = "hello \
+         world"  # => "hello world"
+```
+
+**f-strings** — string interpolation with embedded expressions:
+
+```opal
 greeting = f"Hi {name}, welcome!"
 result = f"The answer is {40 + 2}."
+
+# Expressions can include method calls and nested quotes
+report = f"Found {users.filter(|u| u.active?()).length} active users"
+
+# Debug specifier with = (prints expression and its value)
+x = 42
+print(f"{x=}")          # => "x=42"
+print(f"{x * 2=}")      # => "x * 2=84"
+print(f"{name=}")       # => "name=claudio"
+
+# Format specifiers with :
+pi = 3.14159
+print(f"{pi:.2}")       # => "3.14"
+print(f"{amount:>10}")  # => "     42.50"
+
+# Multiline f-strings
+summary = f"""
+  Name: {person.name}
+  Age:  {person.age}
+  Role: {person.role}
+"""
 ```
+
+**r-strings** — raw strings, no escape processing:
+
+```opal
+# Useful for regex patterns
+pattern = r"\d{3}-\d{4}"
+
+# Useful for file paths
+path = r"C:\Users\claudio\documents"
+
+# Without r-prefix, you'd need to double-escape
+path_escaped = "C:\\Users\\claudio\\documents"  # equivalent
+
+# Multiline raw strings
+raw_block = r"""
+  No \n escape \t processing here.
+  Everything is literal.
+"""
+```
+
+**t-strings** — template strings for safe interpolation:
+
+```opal
+# t-strings return a Template object instead of a string.
+# This enables libraries to process interpolations safely.
+
+# Safe HTML (library escapes values before inserting)
+username = "<script>alert('xss')</script>"
+page = html(t"<p>Hello, {username}</p>")
+# => "<p>Hello, &lt;script&gt;alert('xss')&lt;/script&gt;</p>"
+
+# Safe SQL (library uses parameterized queries)
+id = 42
+query = db.prepare(t"SELECT * FROM users WHERE id = {id}")
+# => parameterized query, not string concatenation
+
+# Multiline template
+email = mailer.render(t"""
+  Dear {customer.name},
+
+  Your order #{order.id} has been shipped.
+  Expected delivery: {order.delivery_date}.
+""")
+```
+
+Template strings give libraries control over how interpolated values are processed — preventing injection vulnerabilities by design.
+
+**String prefix summary:**
+
+| Prefix | Purpose | Returns |
+|---|---|---|
+| (none) | Regular string with escapes | `String` |
+| `f` | Interpolation with expressions | `String` |
+| `r` | Raw, no escape processing | `String` |
+| `t` | Template for safe interpolation | `Template` |
 
 #### 4.3.6 Symbols
 
@@ -695,25 +802,22 @@ Guards validate data before a function body executes.
 
 ```opal
 # Standalone guard function
-guard only_scorpios(name, bday) fails :only_scorpios
-  return bday.between(
-    beginning: "10/23" as Date,
-    end: "11/21" as Date
-  )
+guard old_enough(age) fails :too_young
+  return age >= 18
 end
 
-class Person
+class Registration
   # Type guards on parameters
   @name in (String, Symbol)
-  @bday in (Nullable, Date)
-  def greet(name, bday = null)
-    print(f"Hi {name}, is {bday} your birthday?")
+  @email in (String)
+  def register(name, email)
+    print(f"Registered {name} with {email}")
   end
 
   # Business rule guard with external function
-  @only_scorpios
-  def greet_scorpio(name, bday)
-    print(f"Hi {name}, happy Scorpio season!")
+  @old_enough
+  def register_voter(name, age)
+    print(f"{name} registered to vote")
   end
 end
 ```
@@ -1033,7 +1137,7 @@ def find(id::Int32) -> Person?
 end
 ```
 
-**Core types:** `Int8`, `Int16`, `Int32`, `Int64`, `Float32`, `Float64`, `Bool`, `Char`, `String`, `Symbol`, `Null`, `List(T)`, `Tuple(...)`, `Dict(K, V)`, `Range(T)`, `Regex`.
+**Core types:** `Int8`, `Int16`, `Int32`, `Int64`, `Float32`, `Float64`, `Bool`, `Char`, `String`, `Template`, `Symbol`, `Null`, `List(T)`, `Tuple(...)`, `Dict(K, V)`, `Range(T)`, `Regex`.
 
 **Type rules:**
 - Unannotated parameters and variables are dynamic — no checking.
@@ -1053,7 +1157,7 @@ Opal ships with a standard library organized into modules:
 | `Net` | HTTP client/server, TCP/UDP sockets |
 | `Math` | Mathematical functions and constants |
 | `Collections` | Advanced data structures (Set, Queue, Stack, etc.) |
-| `String` | String manipulation utilities |
+| `String` | String manipulation, formatting, template processing |
 | `Time` | Date, time, duration, formatting |
 | `JSON` | JSON parsing and generation |
 | `Test` | Built-in test framework, assertions |
@@ -1158,7 +1262,7 @@ my_site.http.server with {
 }.serve!
 ```
 
-The `with` keyword is reserved for DSL-style configuration blocks like the above. Object creation uses `.new()` with named arguments; string interpolation uses f-strings.
+The `with` keyword is reserved for DSL-style configuration blocks like the above. Object creation uses `.new()` with named arguments; string interpolation uses f-strings (or t-strings for safe templating).
 
 ---
 
