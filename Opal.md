@@ -10,8 +10,9 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
 
 - **Readability is paramount.** Code is read far more than it is written.
 - **One explicit way.** There should be one obvious way to do something — no alternative syntax for the same operation.
-- **Software engineering concepts are first-class.** Dependency injection, domain events, specifications, preconditions, null objects, validated models, settings, the actor model, and metaprogramming are built into the language, not bolted on.
+- **Software engineering concepts are first-class.** Dependency injection, domain events, specifications, preconditions, null objects, validated models, settings, the actor model, metaprogramming, and pipe-based composition are built into the language, not bolted on.
 - **Batteries included.** Built-in testing, mocking, fixtures, documentation generation, project scaffolding, and package management.
+- **Immutable by intent.** `let` bindings and immutable-by-default parameters support correctness.
 - **Gradual typing.** Write quick scripts with no annotations, then add types at module boundaries for safety.
 
 ---
@@ -4042,10 +4043,10 @@ Opal ships with a standard library organized into modules:
 | `Mock` | Mock creation for tests — `Mock.new(Protocol)`, stubs, call verification |
 | `Spec` | Specification pattern base classes |
 | `Container` | Optional dependency injection container for large apps |
-| `Iter` | `Iterable` and `Iterator` protocols, lazy sequences |
-| `Option` | `Option(T)` enum — `Some(value)` or `None` for explicit nullable handling |
+| `Iter` | `Iterable` and `Iterator(T)` protocols, lazy sequences |
+| `Option` | `Option(T)` enum — `Some(value)` or `None` for explicit nullable handling; used by `Iterator(T)` |
 | `Result` | `Result(T, E)` enum — `Ok(value)` or `Err(error)` for error handling |
-| `Settings` | Base for settings models — env/config/file loading with source priority |
+| `Settings` | Base for `settings model` definitions — env/config/file loading with source priority |
 
 ```opal
 import IO
