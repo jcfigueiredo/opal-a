@@ -273,8 +273,8 @@ class User
 end
 
 user = User.new(name: "claudio", email: "c@opal.dev", age: 15)
-user.to_json()   # => "{\"name\":\"claudio\",\"email\":\"c@opal.dev\",\"age\":15}"
-User.from_json("{\"name\":\"claudio\",\"email\":\"c@opal.dev\",\"age\":15}")
+user.to_json()   # => {"name":"claudio","email":"c@opal.dev","age":15}
+User.from_json("""{"name":"claudio","email":"c@opal.dev","age":15}""")
 ```
 
 ### DSL Creation — Test Framework

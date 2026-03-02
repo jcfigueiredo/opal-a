@@ -2586,7 +2586,7 @@ user = User(
 
 user.to_dict()   # => {"name": "claudio", "email": "c@test.com",
                  #     "address": {"street": "123 Main", ...}}
-user.to_json()   # => "{\"name\": \"claudio\", ...}"
+user.to_json()   # => {"name": "claudio", ...}
 
 # Deserialize — validates on load
 user = User.from_dict({"name": "claudio", "email": "c@test.com",
@@ -3964,8 +3964,8 @@ class User
 end
 
 user = User.new(name: "claudio", email: "c@opal.dev", age: 15)
-user.to_json()   # => "{\"name\":\"claudio\",\"email\":\"c@opal.dev\",\"age\":15}"
-User.from_json("{\"name\":\"claudio\",\"email\":\"c@opal.dev\",\"age\":15}")
+user.to_json()   # => {"name":"claudio","email":"c@opal.dev","age":15}
+User.from_json("""{"name":"claudio","email":"c@opal.dev","age":15}""")
 ```
 
 #### DSL Creation — Test Framework
