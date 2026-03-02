@@ -72,6 +72,7 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
                    | <expression> "[" <expression> "]"
                    | <function_call>
                    | <lambda>
+                   | <with_expr>
                    | "(" <expression> ")"
 
 <literal>       ::= INTEGER | FLOAT | CHAR | STRING | BOOL | NULL
@@ -111,6 +112,8 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
 
 <lambda>        ::= "|" <params> "|" <expression>
                    | "|" <params> "|" NEWLINE <block> "end"
+
+<with_expr>     ::= <expression> "with" <dict>
 
 <function_def>  ::= "def" IDENTIFIER "(" <params> ")" NEWLINE <block> "end"
 <params>        ::= <param> ("," <param>)*
@@ -3310,32 +3313,31 @@ $ opal pkg install
 ```
 
 ```opal
-# Importing external packages
-import Roman@"https://github.com/keleshev/rome/tree/0.0.2"
-
 # Using with for DSL-style configuration blocks
-import nginx
+import Nginx
 
-my_site = nginx.create with {
+my_site = Nginx.create with {
   user:              "www www",
   worker_processes:  5,
   error_log:         "logs/error.log",
   pid:               "logs/nginx.pid"
-}!
+}
 
 my_site.http with {
   index:        "index.html index.htm index.php",
   default_type: "application/octet-stream"
-}!
+}
 
 my_site.http.server with {
   listen:      80,
   server_name: "domain.com",
   access_log:  "logs/domain.access.log main"
-}.serve!
+}
+
+my_site.serve!
 ```
 
-The `with` keyword is reserved for DSL-style configuration blocks like the above. Object creation uses `.new()` with named arguments; string interpolation uses f-strings (or t-strings for safe templating).
+The `with` keyword passes a dictionary of configuration values to the preceding expression. It is reserved for DSL-style configuration blocks like the above. Object creation uses `.new()` with named arguments; string interpolation uses f-strings (or t-strings for safe templating).
 
 ---
 
