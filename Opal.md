@@ -27,7 +27,7 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
 | Concurrency model? | Actor model. |
 | Primitives? | The least number of primitives as possible; most functionality comes from the standard library. |
 | Paradigm? | Multi-paradigm: object-oriented with functional features, multiple dispatch, and actor concurrency. |
-| FFI? | To be determined. |
+| FFI? | Placeholder `extern` syntax — runtime-dependent. See [FFI](#ffi). |
 | Unicode support? | Full. Variable names, string literals, and symbols may contain Unicode characters. |
 | File extensions? | `.opl` for source, `.topl` for tests. |
 
@@ -60,6 +60,7 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
                    | <implements_for>
                    | <enum_def>
                    | <model_def>
+                   | <extern_def>
                    | <import_stmt>
                    | <export_stmt>
 
@@ -220,6 +221,9 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
                      "where" <field_constraint> ("," <field_constraint>)*
 <field_constraint> ::= <lambda> | IDENTIFIER ("(" <args> ")")?
 <validate_block>::= "validate" "do" NEWLINE <block> "end"
+
+<extern_def>    ::= "extern" STRING NEWLINE <extern_decl>* "end"
+<extern_decl>   ::= "def" IDENTIFIER "(" <params> ")" ("->" <type_expr>)? NEWLINE
 
 <import_stmt>   ::= "import" <module_path>
                    | "import" <module_path> "as" IDENTIFIER
@@ -2293,6 +2297,29 @@ user = User.from_dict({"name": "claudio", "email": "c@test.com",
 - `to_dict()` / `to_json()` serialize recursively. `from_dict()` / `from_json()` deserialize and validate.
 - Models can have methods but cannot mutate fields.
 
+### 6.11 FFI (Foreign Function Interface)
+
+Opal provides a placeholder `extern` syntax for calling functions from external shared libraries. The exact calling convention and type mapping depend on the runtime implementation.
+
+```opal
+# Declare external functions from a C library
+extern "libmath.so"
+  def sin(x::Float64) -> Float64
+  def cos(x::Float64) -> Float64
+  def sqrt(x::Float64) -> Float64
+end
+
+# Use them like normal Opal functions
+result = sin(3.14)
+hypotenuse = sqrt(x ** 2 + y ** 2)
+```
+
+**Rules:**
+- `extern "library"` declares functions from an external shared library.
+- Function signatures must be fully typed — no inference across the FFI boundary.
+- External functions are called like regular Opal functions once declared.
+- The runtime determines: calling convention (C ABI, etc.), type mapping (Opal types to native types), library resolution (paths, linking).
+
 ---
 
 ## 7. Error Handling & Safety
@@ -3942,7 +3969,7 @@ my_site.http.server with {
 my_site.serve!
 ```
 
-The `with` keyword passes a dictionary of configuration values to the preceding expression. It is reserved for DSL-style configuration blocks like the above. Object creation uses `.new()` with named arguments; string interpolation uses f-strings (or t-strings for safe templating).
+The `with` keyword is syntactic sugar for named argument passing. `expr with { key: value }` is equivalent to `expr(key: value)`. The dict keys become parameter names, the values become argument values. This provides a visual block style that reads better for configuration-heavy calls. Object creation uses `.new()` with named arguments; string interpolation uses f-strings (or t-strings for safe templating).
 
 ---
 
