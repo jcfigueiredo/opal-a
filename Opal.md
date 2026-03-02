@@ -190,6 +190,7 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
 <variant>       ::= IDENTIFIER ("(" <params> ")")?
 
 <is_expr>       ::= <expression> "is" TYPE
+<propagate_expr>::= <expression> "!"
 
 <class_def>     ::= "class" IDENTIFIER ("(" <type_params> ")")? ("<" IDENTIFIER)?
                      (<where_clause>)? NEWLINE <class_body> "end"
@@ -1670,25 +1671,22 @@ end
 
 ### 7.1 Error Handling
 
-> See [Self-Hosting Foundations](docs/features/self-hosting-foundations.md) for the custom error types design rationale.
+> See [Error Handling Design](docs/features/error-handling.md) for the full design rationale.
+> See [Self-Hosting Foundations](docs/features/self-hosting-foundations.md) for the custom error types design.
 
-Opal uses `try` / `on fail` / `ensure` for structured error handling. Errors are classes that inherit from `Error`.
+Opal has two error handling mechanisms for different situations:
 
-#### Custom Error Types
+- **Exceptions** (`fail` / `try` / `on fail`) — for truly exceptional, unrecoverable, or unexpected errors. Propagate implicitly up the call stack.
+- **Result types** (`Result(T, E)`) — for expected, recoverable errors. Explicit return values that force the caller to handle both cases.
 
-Define domain-specific errors by subclassing `Error`. The base class provides `.message` and `.stack_trace()`.
+**When to use which:** If the caller should *always* handle it, use `Result`. If the caller *shouldn't need to know* how to handle it, use exceptions.
+
+#### Exceptions
+
+Errors are classes inheriting from `Error`. `fail` raises, `try`/`on fail` catches, `ensure` always runs.
 
 ```opal
-# Base Error (built-in)
-class Error
-  needs message::String
-
-  def stack_trace() -> List(String)
-    # provided by runtime
-  end
-end
-
-# Custom errors — just classes with custom fields
+# Custom error types — classes with needs fields
 class FileNotFound < Error
   needs path::String
 
@@ -1698,48 +1696,12 @@ class FileNotFound < Error
   end
 end
 
-class NetworkError < Error
-  needs url::String
-  needs status::Int32
-
-  def :init(url, status)
-    .url = url
-    .status = status
-    super(message: f"HTTP {status} from {url}")
-  end
-end
-
-class ValidationError < Error
-  needs field::String
-  needs reason::String
-
-  def :init(field, reason)
-    .field = field
-    .reason = reason
-    super(message: f"Validation failed on {field}: {reason}")
-  end
-end
-```
-
-#### Error Hierarchies
-
-`on fail Type` catches errors of that type **and all its subclasses**.
-
-```opal
+# Error hierarchies — on fail catches subclasses
 class AppError < Error end
 class AuthError < AppError end
 class PermissionDenied < AuthError end
 class TokenExpired < AuthError end
-
-# Catches both PermissionDenied and TokenExpired
-try
-  authenticate(token)
-on fail AuthError as e
-  print(f"Auth failed: {e.message}")
-end
 ```
-
-#### Raising and Catching
 
 ```opal
 def read_config(path::String) -> Dict
@@ -1753,10 +1715,10 @@ try
   config = read_config("missing.json")
 on fail FileNotFound as e
   print(f"Missing: {e.path}")
-on fail ValidationError as e
-  print(f"Bad field: {e.field} — {e.reason}")
+on fail AuthError as e
+  # Catches both PermissionDenied and TokenExpired
+  print(f"Auth failed: {e.message}")
 on fail as e
-  # Catch-all for any error
   log(f"Unexpected: {e.message}")
   fail(e)  # re-raise
 ensure
@@ -1764,7 +1726,83 @@ ensure
 end
 ```
 
-`ensure` always executes, whether the block succeeded or failed.
+#### Result Types & the `!` Operator
+
+`Result(T, E)` is an enum (see [6.9](#69-enums--algebraic-data-types)) for expected errors. The `!` postfix operator unwraps `Ok` or propagates `Err` from the enclosing function.
+
+```opal
+# Without ! — verbose nested matching
+def process(path::String) -> Result(Config, Error)
+  match read_file(path)
+    case Result.Ok(content)
+      match parse_json(content)
+        case Result.Ok(config)
+          Result.Ok(config)
+        case Result.Err(e)
+          Result.Err(e)
+      end
+    case Result.Err(e)
+      Result.Err(e)
+  end
+end
+
+# With ! — linear and clean
+def process(path::String) -> Result(Config, Error)
+  content = read_file(path)!
+  config = parse_json(content)!
+  Result.Ok(config)
+end
+```
+
+**Helper methods on Result:**
+
+```opal
+result.ok?                    # => true if Ok
+result.err?                   # => true if Err
+result.unwrap()               # => value if Ok, raises exception if Err
+result.unwrap("msg")          # => value if Ok, raises with custom message if Err
+result.unwrap_or(default)     # => value if Ok, default if Err
+result.map(|v| v + 1)        # => Ok(v + 1) if Ok, passes Err through
+result.map_err(|e| wrap(e))  # => passes Ok through, transforms Err
+```
+
+#### Bridging Exceptions and Results
+
+```opal
+# Exception -> Result: wrap a throwing block
+result = Result.from do
+  read_config("missing.json")
+end
+# => Result.Err(FileNotFound(...)) if it threw
+# => Result.Ok(config) if it succeeded
+
+# Catch only a specific error type
+result = Result.from(FileNotFound) do
+  read_config("missing.json")
+end
+
+# Result -> Exception: .unwrap() raises on Err
+config = parse_config(data).unwrap()
+
+# Mixing both worlds
+def start_app() -> Result(App, Error)
+  data = Result.from do
+    File.read("config.json")
+  end!  # propagate if Err
+  config = parse_config(data)!
+  Result.Ok(App.new(config: config))
+end
+```
+
+**Error handling rules:**
+- `fail expr` raises any `Error` subclass.
+- `on fail Type as e` catches that type and subclasses. `on fail as e` catches all.
+- `ensure` always runs.
+- `expr!` on a `Result` unwraps `Ok` or returns `Err` from the enclosing function.
+- The enclosing function must return `Result` — using `!` elsewhere is a compile-time error.
+- `.unwrap()` raises an exception on `Err`. `!` returns `Err` as a value.
+- `Result.from do ... end` catches exceptions into `Result.Err`.
+- `Result.from(Type) do ... end` catches only that type.
 
 ### 7.2 Guards & Rules
 
