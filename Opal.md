@@ -3143,6 +3143,8 @@ end
 end
 ```
 
+This is how Opal's built-in test framework (`OpalTest` subdomain) is implemented under the hood. See [Testing](#testing) for the full testing specification.
+
 #### Debugging — @debug Macro
 
 ```opal
@@ -3407,8 +3409,8 @@ Opal ships with a standard library organized into modules:
 | `String` | String manipulation, formatting, template processing |
 | `Time` | Date, time, duration, formatting |
 | `JSON` | JSON parsing and generation |
-| `Test` | Built-in test framework, assertions |
-| `Mock` | Mocking and stubbing for tests |
+| `Test` | Built-in test framework — `@describe`, `@test`, assertions, lifecycle hooks |
+| `Mock` | Mock creation for tests — `Mock.new(Protocol)`, stubs, call verification |
 | `Spec` | Specification pattern base classes |
 | `Container` | Optional dependency injection container for large apps |
 | `Iter` | `Iterable` and `Iterator` protocols, lazy sequences |
@@ -3444,6 +3446,93 @@ end
 ---
 
 ## 12. Tooling
+
+### Testing
+
+> See [Testing Framework](docs/features/testing.md) for the full design rationale.
+
+Tests use `.topl` files and are discovered automatically by `opal test`. The `@describe`/`@test` macros from `OpalTest` are sugar for the `Test` module API.
+
+```opal
+# tests/math.topl
+import OpalTest
+
+@describe "Math" do
+  @test "addition" do
+    assert_eq(2 + 2, 4)
+  end
+
+  @test "negative numbers" do
+    assert_eq(-1 + 1, 0)
+  end
+end
+```
+
+#### Assertions
+
+```opal
+assert_eq(actual, expected)         # equality
+assert_ne(actual, expected)         # inequality
+assert_true(expr)                   # boolean true
+assert_false(expr)                  # boolean false
+assert_raises(ErrorType) do ... end # expects exception
+assert_match(pattern, value)        # pattern matching
+```
+
+#### Lifecycle Hooks
+
+```opal
+@describe "Database" do
+  @before_all do
+    .db = TestDB.create()
+  end
+
+  @after_all do
+    .db.destroy()
+  end
+
+  @before_each do
+    .db.begin_transaction()
+  end
+
+  @after_each do
+    .db.rollback()
+  end
+
+  @test "insert" do
+    .db.insert({name: "test"})
+    assert_eq(.db.count(), 1)
+  end
+end
+```
+
+Hooks run in order: `@before_all` (once) -> `@before_each` -> test -> `@after_each` -> `@after_all` (once). Nested `@describe` blocks inherit parent hooks.
+
+#### Mocking
+
+Two approaches: DI-based (swap via `needs`) and the `Mock` helper for quick stubs.
+
+```opal
+import Mock
+
+mock_db = Mock.new(Database)
+mock_db.stub(:save, true)
+mock_db.stub(:find, |id| null)
+
+service = OrderService.new(db: mock_db, mailer: mock_mailer)
+service.place_order(order)
+
+assert_true(mock_db.called?(:save))
+assert_eq(mock_db.call_count(:save), 1)
+```
+
+#### Test Runner
+
+```
+$ opal test                        # run all .topl files
+$ opal test tests/math.topl        # run one file
+$ opal test --filter "addition"    # filter by name
+```
 
 ### Project Scaffolding
 
