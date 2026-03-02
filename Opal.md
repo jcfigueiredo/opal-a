@@ -610,6 +610,53 @@ Symbols are self-identifying constants. They do not need to be assigned a value.
 :yes!
 ```
 
+#### Symbol Sets (Typed Symbols)
+
+Symbols can form **symbol sets** — lightweight type aliases that constrain which symbols are valid in a given context. This bridges dynamic atoms with static safety.
+
+```opal
+# Named symbol set — a union of symbol literals
+type Status = :ok | :error | :pending
+type HttpMethod = :get | :post | :put | :delete | :patch
+type LogLevel = :debug | :info | :warn | :error
+
+# Use as a type annotation
+def handle(status::Status)
+  match status
+    case :ok      then print("success")
+    case :error   then print("failure")
+    case :pending then print("waiting")
+  end
+end
+
+handle(:ok)       # works
+handle(:unknown)  # TYPE ERROR: :unknown is not in Status
+
+# Inline symbol constraint (no named type needed)
+def log(level:: :debug | :info | :warn | :error, message::String)
+  print(f"[{level}] {message}")
+end
+```
+
+**Symbol set rules:**
+- `type Name = :a | :b | :c` defines a symbol set (a type alias of a union of symbol literals).
+- Symbol sets participate in exhaustiveness checking — the compiler warns on incomplete match.
+- `Symbol` remains the unconstrained type (accepts any symbol) — gradual typing.
+- Symbol sets compose with unions, generics, and constraints.
+
+**Symbol sets vs enums:** Symbol sets are for simple tags with no data. `enum` is for data-carrying variants:
+
+```opal
+# Symbol set — lightweight tags
+type Direction = :north | :south | :east | :west
+
+# Enum — data-carrying variants
+enum Shape
+  Circle(radius::Float64)
+  Rect(width::Float64, height::Float64)
+end
+```
+
 ### 4.4 Operators
 
 > See [Self-Hosting Foundations](docs/features/self-hosting-foundations.md) for the operator overloading design rationale.
@@ -1257,6 +1304,22 @@ end
 | As-binding | `case Shape.Circle(r) as s` | Destructure + bind whole |
 
 When matching on an `enum` type, the compiler enforces **exhaustive matching** — all variants must be covered or a `case _` catch-all must be present. See [6.9 Enums](#69-enums--algebraic-data-types) for details.
+
+#### Exhaustive Matching with Symbol Sets
+
+When matching on a symbol set type, the compiler checks for exhaustiveness:
+
+```opal
+type Color = :red | :green | :blue
+
+def describe(c::Color) -> String
+  match c
+    case :red   then "warm"
+    case :green then "cool"
+    # COMPILE WARNING: non-exhaustive match, missing :blue
+  end
+end
+```
 
 ---
 
@@ -2825,6 +2888,8 @@ Actors are long-lived concurrent entities with isolated state. All external inte
 
 ```opal
 actor Counter
+  receives :increment, :get_count, :reset
+
   def init()
     .count = 0
   end
@@ -2857,6 +2922,8 @@ c.send(:reset)         # => :ok
 ```opal
 # Messages with arguments
 actor Cache
+  receives :get, :set, :delete
+
   def init(ttl::Int32)
     .store = {:}
     .ttl = ttl
@@ -2878,6 +2945,39 @@ cache = Cache.new(ttl: 60)
 cache.send(:set, "user:1", "claudio")
 cache.send(:get, "user:1")  # => "claudio"
 ```
+
+#### Actor Message Typing
+
+Actors can optionally declare their message interface with `receives`, enabling compile-time checking of `.send()` calls:
+
+```opal
+actor Cache
+  receives :get, :set, :delete
+
+  receive
+    case :get(key)
+      reply .store[key]
+    case :set(key, value)
+      .store[key] = value
+      reply :ok
+    case :delete(key)
+      .store.delete(key)
+      reply :ok
+  end
+end
+
+cache = Cache.new()
+cache.send(:get, "user:1")     # OK — :get is in receives
+cache.send(:gett, "user:1")    # COMPILE WARNING: :gett not in Cache.receives
+```
+
+**Rules:**
+- `receives :msg1, :msg2, ...` is optional — actors without it accept any symbol (backward compatible).
+- When present, `.send()` calls are checked at compile time.
+- `receives` uses symbol sets under the hood.
+- Named symbol sets work too: `receives HttpMethod` where `type HttpMethod = :get | :post | :put | :delete | :patch`.
+- The `receive` block must handle all declared messages (exhaustiveness check).
+- Queryable: `Cache.receives()` returns the set of accepted messages.
 
 ### 8.2 Structured Concurrency (`parallel`)
 
@@ -2975,7 +3075,7 @@ Supervisors watch child actors and restart them on failure.
 ```opal
 supervisor AppSupervisor
   strategy :one_for_one       # only restart the failed child
-  max_restarts 3 within 60    # give up after 3 crashes in 60 seconds
+  max_restarts 3, 60           # give up after 3 crashes in 60 seconds
 
   supervise Logger()
   supervise Cache(ttl: 60)
@@ -3007,6 +3107,8 @@ end
 
 ```opal
 actor Worker
+  receives :do
+
   def init()
     .jobs = []
   end
@@ -3030,6 +3132,8 @@ actor Worker
 end
 ```
 
+**Note:** `strategy`, `max_restarts`, and `supervise` are contextual keywords — they are only reserved inside `supervisor` blocks and can be used as identifiers elsewhere.
+
 ### 8.5 Complete Example
 
 ```opal
@@ -3037,6 +3141,8 @@ import Net
 import JSON
 
 actor RateLimiter
+  receives :check, :reset
+
   def init(max_per_second)
     .max = max_per_second
     .count = 0
@@ -3081,7 +3187,7 @@ end
 # Supervision for production
 supervisor DashboardSupervisor
   strategy :one_for_one
-  max_restarts 5 within 30
+  max_restarts 5, 30
 
   supervise RateLimiter(max_per_second: 100)
 end
@@ -3096,6 +3202,7 @@ end
 | Run N items concurrently | Parallel for | `parallel for x in xs ... end` |
 | Limit concurrency | Parallel max | `parallel max: N for ...` |
 | Make one call non-blocking | Async/Future | `async expr`, auto-await on use |
+| Declare actor interface | Message typing | `receives :msg1, :msg2` |
 | Fault tolerance | Supervisor | `supervisor`, `strategy`, `supervise` |
 | Crash recovery hooks | Lifecycle | `on_crash(reason)`, `on_restart()` |
 
@@ -3156,6 +3263,7 @@ end
 
 # On an actor
 actor PaymentProcessor
+  receives :charge
   needs gateway::PaymentGateway
 
   receive
@@ -3360,6 +3468,7 @@ end
 
 # --- Actor for stateful concurrent work ---
 actor PaymentProcessor
+  receives :charge
   needs gateway::PaymentGateway
 
   receive
@@ -3653,13 +3762,126 @@ macroexpand(@measure do 1 + 1 end)
 
 - `macro name(params) ... end` defines a macro. The body must return an `Expr`.
 - `@name args` invokes a macro at parse time.
-- `@` is reserved exclusively for macros.
+- `@[key: val]` attaches annotation metadata (see 10.3).
+- `@` followed by an identifier is a macro; `@` followed by `[` is an annotation.
 - Macros receive arguments as `Expr` (AST), not evaluated values.
 - **Hygienic by default:** variables in macro quotes don't leak.
 - `esc(expr)` escapes into the caller's scope (opt-in).
 - `macroexpand(@name args)` shows expansion without executing.
 
-### 10.3 AST Reflection & Introspection
+### 10.3 Annotations — Declarative Metadata
+
+Annotations attach metadata to declarations. They are distinct from macros: macros transform code, annotations describe it.
+
+| Syntax | Purpose | When | What it does |
+|---|---|---|---|
+| `@name args` | Macro invocation | Parse time | Transforms code (AST to AST) |
+| `@[key: val, ...]` | Annotation | Never "runs" | Attaches metadata, queryable at runtime |
+
+#### Annotation Syntax
+
+```opal
+# Simple tag (presence means true)
+@[deprecated]
+def old_api()
+  # ...
+end
+
+# Tag with values
+@[deprecated, since: "2.0", replacement: "new_api"]
+def old_api()
+  # ...
+end
+
+# On classes
+@[serializable, version: 3]
+class User
+  needs name::String
+  needs email::String
+end
+
+# On fields
+class Config
+  @[env: "DATABASE_URL"]
+  needs db_url::String
+
+  @[env: "PORT", default: 8080]
+  needs port::Int32
+end
+
+# Multiple annotations stack
+@[deprecated, since: "1.5"]
+@[experimental]
+def risky_method()
+  # ...
+end
+```
+
+#### Querying Annotations
+
+```opal
+# On functions
+annotations(old_api)
+# => [{deprecated: true, since: "2.0", replacement: "new_api"}]
+
+# On classes
+User.annotations()
+# => [{serializable: true, version: 3}]
+
+# On fields
+Config.field_annotations(:db_url)
+# => [{env: "DATABASE_URL"}]
+
+# Check for specific annotation
+if :deprecated in annotations(old_api)
+  print("This function is deprecated")
+end
+```
+
+#### Macros Reading Annotations
+
+Macros can read annotations at parse time — annotations provide data, macros provide transformation:
+
+```opal
+@[json_field, name: "user_name"]
+needs name::String
+
+# Macro reads field annotations during code generation
+macro json_serializable(class_def)
+  fields = class_def.needs_fields()
+  for field in fields
+    annots = field.annotations()
+    json_name = if :json_field in annots
+      annots[:json_field][:name]
+    else
+      field.name.to_string()
+    end
+    # ... use json_name in generated code
+  end
+end
+```
+
+#### Built-in Annotations
+
+| Annotation | Purpose |
+|---|---|
+| `@[deprecated]` | Mark as deprecated (compiler warning on use) |
+| `@[deprecated, since: "X", use: "Y"]` | With migration info |
+| `@[experimental]` | Mark as unstable API |
+| `@[inline]` | Hint to inline this function |
+| `@[todo, note: "..."]` | In-code TODO that tooling can collect |
+| `@[test_only]` | Only available in test files (`.topl`) |
+
+#### Rules
+
+- `@[...]` attaches metadata as a dict of symbols to values.
+- `@name` remains exclusively macro invocation — unchanged.
+- Annotations are inert — no code transformation.
+- Annotations are queryable via `annotations()` at runtime and by macros at parse time.
+- Annotations stack (multiple `@[...]` on the same target).
+- Annotations apply to the immediately following declaration (`def`, `class`, `needs`, etc.).
+
+### 10.4 AST Reflection & Introspection
 
 #### Inspecting Expressions
 
@@ -3710,7 +3932,7 @@ User.needs()           # => [(:db, Database), (:mailer, Mailer)]
 User.implements()      # => [Printable, Comparable]
 ```
 
-### 10.4 Practical Macro Examples
+### 10.5 Practical Macro Examples
 
 #### Code Generation — JSON Serialization
 
@@ -3823,7 +4045,7 @@ def fibonacci(n::Int32) -> Int32
 end
 ```
 
-### 10.5 Self-Hosting Potential
+### 10.6 Self-Hosting Potential
 
 With quoting + macros, some of Opal's own features could be defined in Opal itself. This doesn't mean they *must* be — core keywords can stay in the parser for performance and clarity. But the macro system is powerful enough that users could build equivalent constructs.
 
@@ -3848,7 +4070,7 @@ These are essentially code transformations and could theoretically be implemente
 
 Whether they stay as keywords or become macros is an implementation decision. The key insight is that the macro system is *expressive enough* to define them.
 
-### 10.6 Domain Extension Guidelines
+### 10.7 Domain Extension Guidelines
 
 Opal's macro system enables **subdomains** — packages of macros that extend the language for a specific problem domain. This is how Opal and its ecosystem grow without bloating the core language.
 
@@ -4028,6 +4250,7 @@ Each subdomain is an independent package — you only import what you use.
 | `$` (inside quote) | Interpolate into AST |
 | `macro ... end` | Define a macro |
 | `@name` | Invoke a macro |
+| `@[key: val]` | Attach metadata annotation |
 
 ---
 
