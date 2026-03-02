@@ -82,7 +82,7 @@ end
 - Dependencies are checked at construction — missing a required `needs` is a runtime error.
 - `needs` dependencies are accessible as `.name` (same as instance variables).
 - `needs` works on classes, modules, and actors.
-- If the class also has `:init`, `needs` deps are injected *before* `:init` runs.
+- If the class also has `init`, `needs` deps are injected *before* `init` runs.
 
 ---
 

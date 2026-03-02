@@ -53,16 +53,20 @@ end
 ### Construction
 
 ```opal
+# Construction: positional or named
 d = Direction.North
-s = Shape.Circle(radius: 5.0)
+s = Shape.Circle(5.0)                     # positional (for 1-2 fields)
+s = Shape.Circle(radius: 5.0)             # named (explicit)
 r = Response.Unauthorized
-resp = Response.Success(body: "hello", headers: {:})
+r = Response.Success("hello", {:})        # positional
+resp = Response.Success(body: "hello", headers: {:})  # named
 ```
 
 ### Rules
 
 - Variants are accessed as `EnumName.VariantName`.
-- Variants with fields use named arguments: `Shape.Circle(radius: 5.0)`.
+- Variants with fields support both positional and named arguments.
+- Positional construction matches field declaration order.
 - Variants without fields are singletons — `Direction.North is Direction.North` is always true.
 - Enums are closed — you cannot add variants after definition.
 - Enum values are immutable.

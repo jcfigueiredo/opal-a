@@ -175,7 +175,7 @@ Swap implementations via `needs` — this works naturally with Opal's DI system:
 ```opal
 # Hand-written mock
 class FakeDB implements Database
-  def :init()
+  def init()
     .saved = []
   end
 

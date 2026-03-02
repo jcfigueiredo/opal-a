@@ -119,8 +119,8 @@ protocol Iterable
   def iter() -> Iterator
 end
 
-protocol Iterator
-  def next() -> (value, done::Bool)
+protocol Iterator(T)
+  def next() -> Option(T)
 end
 ```
 
@@ -135,15 +135,15 @@ class FileLines implements Iterable
   end
 end
 
-class FileLinesIterator implements Iterator
+class FileLinesIterator implements Iterator(String)
   needs file::File
 
-  def next()
+  def next() -> Option(String)
     line = .file.read_line()
     if line == null
-      (null, true)
+      Option.None
     else
-      (line, false)
+      Option.Some(line)
     end
   end
 end
@@ -170,13 +170,13 @@ class Counter implements Iterable
   end
 end
 
-class CounterIterator implements Iterator
+class CounterIterator implements Iterator(Int32)
   needs current::Int32
 
-  def next()
+  def next() -> Option(Int32)
     value = .current
     .current += 1
-    (value, false)  # never done
+    Option.Some(value)  # never exhausted
   end
 end
 
@@ -188,7 +188,7 @@ end
 ### Rules
 
 - Any class implementing `Iterable` works with `for ... in`.
-- `Iterator.next()` returns a tuple `(value, done::Bool)`.
+- `Iterator.next()` returns `Option(T)` — `Some(value)` for the next element, `None` when exhausted.
 - Built-in types (`List`, `Dict`, `Range`, `String`) all implement `Iterable`.
 - Collection methods (`map`, `filter`, `reduce`, `take`, `zip`) work on any `Iterable`.
 
@@ -216,7 +216,7 @@ end
 class FileNotFound < Error
   needs path::String
 
-  def :init(path)
+  def init(path)
     .path = path
     super(message: f"File not found: {path}")
   end
@@ -226,7 +226,7 @@ class NetworkError < Error
   needs url::String
   needs status::Int32
 
-  def :init(url, status)
+  def init(url, status)
     .url = url
     .status = status
     super(message: f"HTTP {status} from {url}")
@@ -237,7 +237,7 @@ class ValidationError < Error
   needs field::String
   needs reason::String
 
-  def :init(field, reason)
+  def init(field, reason)
     .field = field
     .reason = reason
     super(message: f"Validation failed on {field}: {reason}")

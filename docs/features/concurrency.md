@@ -26,7 +26,7 @@ Actors are long-lived concurrent entities with isolated state. All external inte
 
 ```opal
 actor Counter
-  def :init()
+  def init()
     .count = 0
   end
 
@@ -61,7 +61,7 @@ c.send(:reset)         # => :ok
 
 ```opal
 actor Cache
-  def :init(ttl::Int32)
+  def init(ttl::Int32)
     .store = {:}
     .ttl = ttl
   end
@@ -272,7 +272,7 @@ end
 
 ```opal
 actor Worker
-  def :init()
+  def init()
     .jobs = []
   end
 
@@ -303,7 +303,7 @@ import Net
 import JSON
 
 actor RateLimiter
-  def :init(max_per_second)
+  def init(max_per_second)
     .max = max_per_second
     .count = 0
   end

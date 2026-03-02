@@ -46,5 +46,5 @@ When updating Opal.md, always check that changes are consistent across: BNF gram
 | `docs/features/error-handling.md` | Two-track model: exceptions vs Result types, `!` operator, bridging |
 | `docs/features/validation-and-settings.md` | `model` keyword, field validation with `where`, serialization, Settings loading |
 | `docs/features/imports-and-modules.md` | Hybrid file-module mapping, import forms, re-exports, circular deps, packages |
-| `docs/features/classes-and-inheritance.md` | Construction model (needs + :init), single inheritance, super, inherited needs |
+| `docs/features/classes-and-inheritance.md` | Construction model (needs + init), single inheritance, super, inherited needs |
 | `docs/features/testing.md` | Test structure, assertions, lifecycle hooks, mocking, test runner |

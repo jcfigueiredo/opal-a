@@ -1494,11 +1494,11 @@ Introspection rules:
 
 > See [Classes & Inheritance](docs/features/classes-and-inheritance.md) for the full design rationale.
 
-Classes use `def :init()` for construction. Instance variables are accessed with the `.` prefix.
+Classes use `def init()` for construction. Instance variables are accessed with the `.` prefix.
 
 ```opal
 class Person
-  def :init(name = "anonymous", age = 0)
+  def init(name = "anonymous", age = 0)
     .name = name
     .age = age
     .started = true
@@ -1531,6 +1531,37 @@ claudio.adult?()        # => false
 Person.species()        # => "Homo sapiens"
 ```
 
+#### Constructor Shorthand
+
+`Type(args)` is sugar for `Type.new(args)`. Both forms are equivalent.
+
+```opal
+# These are identical
+point = Point.new(x: 1.0, y: 2.0)
+point = Point(x: 1.0, y: 2.0)
+
+# The shorthand is especially useful for nested construction
+user = User(
+  name: "claudio",
+  address: Address(
+    street: "123 Main",
+    city: "Springfield"
+  )
+)
+
+# .new() remains available and is equivalent
+user = User.new(
+  name: "claudio",
+  address: Address.new(street: "123 Main", city: "Springfield")
+)
+```
+
+**Rules:**
+- `Type(args)` is sugar for `Type.new(args)`.
+- Works for classes, models, and error types.
+- No ambiguity: class names are PascalCase, functions are snake_case.
+- Enum variants already use this form: `Shape.Circle(radius: 5.0)`.
+
 #### Inheritance
 
 ```opal
@@ -1552,14 +1583,14 @@ rex.talk()  # => "Woof!"
 
 #### Construction Order
 
-When both `needs` and `:init` are present, they compose in a defined order:
+When both `needs` and `init` are present, they compose in a defined order:
 
 ```opal
 class OrderService
   needs db::Database
   needs mailer::Mailer
 
-  def :init(retry_count = 3)
+  def init(retry_count = 3)
     # .db and .mailer already available
     .retry_count = retry_count
     .cache = {:}
@@ -1576,8 +1607,8 @@ service = OrderService.new(
 Construction order:
 1. Parent `needs` fields injected (if inheriting)
 2. Own `needs` fields injected
-3. Parent `:init` runs (if present)
-4. Own `:init` runs (if present)
+3. Parent `init` runs (if present)
+4. Own `init` runs (if present)
 
 #### Inherited `needs`
 
@@ -1616,15 +1647,15 @@ class Dog < Animal
 end
 ```
 
-In `:init`, `super()` calls the parent's `:init`.
+In `init`, `super()` calls the parent's `init`.
 
 #### Class Rules
 
 - Single inheritance only: `class Child < Parent`. No multiple inheritance.
 - No abstract classes — use protocols for contracts (see 6.6).
 - `needs` fields are inherited — subclass `.new()` requires all ancestor `needs`.
-- Construction order: parent needs -> own needs -> parent `:init` -> own `:init`.
-- `super` calls parent's method. `super()` in `:init` calls parent's `:init`.
+- Construction order: parent needs -> own needs -> parent `init` -> own `init`.
+- `super` calls parent's method. `super()` in `init` calls parent's `init`.
 - For multiple behaviors, combine `< Parent` with `implements Protocol`.
 
 ### 6.4 Modules & Namespaces
@@ -1678,7 +1709,7 @@ Modules can contain classes:
 # Implicitly the Geometry module
 
 class Circle
-  def :init(radius::Float32)
+  def init(radius::Float32)
     .radius = radius
   end
 
@@ -1755,7 +1786,7 @@ import MyApp.Models.User
 
 ```opal
 class Account
-  def :init(owner, balance)
+  def init(owner, balance)
     .owner = owner
     .balance = balance
   end
@@ -1876,7 +1907,7 @@ protocol Comparable
 end
 
 class Person implements Printable
-  def :init(name, age)
+  def init(name, age)
     .name = name
     .age = age
   end
@@ -1909,7 +1940,7 @@ protocol Hashable
 end
 
 class Temperature implements Printable, Comparable, Hashable
-  def :init(degrees::Float32)
+  def init(degrees::Float32)
     .degrees = degrees
   end
 
@@ -2060,8 +2091,8 @@ protocol Iterable
   def iter() -> Iterator
 end
 
-protocol Iterator
-  def next() -> (value, done::Bool)
+protocol Iterator(T)
+  def next() -> Option(T)
 end
 ```
 
@@ -2075,15 +2106,15 @@ class FileLines implements Iterable
   end
 end
 
-class FileLinesIterator implements Iterator
+class FileLinesIterator implements Iterator(String)
   needs file::File
 
-  def next()
+  def next() -> Option(String)
     line = .file.read_line()
     if line == null
-      (null, true)    # done
+      Option.None
     else
-      (line, false)   # value
+      Option.Some(line)
     end
   end
 end
@@ -2109,13 +2140,13 @@ class Counter implements Iterable
   end
 end
 
-class CounterIterator implements Iterator
+class CounterIterator implements Iterator(Int32)
   needs current::Int32
 
-  def next()
+  def next() -> Option(Int32)
     value = .current
     .current += 1
-    (value, false)  # never done
+    Option.Some(value)  # never exhausted
   end
 end
 
@@ -2125,7 +2156,7 @@ end
 ```
 
 **Rules:**
-- `Iterator.next()` returns a tuple `(value, done::Bool)`.
+- `Iterator.next()` returns `Option(T)` — `Some(value)` for the next element, `None` when exhausted.
 - Built-in types (`List`, `Dict`, `Range`, `String`) all implement `Iterable`.
 - Collection methods (`map`, `filter`, `reduce`, `take`, `zip`) work on any `Iterable`.
 
@@ -2159,10 +2190,12 @@ enum Response
   Unauthorized
 end
 
-# Construction
+# Construction: positional or named
 d = Direction.North
-s = Shape.Circle(radius: 5.0)
-r = Response.Success(body: "hello", headers: {:})
+s = Shape.Circle(5.0)                     # positional (for 1-2 fields)
+s = Shape.Circle(radius: 5.0)             # named (explicit)
+r = Response.Success("hello", {:})        # positional
+r = Response.Success(body: "hello", headers: {:})  # named
 ```
 
 #### Exhaustive Pattern Matching
@@ -2266,7 +2299,8 @@ end
 
 **Enum rules:**
 - Variants are accessed as `EnumName.VariantName`.
-- Variants with fields use named arguments: `Shape.Circle(radius: 5.0)`.
+- Variants with fields support both positional and named arguments.
+- Positional construction matches field declaration order.
 - Variants without fields are singletons.
 - Enums are closed and immutable — no variants can be added, values cannot be modified.
 - Methods are defined inside the `enum` block, after the variants.
@@ -2349,9 +2383,9 @@ model User
   needs address::Address
 end
 
-user = User.new(
+user = User(
   name: "claudio", email: "c@test.com",
-  address: Address.new(street: "123 Main", city: "Springfield", zip: "62704")
+  address: Address(street: "123 Main", city: "Springfield", zip: "62704")
 )
 
 user.to_dict()   # => {"name": "claudio", "email": "c@test.com",
@@ -2421,7 +2455,7 @@ Errors are classes inheriting from `Error`. `fail` raises, `try`/`catch` catches
 class FileNotFound < Error
   needs path::String
 
-  def :init(path)
+  def init(path)
     .path = path
     super(message: f"File not found: {path}")
   end
@@ -2609,7 +2643,7 @@ end
 
 # Full form — subclass with overridden behavior
 class NullPerson < Person
-  def :init()
+  def init()
     super(name: "anonymous", age: 0)
   end
 
@@ -2620,7 +2654,7 @@ end
 
 # Shortcut — auto-generates a subclass with default values
 class AnonymousPerson as Person defaults {name: "anonymous", age: 0}
-# Equivalent to a subclass whose :init calls super with these defaults.
+# Equivalent to a subclass whose init calls super with these defaults.
 # All methods delegate to Person — only construction differs.
 ```
 
@@ -2658,7 +2692,7 @@ Actors are long-lived concurrent entities with isolated state. All external inte
 
 ```opal
 actor Counter
-  def :init()
+  def init()
     .count = 0
   end
 
@@ -2693,7 +2727,7 @@ c.send(:reset)         # => :ok
 ```opal
 # Messages with arguments
 actor Cache
-  def :init(ttl::Int32)
+  def init(ttl::Int32)
     .store = {:}
     .ttl = ttl
   end
@@ -2811,9 +2845,9 @@ supervisor AppSupervisor
   strategy :one_for_one       # only restart the failed child
   max_restarts 3 within 60    # give up after 3 crashes in 60 seconds
 
-  supervise Logger.new()
-  supervise Cache.new(ttl: 60)
-  supervise Worker.new()
+  supervise Logger()
+  supervise Cache(ttl: 60)
+  supervise Worker()
 end
 
 app = AppSupervisor.start!
@@ -2841,7 +2875,7 @@ end
 
 ```opal
 actor Worker
-  def :init()
+  def init()
     .jobs = []
   end
 
@@ -2870,7 +2904,7 @@ import Net
 import JSON
 
 actor RateLimiter
-  def :init(max_per_second)
+  def init(max_per_second)
     .max = max_per_second
     .count = 0
   end
@@ -2891,12 +2925,12 @@ actor RateLimiter
 end
 
 def fetch_dashboard(user_id)
-  limiter = RateLimiter.new(max_per_second: 10)
+  limiter = RateLimiter(max_per_second: 10)
 
   # Actor message (sync by default)
   status = limiter.send(:check)
   if status == :limited
-    fail RateLimitError.new("Too many requests")
+    fail RateLimitError("Too many requests")
   end
 
   # Structured concurrency
@@ -2917,7 +2951,7 @@ supervisor DashboardSupervisor
   strategy :one_for_one
   max_restarts 5 within 30
 
-  supervise RateLimiter.new(max_per_second: 100)
+  supervise RateLimiter(max_per_second: 100)
 end
 ```
 
@@ -3004,7 +3038,7 @@ end
 - `needs name::Protocol = default_expr` declares an optional dependency with a default.
 - Dependencies are checked at construction — missing a required `needs` is a runtime error.
 - `needs` dependencies are accessible as `.name` (same as instance variables).
-- If the class also has `:init`, `needs` deps are injected *before* `:init` runs.
+- If the class also has `init`, `needs` deps are injected *before* `init` runs.
 
 #### Optional Container (for large apps)
 
@@ -3013,13 +3047,13 @@ For small apps, manual wiring with `.new()` is sufficient. For large apps, the `
 ```opal
 import Container
 
-app = Container.new()
-app.register(Database, PostgresDB.new())
-app.register(Mailer, SMTPMailer.new())
+app = Container()
+app.register(Database, PostgresDB())
+app.register(Mailer, SMTPMailer())
 
 # Resolve — container fills in all `needs` automatically
 service = app.resolve(OrderService)
-# Equivalent to: OrderService.new(db: postgres, mailer: smtp)
+# Equivalent to: OrderService(db: postgres, mailer: smtp)
 
 # Resolve modules — handlers are auto-registered with deps
 app.resolve(NotificationHandler)
@@ -3030,9 +3064,9 @@ app.start!
 
 ```opal
 # Testing with container — swap just what you need
-test_app = Container.new()
-test_app.register(Database, MockDB.new())
-test_app.register(Mailer, MockMailer.new())
+test_app = Container()
+test_app.register(Database, MockDB())
+test_app.register(Mailer, MockMailer())
 
 test_service = test_app.resolve(OrderService)
 ```
@@ -3055,7 +3089,7 @@ class OrderService
 
   def place_order(order)
     .db.save(order)
-    emit OrderPlaced.new(order: order, placed_at: Time.now())
+    emit OrderPlaced(order: order, placed_at: Time.now())
   end
 end
 
@@ -3129,22 +3163,22 @@ end
 
 ```opal
 # Async (default) — returns immediately
-emit OrderPlaced.new(order: order)
+emit OrderPlaced(order: order)
 
 # Sync — blocks until all handlers complete
-emit OrderPlaced.new(order: order) await
+emit OrderPlaced(order: order) await
 
 # Background sync — returns a Future
-delivery = async emit OrderPlaced.new(order: order) await
+delivery = async emit OrderPlaced(order: order) await
 do_other_work()
 await delivery  # check if handlers succeeded
 ```
 
 | Pattern | Behavior |
 |---|---|
-| `emit Event.new(...)` | Async — fire and forget, returns immediately |
-| `emit Event.new(...) await` | Sync — blocks until all handlers complete |
-| `async emit Event.new(...) await` | Background sync — all handlers run, returns Future |
+| `emit Event(...)` | Async — fire and forget, returns immediately |
+| `emit Event(...) await` | Sync — blocks until all handlers complete |
+| `async emit Event(...) await` | Background sync — all handlers run, returns Future |
 | `emit` inside `parallel` | Each branch emits independently |
 | `emit` inside actor `receive` | Works normally, handlers run outside the actor |
 
@@ -3166,7 +3200,7 @@ class OrderService
   def place_order(order)
     .validator.validate!(order)
     .db.save(order)
-    emit OrderPlaced.new(order: order, placed_at: Time.now())
+    emit OrderPlaced(order: order, placed_at: Time.now())
   end
 end
 
@@ -3200,19 +3234,19 @@ actor PaymentProcessor
       .gateway.charge(order.total)
       reply :ok
     catch as e
-      emit PaymentFailed.new(order: order, reason: e.message)
+      emit PaymentFailed(order: order, reason: e.message)
       reply :failed
     end
   end
 end
 
 # --- App Wiring ---
-app = Container.new()
-app.register(Database, PostgresDB.new())
-app.register(Mailer, SMTPMailer.new())
-app.register(OrderValidator, StrictValidator.new())
-app.register(WarehouseService, LocalWarehouse.new())
-app.register(PaymentGateway, StripeGateway.new())
+app = Container()
+app.register(Database, PostgresDB())
+app.register(Mailer, SMTPMailer())
+app.register(OrderValidator, StrictValidator())
+app.register(WarehouseService, LocalWarehouse())
+app.register(PaymentGateway, StripeGateway())
 
 order_service = app.resolve(OrderService)
 app.resolve(NotificationHandler)
@@ -4170,7 +4204,7 @@ if __name__ == "__main__":
 ```opal
 import OpalWeb
 
-app = OpalWeb.App.new("app name")
+app = OpalWeb.App("app name")
 
 @get "/" do
   "Hello world!"

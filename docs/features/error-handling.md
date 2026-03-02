@@ -45,7 +45,7 @@ end
 class FileNotFound < Error
   needs path::String
 
-  def :init(path)
+  def init(path)
     .path = path
     super(message: f"File not found: {path}")
   end

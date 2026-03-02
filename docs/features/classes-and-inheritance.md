@@ -4,7 +4,7 @@
 
 ## Overview
 
-Opal classes use `needs` for declarative field/dependency injection and `:init` for imperative construction logic. Both can coexist — `needs` fields are injected first, then `:init` runs. Inheritance is single-parent only; protocols fill the multiple-behavior gap.
+Opal classes use `needs` for declarative field/dependency injection and `init` for imperative construction logic. Both can coexist — `needs` fields are injected first, then `init` runs. Inheritance is single-parent only; protocols fill the multiple-behavior gap.
 
 ---
 
@@ -24,16 +24,16 @@ p = Point.new(x: 1.0, y: 2.0)
 p.x   # => 1.0
 ```
 
-### `needs` + `:init` Together
+### `needs` + `init` Together
 
-When you need setup logic beyond field assignment, add `:init`. The `needs` fields are injected *before* `:init` runs, so they're available inside it:
+When you need setup logic beyond field assignment, add `init`. The `needs` fields are injected *before* `init` runs, so they're available inside it:
 
 ```opal
 class OrderService
   needs db::Database
   needs mailer::Mailer
 
-  def :init(retry_count = 3)
+  def init(retry_count = 3)
     # .db and .mailer already available
     .retry_count = retry_count
     .cache = {:}
@@ -48,13 +48,13 @@ service = OrderService.new(
 )
 ```
 
-### `:init` Only
+### `init` Only
 
 For classes with complex construction logic or no declarative fields:
 
 ```opal
 class Parser
-  def :init(source::String)
+  def init(source::String)
     .source = source
     .position = 0
     .tokens = []
@@ -68,8 +68,8 @@ p = Parser.new(source: "hello world")
 
 1. Parent `needs` fields injected (if inheriting)
 2. Own `needs` fields injected
-3. Parent `:init` runs (if present)
-4. Own `:init` runs (if present)
+3. Parent `init` runs (if present)
+4. Own `init` runs (if present)
 
 All `needs` fields from the entire hierarchy are required at `.new()`.
 
@@ -149,11 +149,11 @@ end
 rex.describe()  # => "Rex the animal (breed: Labrador)"
 ```
 
-In `:init`, `super()` calls the parent's `:init` if it exists. If the parent has no `:init` (only `needs`), `super()` is not needed — `needs` injection is automatic.
+In `init`, `super()` calls the parent's `init` if it exists. If the parent has no `init` (only `needs`), `super()` is not needed — `needs` injection is automatic.
 
 ```opal
 class Base
-  def :init()
+  def init()
     .created_at = Time.now()
   end
 end
@@ -161,8 +161,8 @@ end
 class Child < Base
   needs value::Int32
 
-  def :init()
-    super()           # calls Base.:init — .created_at set
+  def init()
+    super()           # calls Base.init — .created_at set
     .computed = .value * 2
   end
 end
@@ -220,8 +220,8 @@ end
 
 | Feature | Decision |
 |---|---|
-| Construction | `needs` for declarative fields, `:init` for setup logic, both allowed |
-| Construction order | Parent needs -> own needs -> parent :init -> own :init |
+| Construction | `needs` for declarative fields, `init` for setup logic, both allowed |
+| Construction order | Parent needs -> own needs -> parent init -> own init |
 | Inheritance | Single parent only via `<` |
 | Inherited needs | Automatic — subclass `.new()` requires all ancestor needs |
 | `super` | Calls parent's version of current method |
