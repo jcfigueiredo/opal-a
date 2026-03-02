@@ -141,7 +141,7 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
 
 <with_expr>     ::= <expression> "with" <dict>
 
-<function_def>  ::= "def" IDENTIFIER "(" <params> ")" NEWLINE <block> "end"
+<function_def>  ::= <annotation>* "def" IDENTIFIER "(" <params> ")" ("->" <type_expr>)? NEWLINE <block> "end"
 <params>        ::= <param> ("," <param>)*
 <param>         ::= IDENTIFIER
                    | IDENTIFIER "::" TYPE
@@ -195,12 +195,15 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
                      "end"
 
 <actor_def>     ::= "actor" IDENTIFIER NEWLINE <actor_body> "end"
-<actor_body>    ::= (<needs_decl> | <function_def> | <receive_clause>)*
+<actor_body>    ::= ("receives" <symbol_list> NEWLINE)?
+                     (<needs_decl> | <function_def> | <receive_clause>)*
+<symbol_list>   ::= SYMBOL ("," SYMBOL)*
+                   | IDENTIFIER
 <receive_clause>::= "receive" NEWLINE <case_clause>+ "end"
 
 <supervisor_def>::= "supervisor" IDENTIFIER NEWLINE <supervisor_body> "end"
 <supervisor_body>::= ("strategy" SYMBOL NEWLINE)?
-                     ("max_restarts" INTEGER "within" INTEGER NEWLINE)?
+                     ("max_restarts" INTEGER "," INTEGER NEWLINE)?
                      ("supervise" <expression> NEWLINE)*
 
 <parallel_expr> ::= "parallel" NEWLINE <block> "end"
@@ -209,13 +212,16 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
 <async_expr>    ::= "async" <expression>
 <await_expr>    ::= "await" <expression>
 
-<needs_decl>    ::= "needs" IDENTIFIER "::" TYPE ("=" <expression>)?
+<needs_decl>    ::= <annotation>* "needs" IDENTIFIER "::" TYPE ("=" <expression>)?
 <event_def>     ::= "event" IDENTIFIER "(" <params> ")"
 <emit_expr>     ::= "emit" <expression> ("await")?
 <on_handler>    ::= "on" TYPE "do" "|" IDENTIFIER "|" NEWLINE <block> "end"
 
 <macro_def>     ::= "macro" IDENTIFIER "(" <params> ")" NEWLINE <block> "end"
 <macro_invoke>  ::= "@" IDENTIFIER <args>?
+<annotation>    ::= "@[" <annot_entry> ("," <annot_entry>)* "]"
+<annot_entry>   ::= IDENTIFIER
+                   | IDENTIFIER ":" <expression>
 <quote_expr>    ::= "quote" <expression> "end"
                    | "quote" NEWLINE <block> "end"
 
@@ -263,7 +269,7 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
 <propagate_expr>::= <expression> "!"
 <requires_expr> ::= "requires" <expression> ("," STRING)?
 
-<class_def>     ::= "class" IDENTIFIER ("(" <type_params> ")")? ("<" IDENTIFIER)?
+<class_def>     ::= <annotation>* "class" IDENTIFIER ("(" <type_params> ")")? ("<" IDENTIFIER)?
                      (<where_clause>)? NEWLINE <class_body> "end"
 <null_object_def> ::= "class" IDENTIFIER "<" IDENTIFIER "defaults" <dict>
 
