@@ -1115,6 +1115,8 @@ Introspection rules:
 
 ### 6.3 Classes & Methods
 
+> See [Classes & Inheritance](docs/features/classes-and-inheritance.md) for the full design rationale.
+
 Classes use `def :init()` for construction. Instance variables are accessed with the `.` prefix.
 
 ```opal
@@ -1170,6 +1172,83 @@ end
 rex = Dog.new()
 rex.talk()  # => "Woof!"
 ```
+
+#### Construction Order
+
+When both `needs` and `:init` are present, they compose in a defined order:
+
+```opal
+class OrderService
+  needs db::Database
+  needs mailer::Mailer
+
+  def :init(retry_count = 3)
+    # .db and .mailer already available
+    .retry_count = retry_count
+    .cache = {:}
+  end
+end
+
+service = OrderService.new(
+  db: PostgresDB.new(),
+  mailer: SMTPMailer.new(),
+  retry_count: 5
+)
+```
+
+Construction order:
+1. Parent `needs` fields injected (if inheriting)
+2. Own `needs` fields injected
+3. Parent `:init` runs (if present)
+4. Own `:init` runs (if present)
+
+#### Inherited `needs`
+
+Subclasses inherit all `needs` from their parent. Callers must provide every ancestor's `needs` at construction time:
+
+```opal
+class Animal
+  needs name::String
+  needs sound::String
+
+  def speak()
+    print(f"{.name} says {.sound}")
+  end
+end
+
+class Dog < Animal
+  needs breed::String
+end
+
+# Must provide ALL needs (parent + own)
+rex = Dog.new(name: "Rex", sound: "Woof", breed: "Labrador")
+rex.name    # => "Rex" (inherited)
+rex.breed   # => "Labrador" (own)
+```
+
+#### `super`
+
+`super` calls the parent's version of the current method:
+
+```opal
+class Dog < Animal
+  def speak()
+    super()  # calls Animal.speak
+    print(f"({.breed})")
+  end
+end
+```
+
+In `:init`, `super()` calls the parent's `:init`.
+
+#### Class Rules
+
+- Single inheritance only: `class Child < Parent`. No multiple inheritance.
+- No abstract classes — use protocols for contracts (see 6.6).
+- `needs` fields are inherited — subclass `.new()` requires all ancestor `needs`.
+- Construction order: parent needs -> own needs -> parent `:init` -> own `:init`.
+- `super` calls parent's method. `super()` in `:init` calls parent's `:init`.
+- For multiple behaviors, combine `< Parent` with `implements Protocol`.
 
 ### 6.4 Modules & Namespaces
 
