@@ -1915,42 +1915,43 @@ end
 
 ### 7.2 Guards & Rules
 
-Guards validate data before a function body executes.
+Guards validate data before a function body executes. Guard functions are reusable — the same guard works as a function pre-condition (`@guard`) and as a model field constraint (`where guard`).
 
 ```opal
-# Standalone guard function
-guard old_enough(age) fails :too_young
-  return age >= 18
-end
-
-class Registration
-  # Type guards on parameters
-  @name in (String, Symbol)
-  @email in (String)
-  def register(name, email)
-    print(f"Registered {name} with {email}")
-  end
-
-  # Business rule guard with external function
-  @old_enough
-  def register_voter(name, age)
-    print(f"{name} registered to vote")
-  end
-end
-```
-
-```opal
-# Guard with custom error
+# Define reusable guards
 guard positive(value) fails :must_be_positive
   return value > 0
 end
 
+guard old_enough(age) fails :too_young
+  return age >= 18
+end
+
+# As function pre-condition (decorator) — guard receives the function's arguments
 @positive
 def sqrt(value::Float64) -> Float64
-  # only executes if value > 0
   value ** 0.5
 end
+
+@old_enough
+def register_voter(name::String, age::Int32)
+  print(f"{name} registered to vote")
+end
+
+# Same guards work in model field validation (where clause)
+model Registration
+  needs name::String where |v| v.length > 0
+  needs age::Int32 where old_enough
+  needs deposit::Float64 where positive
+end
 ```
+
+**Rules:**
+- `guard name(params) fails :symbol ... end` defines a reusable guard function.
+- `@guard_name` before a function definition = pre-condition. The guard receives the function's arguments. If it fails, raises a `GuardError` with the `:symbol`.
+- `where guard_name` on a model field = field validation. The guard receives the field's value. See [6.10 Models](#610-models-validated-data).
+- For type constraints on parameters, use type annotations: `param::Type` (see [6.2](#62-type-system)).
+- `@` is used for both guard decorators and macro invocations. Guards are resolved first; if no guard matches, it's treated as a macro.
 
 ### 7.3 Null Objects
 
