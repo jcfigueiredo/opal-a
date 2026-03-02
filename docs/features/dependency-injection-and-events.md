@@ -66,6 +66,8 @@ end
 
 ```opal
 actor PaymentProcessor
+  receives :charge
+
   needs gateway::PaymentGateway
 
   receive
@@ -243,6 +245,8 @@ end
 
 ```opal
 actor OrderProcessor
+  receives :process
+
   needs db::Database
 
   receive
@@ -352,6 +356,8 @@ end
 
 # --- Actor for stateful concurrent work ---
 actor PaymentProcessor
+  receives :charge
+
   needs gateway::PaymentGateway
 
   receive

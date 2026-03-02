@@ -26,6 +26,8 @@ Actors are long-lived concurrent entities with isolated state. All external inte
 
 ```opal
 actor Counter
+  receives :increment, :get_count, :reset
+
   def init()
     .count = 0
   end
@@ -58,6 +60,8 @@ c.send(:reset)         # => :ok
 
 ```opal
 actor Cache
+  receives :get, :set, :delete
+
   def init(ttl::Int32)
     .store = {:}
     .ttl = ttl
@@ -232,7 +236,7 @@ Supervisors watch child actors and restart them on failure.
 ```opal
 supervisor AppSupervisor
   strategy :one_for_one
-  max_restarts 3 within 60
+  max_restarts 3, 60
 
   supervise Logger.new()
   supervise Cache.new(ttl: 60)
@@ -252,7 +256,7 @@ app = AppSupervisor.start!
 
 ### `max_restarts` Circuit Breaker
 
-`max_restarts N within S` — if the supervisor has to restart children more than N times within S seconds, it gives up and propagates the failure upward.
+`max_restarts N, S` — if the supervisor has to restart children more than N times within S seconds, it gives up and propagates the failure upward.
 
 ### Supervisor Trees
 
@@ -267,10 +271,14 @@ supervisor RootSupervisor
 end
 ```
 
+**Note:** `strategy`, `max_restarts`, and `supervise` are contextual keywords — they are only reserved inside `supervisor` blocks and can be used as identifiers elsewhere.
+
 ### Actor Lifecycle Hooks
 
 ```opal
 actor Worker
+  receives :do
+
   def init()
     .jobs = []
   end
@@ -303,6 +311,8 @@ import Net
 import JSON
 
 actor RateLimiter
+  receives :check, :reset
+
   def init(max_per_second)
     .max = max_per_second
     .count = 0
@@ -347,7 +357,7 @@ end
 # Layer 4: Supervision for production
 supervisor DashboardSupervisor
   strategy :one_for_one
-  max_restarts 5 within 30
+  max_restarts 5, 30
 
   supervise RateLimiter.new(max_per_second: 100)
 end

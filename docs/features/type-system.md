@@ -44,6 +44,17 @@ end
 
 `Int8`, `Int16`, `Int32`, `Int64`, `Float32`, `Float64`, `Bool`, `Char`, `String`, `Template`, `Symbol`, `Null`, `List(T)`, `Tuple(...)`, `Dict(K, V)`, `Range(T)`, `Regex`.
 
+#### Symbol Sets
+
+Symbol sets are type aliases over unions of symbol literals:
+
+```opal
+type Status = :ok | :error | :pending
+type Direction = :north | :south | :east | :west
+```
+
+Symbol sets enable exhaustiveness checking in `match` and type-safe function signatures. They are for simple tags with no data — use `enum` for data-carrying variants.
+
 ---
 
 ## 2. Generics

@@ -159,6 +159,33 @@ macroexpand(@measure do 1 + 1 end)
 - `esc(expr)` escapes into the caller's scope (opt-in).
 - `macroexpand(@name args)` shows expansion without executing.
 
+### Macros vs Annotations
+
+Opal has two `@` syntaxes with distinct purposes:
+
+- `@name args` — **macro invocation** (transforms code at parse time)
+- `@[key: val, ...]` — **annotation** (attaches metadata, never transforms code)
+
+```opal
+# Macro — transforms the function definition
+@memoize
+def fibonacci(n::Int32) -> Int32
+  if n <= 1 then n else fibonacci(n - 1) + fibonacci(n - 2) end
+end
+
+# Annotation — attaches metadata, no transformation
+@[deprecated, since: "2.0"]
+def old_fibonacci(n::Int32) -> Int32
+  # ...
+end
+
+# Combined — annotation provides data, macro uses it
+@[json_field, name: "user_name"]
+needs name::String
+```
+
+Macros can read annotations via `field.annotations()` during code generation. This separates the "what metadata exists" concern (annotations) from the "what code transformation to apply" concern (macros).
+
 ---
 
 ## 3. AST Reflection & Introspection
@@ -527,6 +554,7 @@ Each subdomain is an independent package — you only import what you use.
 | `macroexpand()` | `macroexpand()` (identical) |
 | `@generated function` | Skipped — multiple dispatch + macros covers it |
 | Non-standard string literals | Already in Opal (`f"..."`, `r"..."`, `t"..."`) |
+| (no equivalent) | `@[key: val]` annotation (metadata, not transformation) |
 
 ### What Opal Doesn't Get
 

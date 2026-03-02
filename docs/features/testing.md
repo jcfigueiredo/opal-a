@@ -227,6 +227,18 @@ mock.last_args(:method) -> List      # arguments of last call
 mock.reset!()                        # clear all call records
 ```
 
+### Test-Only Helpers
+
+Use the `@[test_only]` annotation to mark helpers that should only be available in test code — they won't be available in production builds:
+
+```opal
+# Mark helpers as test-only — they won't be available in production code
+@[test_only]
+def create_test_user(name::String) -> User
+  User.new(name: name, email: f"{name}@test.com", age: 25)
+end
+```
+
 ---
 
 ## 6. Test Runner
