@@ -1060,6 +1060,41 @@ triple = |x| x * multiplier
 triple(10)  # => 30
 ```
 
+#### Capture Semantics
+
+Closures capture variables **by reference** — they see the live variable, not a snapshot. Mutations inside the closure affect the enclosing scope and vice versa.
+
+```opal
+counter = 0
+increment = || counter += 1
+
+increment()     # counter is now 1
+increment()     # counter is now 2
+print(counter)  # => 2
+
+# Closures see the live variable
+x = 10
+fn = || print(x)
+x = 20
+fn()  # => 20 (not 10)
+```
+
+#### Closure Types
+
+Closures can be typed using the `|ParamTypes| -> ReturnType` syntax:
+
+```opal
+# Closure type annotation
+transform::|Int32| -> Int32 = |x| x * 2
+
+# As a function parameter type
+def apply(fn::|Int32| -> Int32, value::Int32) -> Int32
+  fn(value)
+end
+
+apply(|x| x + 1, 5)  # => 6
+```
+
 ### 6.2 Type System
 
 Opal uses **gradual typing**: unannotated code is fully dynamic, annotated code is checked at boundaries (function entry, return, annotated assignment). Types serve two equal purposes: catching bugs early and documenting intent.
@@ -1566,6 +1601,49 @@ acct.calculate_interest()   # Error: private method called
 ```
 
 Default visibility is `public`. Mark methods `private` (accessible only within the class) or `protected` (accessible within the class and subclasses).
+
+#### Module-Level Visibility
+
+```opal
+# file: src/math.opl
+
+# Public (default) — importable
+def abs(x::Number)
+  if x < 0 then -x else x end
+end
+
+# Private — only usable within this module
+private def validate_input(x)
+  x != null
+end
+
+# Private class — implementation detail
+private class InternalCache
+  # ...
+end
+```
+
+```opal
+import Math
+Math.abs(-5)              # ok
+Math.validate_input(3)    # COMPILE ERROR — private
+```
+
+**Visibility rules:**
+- `public` (default) — accessible from anywhere. All top-level definitions are public unless marked otherwise.
+- `private` — accessible only within the defining class or module.
+- `protected` — accessible within the class and its subclasses (classes only, not applicable to modules).
+- Applies to: methods, functions, classes, enums, models, constants.
+- `needs` fields are public by default — they define the class's interface.
+- Default visibility is `public` for all constructs. Mark `private` or `protected` explicitly.
+
+**Visibility summary:**
+
+| Modifier | Class methods | Module definitions | `needs` fields |
+|---|---|---|---|
+| `public` (default) | Accessible everywhere | Importable | Readable |
+| `private` | Same class only | Same module only | N/A (needs are always public) |
+| `protected` | Class + subclasses | N/A | N/A |
 
 ### 6.6 Interfaces / Protocols
 
