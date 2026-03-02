@@ -10,7 +10,7 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
 
 - **Readability is paramount.** Code is read far more than it is written.
 - **One explicit way.** There should be one obvious way to do something — no alternative syntax for the same operation.
-- **Software engineering concepts are first-class.** Dependency injection, domain events, specifications, guards, null objects, the actor model, and metaprogramming are built into the language, not bolted on.
+- **Software engineering concepts are first-class.** Dependency injection, domain events, specifications, guards, null objects, validated models, settings, the actor model, and metaprogramming are built into the language, not bolted on.
 - **Batteries included.** Built-in testing, mocking, fixtures, documentation generation, project scaffolding, and package management.
 - **Gradual typing.** Write quick scripts with no annotations, then add types at module boundaries for safety.
 
@@ -59,6 +59,7 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
                    | <type_alias>
                    | <implements_for>
                    | <enum_def>
+                   | <model_def>
 
 <assignment>    ::= IDENTIFIER "=" <expression>
 
@@ -188,6 +189,14 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
                      ("implements" TYPE ("," TYPE)*)? NEWLINE
                      <variant>+ <function_def>* "end"
 <variant>       ::= IDENTIFIER ("(" <params> ")")?
+
+<model_def>     ::= "model" IDENTIFIER ("(" <type_params> ")")?
+                     ("as" IDENTIFIER)? NEWLINE
+                     (<needs_decl> | <where_field> | <validate_block> | <function_def>)* "end"
+<where_field>   ::= "needs" IDENTIFIER "::" TYPE ("=" <expression>)?
+                     "where" <field_constraint> ("," <field_constraint>)*
+<field_constraint> ::= <lambda> | IDENTIFIER ("(" <args> ")")?
+<validate_block>::= "validate" "do" NEWLINE <block> "end"
 
 <is_expr>       ::= <expression> "is" TYPE
 <propagate_expr>::= <expression> "!"
@@ -1665,6 +1674,105 @@ end
 - Enums support type parameters with constraints, same as classes.
 - `match` on an enum without covering all variants = compile-time error (unless `case _` is present).
 
+### 6.10 Models (Validated Data)
+
+> See [Validation & Settings](docs/features/validation-and-settings.md) for the full design rationale.
+
+The `model` keyword defines validated, immutable data structures — Opal's equivalent of Pydantic's BaseModel. Models validate on construction, serialize to/from dicts and JSON, and differ from `class` in semantics: data with constraints vs behavior with state.
+
+```opal
+model User
+  needs name::String where |v| v.length > 0
+  needs email::String where is_email
+  needs age::Int32 where |v| v >= 0
+  needs role::String = "member"
+end
+
+# Construction — validates all fields
+user = User.new(name: "claudio", email: "c@test.com", age: 15)
+
+# Immutable
+user.name         # => "claudio"
+user.name = "x"   # COMPILE ERROR — models are immutable
+
+# Modified copy (also validated)
+updated = user.copy(age: 16)
+```
+
+#### Field Validation
+
+Three forms of `where` — inline closures, named guards, and guards with partial application. Comma-separated to combine.
+
+```opal
+# Reusable guards
+guard is_email(value) fails :invalid_email
+  return /^[^@]+@[^@]+\.[^@]+$/.match?(value)
+end
+
+guard min_length(value, n) fails :too_short
+  return value.length >= n
+end
+
+model Account
+  needs email::String where is_email                     # named guard
+  needs age::Int32 where |v| v >= 0                      # inline closure
+  needs username::String where min_length(3)             # partial application
+  needs password::String where is_required, |v| v.length >= 8  # multiple
+  needs discount::Float64 = 0.0
+  needs price::Float64
+
+  # Cross-field validation
+  validate do
+    if .discount > .price
+      fail ValidationError.new(field: "discount", reason: "cannot exceed price")
+    end
+  end
+end
+```
+
+**Validation order:** type checking -> inline `where` per field -> `validate` blocks.
+
+#### Serialization
+
+Models automatically get `to_dict`/`from_dict` and `to_json`/`from_json`. Nested models serialize recursively. Deserialization validates on load.
+
+```opal
+model Address
+  needs street::String
+  needs city::String
+  needs zip::String where |v| /^\d{5}$/.match?(v)
+end
+
+model User
+  needs name::String where |v| v.length > 0
+  needs email::String where is_email
+  needs address::Address
+end
+
+user = User.new(
+  name: "claudio", email: "c@test.com",
+  address: Address.new(street: "123 Main", city: "Springfield", zip: "62704")
+)
+
+user.to_dict()   # => {"name": "claudio", "email": "c@test.com",
+                 #     "address": {"street": "123 Main", ...}}
+user.to_json()   # => '{"name": "claudio", ...}'
+
+# Deserialize — validates on load
+user = User.from_dict({"name": "claudio", "email": "c@test.com",
+                        "address": {"street": "123 Main", "city": "Springfield", "zip": "62704"}})
+```
+
+**Model rules:**
+- All fields declared with `needs` — same syntax as classes.
+- `where |v| expr` inline closure, `where guard_name`, or `where guard_name(args)` for partial application.
+- Comma-separated `where` constraints: all must pass.
+- `validate do ... end` for cross-field validation, runs after all fields pass.
+- Validation runs on `.new()`, `.from_dict()`, `.from_json()`, and `.copy()`.
+- Failed validation raises `ValidationError`.
+- `to_dict()` / `to_json()` serialize recursively. `from_dict()` / `from_json()` deserialize and validate.
+- Models can have methods but cannot mutate fields.
+
 ---
 
 ## 7. Error Handling & Safety
@@ -2523,6 +2631,63 @@ californian_and_under_21 = not over_age and californian
 some_people = people.where(californian_and_under_21.is_satisfied_by)  # => [claudio]
 ```
 
+### 9.4 Settings
+
+> See [Validation & Settings](docs/features/validation-and-settings.md) for the full design rationale.
+
+`model X as Settings` adds configuration loading from environment variables, config files, and `.env` files. Only the root model is `Settings` — nested groups are regular `model`s.
+
+```opal
+# Nested groups are regular models
+model DatabaseSettings
+  needs host::String = "localhost"
+  needs port::Int32 = 5432
+  needs name::String = "opal_dev"
+  needs pool_size::Int32 = 5 where |v| v > 0
+end
+
+model CacheSettings
+  needs host::String = "localhost"
+  needs port::Int32 = 6379
+  needs ttl::Int32 = 3600 where |v| v > 0
+end
+
+# Only the root is Settings
+model AppSettings as Settings
+  needs debug::Bool = false
+  needs secret_key::String
+  needs log_level::String = "info" where |v| v in ["debug", "info", "warn", "error"]
+  needs db::DatabaseSettings
+  needs cache::CacheSettings
+end
+
+# Load — root handles everything
+settings = AppSettings.load(
+  env_prefix: "OPAL_",
+  config: "config.toml"
+)
+
+settings.debug            # => from OPAL_DEBUG
+settings.db.host          # => from OPAL_DB__HOST or config or "localhost"
+settings.cache.ttl        # => from OPAL_CACHE__TTL or config or 3600
+settings.secret_key       # => required — raises SettingsError if missing
+```
+
+**Source priority (lowest to highest):**
+1. Field defaults in model definition
+2. Config file (TOML, JSON)
+3. `.env` file
+4. Environment variables
+5. Explicit keyword arguments to `.load()`
+
+**Settings rules:**
+- `model X as Settings` makes the root a settings model with `.load()`.
+- Nested groups are regular `model` — only the root loads from sources.
+- Env delimiter defaults to `__`, configurable via `env_delimiter:` in `.load()`.
+- Type coercion from env strings: `"true"` -> Bool, `"5432"` -> Int32, `"a,b,c"` -> List(String).
+- Required fields (no default) raise `SettingsError` if missing from all sources.
+- All validation runs after merging — same as regular models.
+
 ---
 
 ## 10. Metaprogramming
@@ -3071,6 +3236,7 @@ Opal ships with a standard library organized into modules:
 | `Iter` | `Iterable` and `Iterator` protocols, lazy sequences |
 | `Option` | `Option(T)` enum — `Some(value)` or `None` for explicit nullable handling |
 | `Result` | `Result(T, E)` enum — `Ok(value)` or `Err(error)` for error handling |
+| `Settings` | Base for settings models — env/config/file loading with source priority |
 
 ```opal
 import IO

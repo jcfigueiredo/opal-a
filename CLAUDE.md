@@ -44,3 +44,4 @@ When updating Opal.md, always check that changes are consistent across: BNF gram
 | `docs/features/self-hosting-foundations.md` | Operator overloading, iterators, custom errors, destructuring, protocol defaults |
 | `docs/features/enums-and-algebraic-types.md` | Enums, data-carrying variants, exhaustive matching, generic enums (Option, Result) |
 | `docs/features/error-handling.md` | Two-track model: exceptions vs Result types, `!` operator, bridging |
+| `docs/features/validation-and-settings.md` | `model` keyword, field validation with `where`, serialization, Settings loading |
