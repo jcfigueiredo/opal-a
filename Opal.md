@@ -317,6 +317,32 @@ another_price = 236.70 as Float64
 au = 149.700e9               # scientific notation -> Float64
 ```
 
+#### Numeric Semantics
+
+```opal
+# Integer division returns integer
+5 / 2        # => 2 (truncated)
+5.0 / 2.0    # => 2.5 (float division)
+5 / 2.0      # => 2.5 (promoted to float)
+5.to_f / 2   # => 2.5 (explicit conversion)
+
+# Modulo
+5 % 2        # => 1
+
+# Overflow is a runtime error (safe by default)
+x::Int32 = 2_147_483_647
+x + 1        # raises OverflowError
+
+# Explicit wrapping arithmetic when needed
+x.wrapping_add(1)  # => -2_147_483_648
+```
+
+**Numeric rules:**
+- Integer division truncates: `5 / 2 = 2`.
+- Mixed int/float operations promote to float: `5 / 2.0 = 2.5`.
+- Integer overflow raises `OverflowError`. Use `.wrapping_add()`, `.wrapping_mul()` etc. for unchecked arithmetic.
+- Default types: integer literals are `Int32`, float literals are `Float32`.
+
 #### 4.3.4 Characters
 
 Characters use single quotes. A char is a single Unicode code point.
@@ -465,6 +491,44 @@ Template strings give libraries control over how interpolated values are process
 | `f` | Interpolation with expressions | `String` |
 | `r` | Raw, no escape processing | `String` |
 | `t` | Template for safe interpolation | `Template` |
+
+#### String Methods
+
+Strings are immutable UTF-8 sequences. All methods return new strings (never mutate).
+
+```opal
+# Querying
+"hello".length              # => 5
+"hello".empty?()            # => false
+"hello".contains?("ell")    # => true
+"hello".starts_with?("he")  # => true
+"hello".ends_with?("lo")    # => true
+
+# Transforming
+"hello".upper()             # => "HELLO"
+"hello".lower()             # => "hello"
+"  hello  ".trim()          # => "hello"
+"hello".replace("l", "r")   # => "herro"
+"hello".reverse()           # => "olleh"
+
+# Splitting & Joining
+"a,b,c".split(",")          # => ["a", "b", "c"]
+["a", "b", "c"].join(", ")  # => "a, b, c"
+
+# Slicing
+"hello"[0]                  # => 'h' (Char)
+"hello"[1..3]               # => "ell" (String)
+
+# Conversion
+"42".to_int()               # => 42 (or raises on invalid)
+"3.14".to_float()           # => 3.14
+42.to_string()              # => "42"
+```
+
+**String rules:**
+- Strings are immutable UTF-8 sequences.
+- Indexing a string returns a `Char`. Slicing returns a `String`.
+- All transformation methods return new strings.
 
 #### 4.3.6 Symbols
 
@@ -623,6 +687,45 @@ numbers.push(6)           # [1, 2, 3, 4, 5, 6]
 numbers.map(|x| x * 2)   # [2, 4, 6, 8, 10]
 numbers.filter(|x| x > 3)           # [4, 5]
 numbers.reduce(0, |acc, x| acc + x)  # 15
+```
+
+#### Collection Methods
+
+All `Iterable` types (List, Range, etc.) support these methods:
+
+```opal
+numbers = [1, 2, 3, 4, 5]
+
+# Transforming
+numbers.map(|x| x * 2)                 # => [2, 4, 6, 8, 10]
+numbers.filter(|x| x > 3)              # => [4, 5]
+numbers.reduce(0, |acc, x| acc + x)    # => 15
+
+# Querying
+numbers.find(|x| x > 3)               # => 4 (first match, or null)
+numbers.any?(|x| x > 3)               # => true
+numbers.all?(|x| x > 0)               # => true
+numbers.count(|x| x > 3)              # => 2
+
+# Ordering
+numbers.sort()                          # => [1, 2, 3, 4, 5]
+numbers.sort(|a, b| b - a)             # => [5, 4, 3, 2, 1]
+numbers.reverse()                       # => [5, 4, 3, 2, 1]
+
+# Slicing
+numbers.take(3)                         # => [1, 2, 3]
+numbers.drop(3)                         # => [4, 5]
+
+# Grouping
+numbers.group_by(|x| if x > 3 then "big" else "small" end)
+# => {"small": [1, 2, 3], "big": [4, 5]}
+
+# Combining
+[1, 2].zip([3, 4])                     # => [(1, 3), (2, 4)]
+[[1, 2], [3, 4]].flatten()             # => [1, 2, 3, 4]
+
+# Iteration
+numbers.each(|x| print(x))             # prints each, returns null
 ```
 
 #### 4.5.2 Tuples
@@ -3638,14 +3741,14 @@ Opal ships with a standard library organized into modules:
 
 | Module | Purpose |
 |---|---|
-| `IO` | Standard input/output, printing, reading |
-| `File` | File reading, writing, path manipulation |
+| `IO` | Standard input/output: `print()`, `println()`, `read_line()`, `read_all()` |
+| `File` | File operations: `read()`, `write()`, `exists?()`, `delete()`, `list_dir()` |
 | `Net` | HTTP client/server, TCP/UDP sockets |
-| `Math` | Mathematical functions and constants |
-| `Collections` | Advanced data structures (Set, Queue, Stack, etc.) |
-| `String` | String manipulation, formatting, template processing |
-| `Time` | Date, time, duration, formatting |
-| `JSON` | JSON parsing and generation |
+| `Math` | Mathematical functions: `abs()`, `max()`, `min()`, `sqrt()`, `sin()`, `cos()`, constants (`PI`, `E`) |
+| `Collections` | Advanced data structures: Set, Queue, Stack, PriorityQueue |
+| `String` | String manipulation: `split()`, `join()`, `trim()`, `replace()`, `upper()`, `lower()` |
+| `Time` | Date, time, duration: `Time.now()`, `Time.parse()`, `Duration`, formatting |
+| `JSON` | JSON parsing and generation: `JSON.parse()`, `JSON.generate()`, streaming |
 | `Test` | Built-in test framework — `@describe`, `@test`, assertions, lifecycle hooks |
 | `Mock` | Mock creation for tests — `Mock.new(Protocol)`, stubs, call verification |
 | `Spec` | Specification pattern base classes |
