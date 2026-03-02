@@ -119,8 +119,16 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
                    | "until" <expression> NEWLINE <block> "end"
                    | "for" IDENTIFIER "in" <expression> NEWLINE <block> "end"
 
+<destructure>   ::= "(" <destruct_target> ("," <destruct_target>)* ")" "=" <expression>
+                   | "{" <dict_destruct> ("," <dict_destruct>)* "}" "=" <expression>
+                   | "[" <destruct_target> ("|" IDENTIFIER)? "]" "=" <expression>
+<destruct_target>::= IDENTIFIER | "_" | "(" <destruct_target> ("," <destruct_target>)* ")"
+<dict_destruct> ::= IDENTIFIER ":" IDENTIFIER | IDENTIFIER "?:" IDENTIFIER
+
+<operator_def>  ::= "def" OPERATOR "(" <params> ")" NEWLINE <block> "end"
+
 <class_def>     ::= "class" IDENTIFIER ("<" IDENTIFIER)? NEWLINE <class_body> "end"
-<class_body>    ::= (<needs_decl> | <function_def> | <assignment>)*
+<class_body>    ::= (<needs_decl> | <function_def> | <operator_def> | <assignment>)*
 
 <module_def>    ::= "module" IDENTIFIER NEWLINE <module_body> "end"
 <module_body>   ::= (<needs_decl> | <function_def> | <class_def> | <assignment> | <on_handler>)*
@@ -536,6 +544,77 @@ end
 ready = loaded and not errored
 ```
 
+#### Operator Overloading
+
+Operators are methods. The method form (inside a class) is sugar for the standalone form. Both use the same multiple dispatch mechanism.
+
+```opal
+class Vector
+  needs x::Float64
+  needs y::Float64
+
+  # Arithmetic operators as methods
+  def +(other::Vector) -> Vector
+    Vector.new(x: .x + other.x, y: .y + other.y)
+  end
+
+  def -() -> Vector  # unary negation
+    Vector.new(x: -.x, y: -.y)
+  end
+
+  # Indexing
+  def [](index::Int32) -> Float64
+    if index == 0 then .x else .y end
+  end
+
+  def []=(index::Int32, value::Float64)
+    if index == 0 then .x = value else .y = value end
+  end
+
+  # Comparison
+  def ==(other::Vector) -> Bool
+    .x == other.x and .y == other.y
+  end
+
+  # String representation (used by f-strings and print)
+  def to_string() -> String
+    f"({.x}, {.y})"
+  end
+end
+
+a = Vector.new(x: 1.0, y: 2.0)
+b = Vector.new(x: 3.0, y: 4.0)
+c = a + b          # => (4.0, 6.0)
+a[0]               # => 1.0
+print(f"result: {c}")  # => "result: (4.0, 6.0)"
+```
+
+```opal
+# Standalone form — for cross-type operators and third-party extension
+def *(scalar::Float64, v::Vector) -> Vector
+  Vector.new(x: scalar * v.x, y: scalar * v.y)
+end
+
+def *(v::Vector, scalar::Float64) -> Vector
+  scalar * v
+end
+
+2.0 * a   # => (2.0, 4.0) — standalone dispatch
+```
+
+The method form `def +(other::T)` inside a class is sugar for `def +(self::Self, other::T)`. Same dispatch resolution as regular functions.
+
+**Overloadable operators:**
+
+| Category | Operators |
+|---|---|
+| Arithmetic | `+`, `-`, `*`, `/`, `%`, `**`, unary `-` |
+| Comparison | `==`, `!=`, `<`, `>`, `<=`, `>=` |
+| Indexing | `[]`, `[]=` |
+| Conversion | `to_string()`, `to_bool()`, `iter()` |
+
+**Not overloadable** (language semantics): `=`, `and`, `or`, `not`, `..`, `...`, `is`, `as`.
+
 ### 4.7 Conditionals
 
 ```opal
@@ -777,15 +856,47 @@ Default visibility is `public`. Mark methods `private` (accessible only within t
 
 ### 4.13 Interfaces / Protocols
 
-Protocols define a contract that classes must fulfill.
+Protocols define a contract that classes must fulfill. Methods without a body are **required** — implementors must define them. Methods with a body are **defaults** — inherited automatically, overridable.
 
 ```opal
 protocol Printable
+  # Required
   def to_string() -> String
+
+  # Defaults — derived from to_string
+  def print()
+    IO.print(.to_string())
+  end
+
+  def println()
+    IO.println(.to_string())
+  end
+
+  def inspect() -> String
+    f"<{typeof(self).name}: {.to_string()}>"
+  end
 end
 
 protocol Comparable
+  # Required
   def compare_to(other) -> Int32
+
+  # Defaults — derived from compare_to
+  def <(other) -> Bool
+    .compare_to(other) < 0
+  end
+
+  def >(other) -> Bool
+    .compare_to(other) > 0
+  end
+
+  def <=(other) -> Bool
+    .compare_to(other) <= 0
+  end
+
+  def >=(other) -> Bool
+    .compare_to(other) >= 0
+  end
 end
 
 class Person implements Printable
@@ -797,10 +908,31 @@ class Person implements Printable
   def to_string()
     f"{.name}, age {.age}"
   end
+
+  # Override a default
+  def inspect()
+    f"<Person name={.name} age={.age}>"
+  end
 end
 
-# Multiple protocols
-class Temperature implements Printable, Comparable
+person = Person.new(name: "claudio", age: 15)
+person.println()   # "claudio, age 15" (default, calls to_string)
+person.inspect()   # "<Person name=claudio age=15>" (overridden)
+```
+
+```opal
+# Multiple protocols — implementor gets all defaults
+protocol Hashable
+  # Required
+  def hash_code() -> Int32
+
+  # Default
+  def ==(other) -> Bool
+    .hash_code() == other.hash_code()
+  end
+end
+
+class Temperature implements Printable, Comparable, Hashable
   def :init(degrees::Float32)
     .degrees = degrees
   end
@@ -809,14 +941,22 @@ class Temperature implements Printable, Comparable
     f"{.degrees}°"
   end
 
-  def compare_to(other::Temperature)
-    if .degrees < other.degrees then -1
-    else if .degrees > other.degrees then 1
-    else 0
-    end
+  def compare_to(other::Temperature) -> Int32
+    (.degrees - other.degrees) as Int32
+  end
+
+  def hash_code() -> Int32
+    .degrees as Int32
   end
 end
+
+a = Temperature.new(degrees: 20.0)
+b = Temperature.new(degrees: 30.0)
+a < b     # => true (default from Comparable)
+a.println()  # "20.0°" (default from Printable)
 ```
+
+If two protocols provide conflicting defaults for the same method name, the implementor must explicitly define it (ambiguity = compile-time error).
 
 ### 4.14 Guards & Rules
 
@@ -985,37 +1125,91 @@ process(-3)  # => "generic integer"  (guard fails, falls to base)
 
 ### 4.18 Error Handling
 
-Opal uses `try` / `on fail` / `ensure` for structured error handling.
+Opal uses `try` / `on fail` / `ensure` for structured error handling. Errors are classes that inherit from `Error`.
+
+#### Custom Error Types
+
+Define domain-specific errors by subclassing `Error`. The base class provides `.message` and `.stack_trace()`.
 
 ```opal
-# Basic
-def pine(x::Int32)
-  if x < 0
-    fail("invalid value")
+# Base Error (built-in)
+class Error
+  needs message::String
+
+  def stack_trace() -> List(String)
+    # provided by runtime
   end
-  x + 1
 end
 
-def cone(y::Int32) -> Int32
-  try
-    q = pine(y)
-  on fail as e
-    print(f"caught: {e.message}")
-    return 0
+# Custom errors — just classes with custom fields
+class FileNotFound < Error
+  needs path::String
+
+  def :init(path)
+    .path = path
+    super(message: f"File not found: {path}")
   end
-  q
+end
+
+class NetworkError < Error
+  needs url::String
+  needs status::Int32
+
+  def :init(url, status)
+    .url = url
+    .status = status
+    super(message: f"HTTP {status} from {url}")
+  end
+end
+
+class ValidationError < Error
+  needs field::String
+  needs reason::String
+
+  def :init(field, reason)
+    .field = field
+    .reason = reason
+    super(message: f"Validation failed on {field}: {reason}")
+  end
 end
 ```
 
+#### Error Hierarchies
+
+`on fail Type` catches errors of that type **and all its subclasses**.
+
 ```opal
-# Typed error handling
+class AppError < Error end
+class AuthError < AppError end
+class PermissionDenied < AuthError end
+class TokenExpired < AuthError end
+
+# Catches both PermissionDenied and TokenExpired
 try
-  result = risky_operation()
+  authenticate(token)
+on fail AuthError as e
+  print(f"Auth failed: {e.message}")
+end
+```
+
+#### Raising and Catching
+
+```opal
+def read_config(path::String) -> Dict
+  if not File.exists?(path)
+    fail FileNotFound.new(path: path)
+  end
+  JSON.parse(File.read(path))
+end
+
+try
+  config = read_config("missing.json")
 on fail FileNotFound as e
-  log(f"File missing: {e.message}")
-on fail NetworkError as e
-  retry after 1.second
+  print(f"Missing: {e.path}")
+on fail ValidationError as e
+  print(f"Bad field: {e.field} — {e.reason}")
 on fail as e
+  # Catch-all for any error
   log(f"Unexpected: {e.message}")
   fail(e)  # re-raise
 ensure
@@ -1418,6 +1612,7 @@ Opal ships with a standard library organized into modules:
 | `Mock` | Mocking and stubbing for tests |
 | `Spec` | Specification pattern base classes |
 | `Container` | Optional dependency injection container for large apps |
+| `Iter` | `Iterable` and `Iterator` protocols, lazy sequences |
 
 ```opal
 import IO
@@ -1733,6 +1928,151 @@ order_service.place_order(new_order)
 # 4. Sends email            (async, via NotificationHandler)
 # 5. Reserves stock         (async, via InventoryHandler)
 ```
+
+### 4.25 Destructuring Assignment
+
+Pattern matching syntax extended to regular assignment, function parameters, `for` loops, and closures. Same patterns as `match` — one way to do it everywhere.
+
+#### Tuples
+
+```opal
+(x, y) = get_point()
+(status, body) = http_get("/users")
+
+# Ignore with _
+(_, y) = get_point()
+
+# Nested
+(first, (a, b)) = (1, (2, 3))
+# first = 1, a = 2, b = 3
+```
+
+#### Dicts
+
+```opal
+{name: n, age: a} = {name: "claudio", age: 15, role: "admin"}
+# n = "claudio", a = 15 (extra keys ignored)
+
+# Optional keys with ?
+{name: n, age?: a} = {name: "claudio"}
+# n = "claudio", a = null
+```
+
+#### Lists (head/tail)
+
+```opal
+[first, second | rest] = [1, 2, 3, 4, 5]
+# first = 1, second = 2, rest = [3, 4, 5]
+
+[head | _] = [10, 20, 30]
+# head = 10
+```
+
+#### In Function Parameters
+
+```opal
+def distance((x1, y1), (x2, y2))
+  ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
+end
+
+distance((0, 0), (3, 4))  # => 5.0
+```
+
+#### In For Loops and Closures
+
+```opal
+pairs = [("alice", 30), ("bob", 25)]
+for (name, age) in pairs
+  print(f"{name} is {age}")
+end
+
+points.map(|(x, y)| x + y)
+```
+
+**Rules:**
+- `_` ignores a value.
+- `[head | tail]` splits a list into first element(s) and rest.
+- Dict destructuring extracts by key; extra keys are ignored. Missing required keys = runtime error.
+- `?` suffix on a dict key makes it optional (null if missing).
+
+### 4.26 Iterator Protocol
+
+Two protocols — `Iterable` (the thing you iterate over) and `Iterator` (the cursor). Any class implementing `Iterable` works with `for ... in` and collection methods like `map`, `filter`, `reduce`.
+
+```opal
+# Built-in protocols
+protocol Iterable
+  def iter() -> Iterator
+end
+
+protocol Iterator
+  def next() -> (value, done::Bool)
+end
+```
+
+```opal
+# Custom collection: iterate lines of a file
+class FileLines implements Iterable
+  needs path::String
+
+  def iter()
+    FileLinesIterator.new(file: File.open(.path))
+  end
+end
+
+class FileLinesIterator implements Iterator
+  needs file::File
+
+  def next()
+    line = .file.read_line()
+    if line == null
+      (null, true)    # done
+    else
+      (line, false)   # value
+    end
+  end
+end
+
+# Works with for-in
+for line in FileLines.new(path: "data.txt")
+  print(line)
+end
+
+# Works with collection methods
+FileLines.new(path: "data.txt")
+  .map(|line| line.trim())
+  .filter(|line| line.length > 0)
+```
+
+```opal
+# Lazy infinite sequence
+class Counter implements Iterable
+  needs start::Int32
+
+  def iter()
+    CounterIterator.new(current: .start)
+  end
+end
+
+class CounterIterator implements Iterator
+  needs current::Int32
+
+  def next()
+    value = .current
+    .current += 1
+    (value, false)  # never done
+  end
+end
+
+for n in Counter.new(start: 0).take(5)
+  print(n)  # 0, 1, 2, 3, 4
+end
+```
+
+**Rules:**
+- `Iterator.next()` returns a tuple `(value, done::Bool)`.
+- Built-in types (`List`, `Dict`, `Range`, `String`) all implement `Iterable`.
+- Collection methods (`map`, `filter`, `reduce`, `take`, `zip`) work on any `Iterable`.
 
 ---
 
