@@ -66,6 +66,8 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
                    | <export_stmt>
 
 <assignment>    ::= IDENTIFIER "=" <expression>
+                   | "let" IDENTIFIER "=" <expression>
+                   | "let" <destructure>
 
 <expression>    ::= <literal>
                    | IDENTIFIER
@@ -77,6 +79,8 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
                    | <expression> "?." IDENTIFIER "(" <args> ")"
                    | <expression> "??" <expression>
                    | <expression> "[" <expression> "]"
+                   | <expression> "in" <expression>
+                   | <expression> "not" "in" <expression>
                    | <function_call>
                    | <lambda>
                    | <with_expr>
@@ -267,6 +271,7 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
 <binary_op>     ::= "+" | "-" | "*" | "/" | "%" | "**"
                    | "==" | "!=" | "<" | ">" | "<=" | ">="
                    | "and" | "or"
+                   | "in" | "not" "in"
                    | ".." | "..."
                    | "|>"
 <unary_op>      ::= "-" | "not"
@@ -278,15 +283,15 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
 
 ### 4.1 Comments
 
-Single-line comments begin with `#`. Multiline comments are delimited by `#{` and `}#`.
+Single-line comments begin with `#`. Multiline comments are delimited by `###`.
 
 ```opal
 # This is a single-line comment
 
-#{
+###
   This is a multiline comment.
   It can span as many lines as needed.
-}#
+###
 
 x = 42  # inline comment
 ```
@@ -307,12 +312,40 @@ x, y = 1, 2
 x, y = y, x
 ```
 
+#### Immutable Bindings
+
+`let` creates an immutable binding — the variable cannot be reassigned after initialization.
+
+```opal
+let name = "claudio"
+name = "different"     # COMPILE ERROR — reassignment of let binding
+
+# Mutable (default) — no keyword needed
+counter = 0
+counter += 1           # ok
+
+# let with destructuring
+let (x, y) = get_point()
+x = 0                  # COMPILE ERROR
+
+# let with type annotation
+let pi::Float64 = 3.14159
+```
+
+**Rules:**
+- `let x = expr` creates an immutable binding.
+- `x = expr` (without `let`) creates a mutable binding — backward compatible.
+- Function parameters are implicitly immutable.
+- `let` works with destructuring and type annotations.
+- Reassigning a `let` binding is a compile-time error.
+
 Variable naming conventions:
 - `snake_case` for local variables and functions
 - `PascalCase` for classes, modules, and actors
 - `SCREAMING_SNAKE` for constants
 - `.name` for instance variables (inside classes)
 - `:name` for symbols
+- `let` for values that shouldn't change after assignment
 
 ### 4.3 Literals
 
@@ -536,6 +569,8 @@ Strings are immutable UTF-8 sequences. All methods return new strings (never mut
 "  hello  ".trim()          # => "hello"
 "hello".replace("l", "r")   # => "herro"
 "hello".reverse()           # => "olleh"
+"ha" * 3                    # => "hahaha"
+"-" * 40                    # => "----------------------------------------"
 
 # Splitting & Joining
 "a,b,c".split(",")          # => ["a", "b", "c"]
@@ -598,6 +633,22 @@ Symbols are self-identifying constants. They do not need to be assigned a value.
 | `and` | Logical AND |
 | `or` | Logical OR |
 | `not` | Logical NOT |
+
+#### Membership
+| Operator | Description |
+|---|---|
+| `in` | Membership test |
+| `not in` | Negated membership test |
+
+```opal
+3 in [1, 2, 3, 4]         # => true
+"key" in {"key": "value"}  # => true (checks keys)
+'c' in 'a'..'z'            # => true
+42 not in [1, 2, 3]        # => true
+
+# in is sugar for .contains?()
+list.contains?(3)          # equivalent to: 3 in list
+```
 
 #### Assignment
 | Operator | Description |
@@ -687,6 +738,7 @@ The method form `def +(other::T)` inside a class is sugar for `def +(self::Self,
 | Arithmetic | `+`, `-`, `*`, `/`, `%`, `**`, unary `-` |
 | Comparison | `==`, `!=`, `<`, `>`, `<=`, `>=` |
 | Indexing | `[]`, `[]=` |
+| Membership | `in` (delegates to `contains?()`) |
 | Conversion | `to_string()`, `to_bool()`, `iter()` |
 
 **Not overloadable** (language semantics): `=`, `and`, `or`, `not`, `..`, `...`, `is`, `as`, `|>`, `?.`, `??`.

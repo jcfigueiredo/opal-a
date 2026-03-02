@@ -22,7 +22,7 @@ These rules are enforced across all examples and specifications. Violating them 
 - **`::` for type annotations**: `name::String`
 - **`.` prefix for instance variables**: `.name`, `.age`
 - **`()` for tuples, `{}` for dicts**: Empty tuple `()`, empty dict `{:}`
-- **`#{ }#` for multiline comments** (not `/* */` or `""" """`)
+- **`###` for multiline comments** (not `/* */` or `""" """`)
 
 ## Design Process
 
