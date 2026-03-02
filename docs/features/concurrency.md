@@ -209,7 +209,7 @@ future = async risky_operation()
 try
   result = await future
 catch as e
-  print(f"Operaticatched: {e.message}")
+  print(f"Operation failed: {e.message}")
 end
 ```
 
@@ -226,7 +226,7 @@ end
 
 ## Layer 4: Supervisors
 
-Supervisors watch child actors and restart them catchure.
+Supervisors watch child actors and restart them on failure.
 
 ### Syntax
 

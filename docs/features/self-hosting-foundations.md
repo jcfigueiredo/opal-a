@@ -240,7 +240,7 @@ class ValidationError < Error
   def :init(field, reason)
     .field = field
     .reason = reason
-    super(message: f"Validaticatched on {field}: {reason}")
+    super(message: f"Validation failed on {field}: {reason}")
   end
 end
 ```
