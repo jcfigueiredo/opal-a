@@ -30,18 +30,15 @@ actor Counter
     .count = 0
   end
 
-  receive :increment
-    .count += 1
-    reply .count
-  end
-
-  receive :get_count
-    reply .count
-  end
-
-  receive :reset
-    .count = 0
-    reply :ok
+  receive
+    case :increment
+      .count += 1
+      reply .count
+    case :get_count
+      reply .count
+    case :reset
+      .count = 0
+      reply :ok
   end
 
   # Internal helper — NOT accessible from outside
@@ -66,13 +63,15 @@ actor Cache
     .ttl = ttl
   end
 
-  receive :get(key)
-    reply .store[key]
-  end
-
-  receive :set(key, value)
-    .store[key] = value
-    reply :ok
+  receive
+    case :get(key)
+      reply .store[key]
+    case :set(key, value)
+      .store[key] = value
+      reply :ok
+    case :delete(key)
+      .store.delete(key)
+      reply :ok
   end
 end
 
@@ -276,10 +275,11 @@ actor Worker
     .jobs = []
   end
 
-  receive :do(job)
-    .jobs.push(job)
-    process(job)
-    reply :ok
+  receive
+    case :do(job)
+      .jobs.push(job)
+      process(job)
+      reply :ok
   end
 
   # Called before the actor stops (crash or shutdown)
@@ -308,18 +308,17 @@ actor RateLimiter
     .count = 0
   end
 
-  receive :check
-    if .count < .max
-      .count += 1
+  receive
+    case :check
+      if .count < .max
+        .count += 1
+        reply :ok
+      else
+        reply :limited
+      end
+    case :reset
+      .count = 0
       reply :ok
-    else
-      reply :limited
-    end
-  end
-
-  receive :reset
-    .count = 0
-    reply :ok
   end
 end
 
@@ -360,7 +359,7 @@ end
 
 | Need | Tool | Syntax |
 |---|---|---|
-| Stateful concurrent entity | Actor | `actor`, `receive`, `.send()` |
+| Stateful concurrent entity | Actor | `actor`, `receive` with `case`, `.send()` |
 | Run N things concurrently, wait for all | Parallel block | `parallel ... end` |
 | Run N items concurrently | Parallel for | `parallel for x in xs ... end` |
 | Limit concurrency | Parallel max | `parallel max: N for ...` |

@@ -60,6 +60,7 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
                    | <implements_for>
                    | <enum_def>
                    | <model_def>
+                   | <settings_def>
                    | <extern_def>
                    | <import_stmt>
                    | <export_stmt>
@@ -117,14 +118,21 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
 <symbol>        ::= ":" IDENTIFIER
                    | ":" '"' STRING_CONTENT '"'
 
-<function_call> ::= IDENTIFIER "(" <args> ")"
-                   | <expression> "." IDENTIFIER "(" <args> ")"
+<function_call> ::= IDENTIFIER "(" <args> ")" <trailing_block>?
+                   | <expression> "." IDENTIFIER "(" <args> ")" <trailing_block>?
+                   | IDENTIFIER <trailing_block>
+<trailing_block>::= "do" ("|" <params> "|")? NEWLINE <block> "end"
 <args>          ::= <arg> ("," <arg>)*
 <arg>           ::= <expression>
                    | IDENTIFIER ":" <expression>
 
 <lambda>        ::= "|" <params> "|" <expression>
                    | "|" <params> "|" NEWLINE <block> "end"
+                   | "do" <expression> "end"
+                   | "do" NEWLINE <block> "end"
+                   | "do" "|" <params> "|" NEWLINE <block> "end"
+                   | "fn" "(" <params> ")" <expression> "end"
+                   | "fn" "(" <params> ")" NEWLINE <block> "end"
 
 <with_expr>     ::= <expression> "with" <dict>
 
@@ -183,7 +191,7 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
 
 <actor_def>     ::= "actor" IDENTIFIER NEWLINE <actor_body> "end"
 <actor_body>    ::= (<needs_decl> | <function_def> | <receive_clause>)*
-<receive_clause>::= "receive" SYMBOL ("(" <params> ")")? NEWLINE <block> "end"
+<receive_clause>::= "receive" NEWLINE <case_clause>+ "end"
 
 <supervisor_def>::= "supervisor" IDENTIFIER NEWLINE <supervisor_body> "end"
 <supervisor_body>::= ("strategy" SYMBOL NEWLINE)?
@@ -225,8 +233,9 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
                      <variant>+ <function_def>* "end"
 <variant>       ::= IDENTIFIER ("(" <params> ")")?
 
-<model_def>     ::= "model" IDENTIFIER ("(" <type_params> ")")?
-                     ("as" IDENTIFIER)? NEWLINE
+<model_def>     ::= "model" IDENTIFIER ("(" <type_params> ")")? NEWLINE
+                     (<needs_decl> | <where_field> | <validate_block> | <function_def>)* "end"
+<settings_def>  ::= "settings" "model" IDENTIFIER ("(" <type_params> ")")? NEWLINE
                      (<needs_decl> | <where_field> | <validate_block> | <function_def>)* "end"
 <where_field>   ::= "needs" IDENTIFIER "::" TYPE ("=" <expression>)?
                      "where" <field_constraint> ("," <field_constraint>)*
@@ -251,7 +260,7 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
 
 <class_def>     ::= "class" IDENTIFIER ("(" <type_params> ")")? ("<" IDENTIFIER)?
                      (<where_clause>)? NEWLINE <class_body> "end"
-<null_object_def> ::= "class" IDENTIFIER "as" IDENTIFIER "defaults" <dict>
+<null_object_def> ::= "class" IDENTIFIER "<" IDENTIFIER "defaults" <dict>
 
 <block>         ::= <statement>+
 
@@ -1249,17 +1258,23 @@ Closures capture variables **by reference** — they see the live variable, not 
 
 ```opal
 counter = 0
-increment = || counter += 1
+increment = do counter += 1 end
 
 increment()     # counter is now 1
 increment()     # counter is now 2
 print(counter)  # => 2
 
+# Multi-line no-arg closure
+setup = do
+  load_config()
+  init_db()
+end
+
 # Closures see the live variable
 x = 10
-fn = || print(x)
+show_x = do print(x) end
 x = 20
-fn()  # => 20 (not 10)
+show_x()  # => 20 (not 10)
 ```
 
 #### Closure Types
@@ -1277,6 +1292,65 @@ end
 
 apply(|x| x + 1, 5)  # => 6
 ```
+
+#### Trailing Blocks
+
+When the last argument to a function is a closure, it can be written as a trailing `do...end` block after the call.
+
+```opal
+# These are equivalent
+numbers.each(|x| print(x))
+numbers.each do |x| print(x) end
+
+# Trailing blocks shine for multi-line closures
+numbers.reduce(0) do |acc, x|
+  result = complex_operation(x)
+  acc + result
+end
+
+# Resource management
+File.open("data.txt") do |f|
+  data = f.read()
+  process(data)
+end
+
+# Already used in event handlers — this formalizes the pattern
+on OrderPlaced do |e|
+  .mailer.send_confirmation(e.order)
+end
+```
+
+**Rules:**
+- The trailing block becomes the last argument to the function call.
+- `f(a, b) do |x| ... end` is equivalent to `f(a, b, |x| ... end)`.
+- Only one trailing block per call.
+
+#### Named Closures with `fn`
+
+The `fn` keyword creates a function value. Use it when assigning closures to variables or passing complex multi-line functions.
+
+```opal
+# fn for stored function values
+double = fn(x) x * 2 end
+greet = fn(name) f"Hello, {name}" end
+
+# Multi-line
+handler = fn(request, response)
+  user = authenticate(request)
+  data = process(request.body)
+  response.json(data)
+end
+
+# |params| remains preferred for inline/short closures
+numbers.map(|x| x * 2)
+numbers.filter(|x| x > 0)
+```
+
+**When to use which:**
+- `|params| expr` -- inline closures passed directly to functions.
+- `fn(params) ... end` -- closures stored in variables or with multi-line bodies.
+- `do ... end` -- no-arg closures or trailing blocks.
+- All create the same type of value -- the choice is stylistic.
 
 ### 6.2 Type System
 
@@ -2653,7 +2727,7 @@ class NullPerson < Person
 end
 
 # Shortcut — auto-generates a subclass with default values
-class AnonymousPerson as Person defaults {name: "anonymous", age: 0}
+class AnonymousPerson < Person defaults {name: "anonymous", age: 0}
 # Equivalent to a subclass whose init calls super with these defaults.
 # All methods delegate to Person — only construction differs.
 ```
@@ -2696,18 +2770,15 @@ actor Counter
     .count = 0
   end
 
-  receive :increment
-    .count += 1
-    reply .count
-  end
-
-  receive :get_count
-    reply .count
-  end
-
-  receive :reset
-    .count = 0
-    reply :ok
+  receive
+    case :increment
+      .count += 1
+      reply .count
+    case :get_count
+      reply .count
+    case :reset
+      .count = 0
+      reply :ok
   end
 
   # Internal helper — not accessible from outside
@@ -2732,13 +2803,15 @@ actor Cache
     .ttl = ttl
   end
 
-  receive :get(key)
-    reply .store[key]
-  end
-
-  receive :set(key, value)
-    .store[key] = value
-    reply :ok
+  receive
+    case :get(key)
+      reply .store[key]
+    case :set(key, value)
+      .store[key] = value
+      reply :ok
+    case :delete(key)
+      .store.delete(key)
+      reply :ok
   end
 end
 
@@ -2879,10 +2952,11 @@ actor Worker
     .jobs = []
   end
 
-  receive :do(job)
-    .jobs.push(job)
-    process(job)
-    reply :ok
+  receive
+    case :do(job)
+      .jobs.push(job)
+      process(job)
+      reply :ok
   end
 
   # Called before the actor stops (crash or shutdown)
@@ -2909,18 +2983,17 @@ actor RateLimiter
     .count = 0
   end
 
-  receive :check
-    if .count < .max
-      .count += 1
+  receive
+    case :check
+      if .count < .max
+        .count += 1
+        reply :ok
+      else
+        reply :limited
+      end
+    case :reset
+      .count = 0
       reply :ok
-    else
-      reply :limited
-    end
-  end
-
-  receive :reset
-    .count = 0
-    reply :ok
   end
 end
 
@@ -2959,7 +3032,7 @@ end
 
 | Need | Tool | Syntax |
 |---|---|---|
-| Stateful concurrent entity | Actor | `actor`, `receive`, `.send()` |
+| Stateful concurrent entity | Actor | `actor`, `receive` with `case`, `.send()` |
 | Run N things concurrently, wait for all | Parallel block | `parallel ... end` |
 | Run N items concurrently | Parallel for | `parallel for x in xs ... end` |
 | Limit concurrency | Parallel max | `parallel max: N for ...` |
@@ -3026,9 +3099,10 @@ end
 actor PaymentProcessor
   needs gateway::PaymentGateway
 
-  receive :charge(order)
-    .gateway.charge(order.total)
-    reply :ok
+  receive
+    case :charge(order)
+      .gateway.charge(order.total)
+      reply :ok
   end
 end
 ```
@@ -3229,14 +3303,15 @@ end
 actor PaymentProcessor
   needs gateway::PaymentGateway
 
-  receive :charge(order)
-    try
-      .gateway.charge(order.total)
-      reply :ok
-    catch as e
-      emit PaymentFailed(order: order, reason: e.message)
-      reply :failed
-    end
+  receive
+    case :charge(order)
+      try
+        .gateway.charge(order.total)
+        reply :ok
+      catch as e
+        emit PaymentFailed(order: order, reason: e.message)
+        reply :failed
+      end
   end
 end
 
@@ -3282,13 +3357,13 @@ class Person
   needs place_of_birth::String
 end
 
-class OverAgeSpec as Specification
+class OverAgeSpec < Specification
   def is_satisfied_by(person::Person) -> Bool
     person.age >= 21
   end
 end
 
-class BornAtSpec as Specification
+class BornAtSpec < Specification
   needs born_at::String
 
   def is_satisfied_by(person::Person) -> Bool
@@ -3314,7 +3389,7 @@ some_people = people.filter(|p| spec.is_satisfied_by(p))  # => [claudio]
 
 > See [Validation & Settings](docs/features/validation-and-settings.md) for the full design rationale.
 
-`model X as Settings` adds configuration loading from environment variables, config files, and `.env` files. Only the root model is `Settings` — nested groups are regular `model`s.
+`settings model X` adds configuration loading from environment variables, config files, and `.env` files. Only the root model is a settings model — nested groups are regular `model`s.
 
 ```opal
 # Nested groups are regular models
@@ -3331,8 +3406,8 @@ model CacheSettings
   needs ttl::Int32 = 3600 where |v| v > 0
 end
 
-# Only the root is Settings
-model AppSettings as Settings
+# Only the root is a settings model
+settings model AppSettings
   needs debug::Bool = false
   needs secret_key::String
   needs log_level::String = "info" where |v| v in ["debug", "info", "warn", "error"]
@@ -3360,7 +3435,7 @@ settings.secret_key       # => required — raises SettingsError if missing
 5. Explicit keyword arguments to `.load()`
 
 **Settings rules:**
-- `model X as Settings` makes the root a settings model with `.load()`.
+- `settings model X` makes the root a settings model with `.load()`.
 - Nested groups are regular `model` — only the root loads from sources.
 - Env delimiter defaults to `__`, configurable via `env_delimiter:` in `.load()`.
 - Type coercion from env strings: `"true"` -> Bool, `"5432"` -> Int32, `"a,b,c"` -> List(String).

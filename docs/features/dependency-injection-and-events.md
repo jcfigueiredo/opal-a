@@ -68,9 +68,10 @@ end
 actor PaymentProcessor
   needs gateway::PaymentGateway
 
-  receive :charge(order)
-    .gateway.charge(order.total)
-    reply :ok
+  receive
+    case :charge(order)
+      .gateway.charge(order.total)
+      reply :ok
   end
 end
 ```
@@ -244,10 +245,11 @@ end
 actor OrderProcessor
   needs db::Database
 
-  receive :process(order)
-    .db.save(order)
-    emit OrderPlaced.new(order: order)  # works from inside actors
-    reply :ok
+  receive
+    case :process(order)
+      .db.save(order)
+      emit OrderPlaced.new(order: order)  # works from inside actors
+      reply :ok
   end
 end
 ```
@@ -352,14 +354,15 @@ end
 actor PaymentProcessor
   needs gateway::PaymentGateway
 
-  receive :charge(order)
-    try
-      .gateway.charge(order.total)
-      reply :ok
-    catch as e
-      emit PaymentFailed.new(order: order, reason: e.message)
-      reply :failed
-    end
+  receive
+    case :charge(order)
+      try
+        .gateway.charge(order.total)
+        reply :ok
+      catch as e
+        emit PaymentFailed.new(order: order, reason: e.message)
+        reply :failed
+      end
   end
 end
 

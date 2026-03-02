@@ -187,7 +187,7 @@ user = User.from_json('{"name": "claudio", ...}')
 
 ## 4. Settings Model
 
-`Settings` is a built-in base that adds configuration loading from environment variables and config files. Only the root model is `Settings` — nested groups are regular `model`s.
+The `settings model` modifier adds configuration loading from environment variables and config files. Only the root model is a settings model — nested groups are regular `model`s.
 
 ### Defining Settings
 
@@ -206,8 +206,8 @@ model CacheSettings
   needs ttl::Int32 = 3600 where |v| v > 0
 end
 
-# Only the root is Settings
-model AppSettings as Settings
+# Only the root is a settings model
+settings model AppSettings
   needs debug::Bool = false
   needs secret_key::String
   needs log_level::String = "info" where |v| v in ["debug", "info", "warn", "error"]
@@ -292,7 +292,7 @@ Environment variables are strings. Settings automatically coerces:
 
 ### Rules
 
-- `model X as Settings` makes the root a settings model with `.load()`.
+- `settings model X` makes the root a settings model with `.load()`.
 - Nested groups are regular `model` — only the root loads from sources.
 - Env delimiter defaults to `__`, configurable via `env_delimiter:`.
 - Required fields (no default) raise `SettingsError` if missing from all sources.
@@ -314,7 +314,7 @@ Environment variables are strings. Settings automatically coerces:
 | Cross-field validation | `validate do ... end` blocks |
 | Validation order | Type check -> inline `where` -> `validate` blocks |
 | Serialization | Built-in `to_dict`/`from_dict`, `to_json`/`from_json`, recursive |
-| Settings | `model X as Settings` with `.load()` |
+| Settings | `settings model X` with `.load()` |
 | Settings groups | Nested regular `model`s, root distributes values |
 | Env delimiter | Configurable, defaults to `__` |
 | Source priority | defaults < config file < .env < env vars < explicit args |
@@ -324,6 +324,6 @@ Environment variables are strings. Settings automatically coerces:
 | Keyword | Purpose |
 |---|---|
 | `model` | Define a validated, immutable data structure |
-| `as Settings` | Make a model load from env/config sources |
+| `settings model` | Define a settings model that loads from env/config sources |
 | `where` (on `needs`) | Inline field validation |
 | `validate` | Cross-field validation block |
