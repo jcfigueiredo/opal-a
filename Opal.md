@@ -203,6 +203,7 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
 
 <class_def>     ::= "class" IDENTIFIER ("(" <type_params> ")")? ("<" IDENTIFIER)?
                      (<where_clause>)? NEWLINE <class_body> "end"
+<null_object_def> ::= "class" IDENTIFIER "as" IDENTIFIER "defaults" <dict>
 
 <block>         ::= <statement>+
 
@@ -1957,25 +1958,29 @@ Null objects provide default behavior instead of null checks.
 
 ```opal
 class Person
-  def :init(name, age)
-    .name = name
-    .age = age
-  end
+  needs name::String
+  needs age::Int32
 
   def greet()
     print(f"Hi, I'm {.name}")
   end
 end
 
-# Define a Null Object by extending Nullable
-class NullPerson as Nullable:Person
-  def greet(*)
+# Full form — subclass with overridden behavior
+class NullPerson < Person
+  def :init()
+    super(name: "anonymous", age: 0)
+  end
+
+  def greet()
     print("Hi, I don't want to say my name")
   end
 end
 
-# Or shortcut: create a null variant with default values
-class NullPerson as Person defaults {name: "anonymous", age: 0}
+# Shortcut — auto-generates a subclass with default values
+class AnonymousPerson as Person defaults {name: "anonymous", age: 0}
+# Equivalent to a subclass whose :init calls super with these defaults.
+# All methods delegate to Person — only construction differs.
 ```
 
 ```opal
