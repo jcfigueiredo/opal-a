@@ -145,6 +145,24 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
 
 <match_expr>    ::= "match" <expression> NEWLINE <case_clause>+ "end"
 <case_clause>   ::= "case" <pattern> NEWLINE <block>
+<pattern>       ::= <literal>
+                   | IDENTIFIER
+                   | "_"
+                   | IDENTIFIER "::" TYPE
+                   | <tuple_pattern>
+                   | <list_pattern>
+                   | <dict_pattern>
+                   | <enum_pattern>
+                   | <pattern> "|" <pattern>
+                   | <pattern> "as" IDENTIFIER
+                   | <pattern> "if" <expression>
+<tuple_pattern>  ::= "(" <pattern> ("," <pattern>)* ")"
+<list_pattern>   ::= "[" "]"
+                    | "[" <pattern> ("," <pattern>)* "]"
+                    | "[" <pattern> "|" IDENTIFIER "]"
+<dict_pattern>   ::= "{" <dict_pat_entry> ("," <dict_pat_entry>)* "}"
+<dict_pat_entry> ::= IDENTIFIER ":" <pattern>
+<enum_pattern>   ::= <module_path> "." IDENTIFIER ("(" <pattern> ("," <pattern>)* ")")?
 
 <try_expr>      ::= "try" NEWLINE <block>
                      ("on" "fail" TYPE ("as" IDENTIFIER)? NEWLINE <block>)*
@@ -809,21 +827,73 @@ end
 
 ### 5.3 Pattern Matching
 
+Opal's `match` expression supports a rich set of pattern forms. Patterns are tried top-to-bottom; the first matching case wins. Destructuring in patterns mirrors [4.7 Destructuring Assignment](#47-destructuring-assignment) but within a match context.
+
+#### Literals & Ranges
+
 ```opal
 match value
   case 0
     "zero"
   case 1..10
     "small"
-  case x if x > 100
-    "large"
+  case "hello"
+    "greeting"
+  case :ok
+    "symbol"
+  case null
+    "nothing"
+  case true
+    "yes"
   case _
     "other"
 end
 ```
 
+#### Variable Binding & Type Matching
+
 ```opal
-# Destructuring tuples
+match response
+  case s::String
+    print(s)
+  case n::Int32
+    print(f"code: {n}")
+  case (status, body)
+    print(f"{status}: {body}")
+end
+```
+
+#### Or-Patterns
+
+Use `|` to match any of several alternatives in a single case arm. Or-patterns cannot bind variables (it would be ambiguous which alternative produced the binding).
+
+```opal
+match status_code
+  case 200 | 201 | 204
+    "success"
+  case 301 | 302
+    "redirect"
+  case 400 | 404 | 422
+    "client error"
+  case _
+    "other"
+end
+
+# Works with enums
+match direction
+  case Direction.North | Direction.South
+    "vertical"
+  case Direction.East | Direction.West
+    "horizontal"
+end
+```
+
+#### Tuple & Dict Destructuring
+
+Tuple patterns work like [4.7 Destructuring Assignment](#47-destructuring-assignment) inside match arms. Dict patterns extract values by key.
+
+```opal
+# Tuples
 match point
   case (0, 0)
     "origin"
@@ -835,16 +905,105 @@ match point
     f"at ({x}, {y})"
 end
 
-# Matching on type
-match response
-  case s::String
-    print(s)
-  case n::Int32
-    print(f"code: {n}")
-  case (status, body)
-    print(f"{status}: {body}")
+# Dicts
+match config
+  case {host: h, port: p}
+    connect(h, p)
+  case {host: h}
+    connect(h, 8080)
 end
 ```
+
+#### List Patterns
+
+Lists can be matched by exact shape or split into head and tail with `|`.
+
+```opal
+match items
+  case []
+    "empty"
+  case [only]
+    f"just {only}"
+  case [first, second]
+    f"{first} and {second}"
+  case [head | tail]
+    f"{head} and {tail.length} more"
+end
+```
+
+#### Enum Patterns & Nesting
+
+Enum variant patterns extract associated data. Patterns nest arbitrarily. See [6.9 Enums](#69-enums--algebraic-data-types) for enum definitions.
+
+```opal
+# Enum variant matching
+match shape
+  case Shape.Circle(r)
+    Math.PI * r ** 2
+  case Shape.Rectangle(w, h)
+    w * h
+  case Shape.Triangle(b, h)
+    0.5 * b * h
+end
+
+# Nested patterns — arbitrarily deep
+match result
+  case Result.Ok(Option.Some(value))
+    use(value)
+  case Result.Ok(Option.None)
+    use_default()
+  case Result.Err(e)
+    handle(e)
+end
+```
+
+#### Guards
+
+A `case` arm can include an `if` guard — the arm only matches when both the pattern and the condition are true.
+
+```opal
+match value
+  case x if x > 100
+    "large"
+  case x if x > 0
+    "positive"
+  case x
+    "non-positive"
+end
+```
+
+#### As-Bindings
+
+`as name` binds the entire matched value while still destructuring its contents.
+
+```opal
+match shape
+  case Shape.Circle(r) as original
+    log(original)          # the whole Circle value
+    Math.PI * r ** 2
+  case _ as s
+    log(f"unknown: {s}")
+    0.0
+end
+```
+
+#### Pattern Summary
+
+| Pattern | Example | Matches |
+|---|---|---|
+| Literal | `case 42`, `case "hello"`, `case null` | Exact value |
+| Range | `case 1..10` | Value in range |
+| Variable | `case x` | Anything, binds to `x` |
+| Wildcard | `case _` | Anything, no binding |
+| Type | `case s::String` | Value of type, binds |
+| Tuple | `case (x, y)` | Tuple destructure |
+| List | `case []`, `case [h \| t]` | List destructure |
+| Dict | `case {key: v}` | Dict destructure |
+| Enum | `case Shape.Circle(r)` | Variant + extract fields |
+| Nested | `case Result.Ok(Option.Some(v))` | Arbitrarily nested |
+| Or | `case 1 \| 2 \| 3` | Any of listed (no bindings) |
+| Guard | `case x if x > 0` | Pattern + condition |
+| As-binding | `case Shape.Circle(r) as s` | Destructure + bind whole |
 
 When matching on an `enum` type, the compiler enforces **exhaustive matching** — all variants must be covered or a `case _` catch-all must be present. See [6.9 Enums](#69-enums--algebraic-data-types) for details.
 
