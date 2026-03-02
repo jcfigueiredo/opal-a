@@ -58,6 +58,7 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
                    | <quote_expr>
                    | <type_alias>
                    | <implements_for>
+                   | <enum_def>
 
 <assignment>    ::= IDENTIFIER "=" <expression>
 
@@ -182,6 +183,11 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
 <constraint>    ::= IDENTIFIER "implements" TYPE ("," TYPE)*
 
 <implements_for>::= "implements" TYPE "for" TYPE NEWLINE <class_body> "end"
+
+<enum_def>      ::= "enum" IDENTIFIER ("(" <type_params> ")")?
+                     ("implements" TYPE ("," TYPE)*)? NEWLINE
+                     <variant>+ <function_def>* "end"
+<variant>       ::= IDENTIFIER ("(" <params> ")")?
 
 <is_expr>       ::= <expression> "is" TYPE
 
@@ -814,6 +820,8 @@ match response
     print(f"{status}: {body}")
 end
 ```
+
+When matching on an `enum` type, the compiler enforces **exhaustive matching** — all variants must be covered or a `case _` catch-all must be present. See [6.9 Enums](#69-enums--algebraic-data-types) for details.
 
 ---
 
@@ -1510,6 +1518,151 @@ end
 - `Iterator.next()` returns a tuple `(value, done::Bool)`.
 - Built-in types (`List`, `Dict`, `Range`, `String`) all implement `Iterable`.
 - Collection methods (`map`, `filter`, `reduce`, `take`, `zip`) work on any `Iterable`.
+
+### 6.9 Enums & Algebraic Data Types
+
+> See [Enums & Algebraic Data Types](docs/features/enums-and-algebraic-types.md) for the full design rationale.
+
+The `enum` keyword defines a closed set of variants. Variants without fields are simple constants. Variants with fields carry data. One keyword covers both simple enums and full algebraic data types.
+
+```opal
+# Simple enum — no data
+enum Direction
+  North
+  South
+  East
+  West
+end
+
+# Data-carrying variants
+enum Shape
+  Circle(radius::Float64)
+  Rectangle(width::Float64, height::Float64)
+  Triangle(base::Float64, height::Float64)
+end
+
+# Mixed
+enum Response
+  Success(body::String, headers::Dict(String, String))
+  NotFound(path::String)
+  ServerError(reason::String, code::Int32)
+  Unauthorized
+end
+
+# Construction
+d = Direction.North
+s = Shape.Circle(radius: 5.0)
+r = Response.Success(body: "hello", headers: {:})
+```
+
+#### Exhaustive Pattern Matching
+
+Matching on an enum must cover all variants or include a `case _` catch-all. Missing a variant is a compile-time error.
+
+```opal
+match shape
+  case Shape.Circle(r)
+    Math.pi * r ** 2
+  case Shape.Rectangle(w, h)
+    w * h
+  case Shape.Triangle(b, h)
+    0.5 * b * h
+end
+
+# Guards work with enum variants
+match response
+  case Response.ServerError(reason, code) if code >= 500
+    retry()
+  case Response.ServerError(reason, code)
+    log(f"client error {code}: {reason}")
+  case Response.Success(body, _)
+    process(body)
+  case _
+    handle_other()
+end
+```
+
+#### Methods & Protocols
+
+Enums can have methods and implement protocols. Methods operate on `self` and typically match across variants.
+
+```opal
+enum Shape implements Printable
+  Circle(radius::Float64)
+  Rectangle(width::Float64, height::Float64)
+  Triangle(base::Float64, height::Float64)
+
+  def area() -> Float64
+    match self
+      case Shape.Circle(r)
+        Math.pi * r ** 2
+      case Shape.Rectangle(w, h)
+        w * h
+      case Shape.Triangle(b, h)
+        0.5 * b * h
+    end
+  end
+
+  def to_string() -> String
+    match self
+      case Shape.Circle(r)
+        f"Circle(r={r})"
+      case Shape.Rectangle(w, h)
+        f"Rect({w}x{h})"
+      case Shape.Triangle(b, h)
+        f"Tri(b={b}, h={h})"
+    end
+  end
+end
+
+s = Shape.Circle(radius: 5.0)
+s.area()       # => 78.539...
+s.println()    # "Circle(r=5.0)" — default from Printable
+```
+
+#### Generic Enums
+
+Enums support type parameters, enabling foundational stdlib types like `Option(T)` and `Result(T, E)`.
+
+```opal
+enum Option(T)
+  Some(value::T)
+  None
+end
+
+enum Result(T, E)
+  Ok(value::T)
+  Err(error::E)
+end
+
+# Type inferred from construction
+opt = Option.Some(value: 42)       # Option(Int32)
+opt = Option(String).None           # explicit when ambiguous
+
+# Result in practice
+def parse_int(s::String) -> Result(Int32, String)
+  # ...
+end
+
+match parse_int("42")
+  case Result.Ok(n)
+    print(f"parsed: {n}")
+  case Result.Err(msg)
+    print(f"failed: {msg}")
+end
+```
+
+**Relationship to `?` nullable:** `T?` stays as `T | Null` — lightweight nullable for everyday use. `Option(T)` is a stdlib enum for explicit `Some`/`None` with exhaustive matching. They are separate types.
+
+**Enum rules:**
+- Variants are accessed as `EnumName.VariantName`.
+- Variants with fields use named arguments: `Shape.Circle(radius: 5.0)`.
+- Variants without fields are singletons.
+- Enums are closed and immutable — no variants can be added, values cannot be modified.
+- Methods are defined inside the `enum` block, after the variants.
+- Enums can `implements` protocols. Retroactive conformance works on enums.
+- Enums support type parameters with constraints, same as classes.
+- `match` on an enum without covering all variants = compile-time error (unless `case _` is present).
 
 ---
 
@@ -2878,6 +3031,8 @@ Opal ships with a standard library organized into modules:
 | `Spec` | Specification pattern base classes |
 | `Container` | Optional dependency injection container for large apps |
 | `Iter` | `Iterable` and `Iterator` protocols, lazy sequences |
+| `Option` | `Option(T)` enum — `Some(value)` or `None` for explicit nullable handling |
+| `Result` | `Result(T, E)` enum — `Ok(value)` or `Err(error)` for error handling |
 
 ```opal
 import IO
