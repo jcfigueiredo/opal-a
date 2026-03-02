@@ -10,7 +10,7 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
 
 - **Readability is paramount.** Code is read far more than it is written.
 - **One explicit way.** There should be one obvious way to do something — no alternative syntax for the same operation.
-- **Software engineering concepts are first-class.** Dependency injection, domain events, specifications, guards, null objects, and the actor model are built into the language, not bolted on.
+- **Software engineering concepts are first-class.** Dependency injection, domain events, specifications, guards, null objects, the actor model, and metaprogramming are built into the language, not bolted on.
 - **Batteries included.** Built-in testing, mocking, fixtures, documentation generation, project scaffolding, and package management.
 - **Gradual typing.** Write quick scripts with no annotations, then add types at module boundaries for safety.
 
@@ -54,6 +54,8 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
                    | <event_def>
                    | <emit_expr>
                    | <on_handler>
+                   | <macro_def>
+                   | <quote_expr>
 
 <assignment>    ::= IDENTIFIER "=" <expression>
 
@@ -161,6 +163,11 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
 <emit_expr>     ::= "emit" <expression> ("await")?
 <on_handler>    ::= "on" TYPE "do" "|" IDENTIFIER "|" NEWLINE <block> "end"
 
+<macro_def>     ::= "macro" IDENTIFIER "(" <params> ")" NEWLINE <block> "end"
+<macro_invoke>  ::= "@" IDENTIFIER <args>?
+<quote_expr>    ::= "quote" <expression> "end"
+                   | "quote" NEWLINE <block> "end"
+
 <block>         ::= <statement>+
 
 <binary_op>     ::= "+" | "-" | "*" | "/" | "%" | "**"
@@ -172,7 +179,7 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
 
 ---
 
-## 4. Syntax & Semantics
+## 4. Basics
 
 ### 4.1 Comments
 
@@ -402,99 +409,7 @@ Symbols are self-identifying constants. They do not need to be assigned a value.
 :yes!
 ```
 
-### 4.4 Collections
-
-#### 4.4.1 Lists
-
-Lists are ordered, mutable sequences.
-
-```opal
-[]                        # empty list
-numbers = [1, 2, 3, 4, 5]
-names = ["alice", "bob"]
-mixed = [1, "hello", :ok] # List(Int32 | String | Symbol)
-
-# Access
-numbers[0]                # => 1
-numbers[-1]               # => 5
-
-# Common operations
-numbers.length            # => 5
-numbers.push(6)           # [1, 2, 3, 4, 5, 6]
-numbers.map(|x| x * 2)   # [2, 4, 6, 8, 10]
-numbers.filter(|x| x > 3)           # [4, 5]
-numbers.reduce(0, |acc, x| acc + x)  # 15
-```
-
-#### 4.4.2 Tuples
-
-Tuples are ordered, immutable sequences. They use parentheses.
-
-```opal
-()                              # empty tuple
-point = (10, 20)                # Tuple(Int32, Int32)
-record = (:banana, "apple", '🙈')  # Tuple(Symbol, String, Char)
-
-record[0]                       # => :banana
-record[1]                       # => "apple"
-record[2]                       # => '🙈'
-```
-
-#### 4.4.3 Dictionaries
-
-Dictionaries are mutable mappings of key-value pairs. Keys can be any immutable object and must be unique.
-
-```opal
-{:}                             # empty dict
-{1: 2, 3: 4}                   # Dict(Int32, Int32)
-{1: 2, "a": 3}                 # Dict(Int32 | String, Int32)
-{"α": "alpha", "β": "beta"}    # Dict(String, String)
-{:plane: "✈", :train: "🚂"}    # Dict(Symbol, String)
-
-# Access
-ages = {"alice": 30, "bob": 25}
-ages["alice"]                   # => 30
-ages["carol"] = 28              # insert new entry
-```
-
-#### 4.4.4 Ranges
-
-A range is constructed with a range literal. Types on both extremes must be the same.
-
-```opal
-1..10       # inclusive range: 1, 2, 3, ..., 10
-1...10      # exclusive range: 1, 2, 3, ..., 9
-'a'..'z'    # character range
-
-# Ranges are iterable
-for i in 1..5
-  print(i)
-end
-```
-
-### 4.5 Regex
-
-Regular expressions use the `Regex` class, typically created with a literal delimited by `/`.
-
-```opal
-foo_or_bar = /foo|bar/
-heEello    = /h(e+)llo/i
-integer    = /\d+/
-
-# Modifiers:
-#   i  — ignore case (PCRE_CASELESS)
-#   m  — multiline (PCRE_MULTILINE)
-#   x  — extended (PCRE_EXTENDED)
-
-# Usage
-if "hello" =~ /h(e+)llo/
-  print("matched!")
-end
-
-"foo bar baz".scan(/\w+/)  # => ["foo", "bar", "baz"]
-```
-
-### 4.6 Operators
+### 4.4 Operators
 
 #### Arithmetic
 | Operator | Description |
@@ -615,7 +530,169 @@ The method form `def +(other::T)` inside a class is sugar for `def +(self::Self,
 
 **Not overloadable** (language semantics): `=`, `and`, `or`, `not`, `..`, `...`, `is`, `as`.
 
-### 4.7 Conditionals
+### 4.5 Collections
+
+#### 4.5.1 Lists
+
+Lists are ordered, mutable sequences.
+
+```opal
+[]                        # empty list
+numbers = [1, 2, 3, 4, 5]
+names = ["alice", "bob"]
+mixed = [1, "hello", :ok] # List(Int32 | String | Symbol)
+
+# Access
+numbers[0]                # => 1
+numbers[-1]               # => 5
+
+# Common operations
+numbers.length            # => 5
+numbers.push(6)           # [1, 2, 3, 4, 5, 6]
+numbers.map(|x| x * 2)   # [2, 4, 6, 8, 10]
+numbers.filter(|x| x > 3)           # [4, 5]
+numbers.reduce(0, |acc, x| acc + x)  # 15
+```
+
+#### 4.5.2 Tuples
+
+Tuples are ordered, immutable sequences. They use parentheses.
+
+```opal
+()                              # empty tuple
+point = (10, 20)                # Tuple(Int32, Int32)
+record = (:banana, "apple", '🙈')  # Tuple(Symbol, String, Char)
+
+record[0]                       # => :banana
+record[1]                       # => "apple"
+record[2]                       # => '🙈'
+```
+
+#### 4.5.3 Dictionaries
+
+Dictionaries are mutable mappings of key-value pairs. Keys can be any immutable object and must be unique.
+
+```opal
+{:}                             # empty dict
+{1: 2, 3: 4}                   # Dict(Int32, Int32)
+{1: 2, "a": 3}                 # Dict(Int32 | String, Int32)
+{"α": "alpha", "β": "beta"}    # Dict(String, String)
+{:plane: "✈", :train: "🚂"}    # Dict(Symbol, String)
+
+# Access
+ages = {"alice": 30, "bob": 25}
+ages["alice"]                   # => 30
+ages["carol"] = 28              # insert new entry
+```
+
+#### 4.5.4 Ranges
+
+A range is constructed with a range literal. Types on both extremes must be the same.
+
+```opal
+1..10       # inclusive range: 1, 2, 3, ..., 10
+1...10      # exclusive range: 1, 2, 3, ..., 9
+'a'..'z'    # character range
+
+# Ranges are iterable
+for i in 1..5
+  print(i)
+end
+```
+
+### 4.6 Regex
+
+Regular expressions use the `Regex` class, typically created with a literal delimited by `/`.
+
+```opal
+foo_or_bar = /foo|bar/
+heEello    = /h(e+)llo/i
+integer    = /\d+/
+
+# Modifiers:
+#   i  — ignore case (PCRE_CASELESS)
+#   m  — multiline (PCRE_MULTILINE)
+#   x  — extended (PCRE_EXTENDED)
+
+# Usage
+if "hello" =~ /h(e+)llo/
+  print("matched!")
+end
+
+"foo bar baz".scan(/\w+/)  # => ["foo", "bar", "baz"]
+```
+
+### 4.7 Destructuring Assignment
+
+Pattern matching syntax extended to regular assignment, function parameters, `for` loops, and closures. Same patterns as `match` — one way to do it everywhere.
+
+#### Tuples
+
+```opal
+(x, y) = get_point()
+(status, body) = http_get("/users")
+
+# Ignore with _
+(_, y) = get_point()
+
+# Nested
+(first, (a, b)) = (1, (2, 3))
+# first = 1, a = 2, b = 3
+```
+
+#### Dicts
+
+```opal
+{name: n, age: a} = {name: "claudio", age: 15, role: "admin"}
+# n = "claudio", a = 15 (extra keys ignored)
+
+# Optional keys with ?
+{name: n, age?: a} = {name: "claudio"}
+# n = "claudio", a = null
+```
+
+#### Lists (head/tail)
+
+```opal
+[first, second | rest] = [1, 2, 3, 4, 5]
+# first = 1, second = 2, rest = [3, 4, 5]
+
+[head | _] = [10, 20, 30]
+# head = 10
+```
+
+#### In Function Parameters
+
+```opal
+def distance((x1, y1), (x2, y2))
+  ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
+end
+
+distance((0, 0), (3, 4))  # => 5.0
+```
+
+#### In For Loops and Closures
+
+```opal
+pairs = [("alice", 30), ("bob", 25)]
+for (name, age) in pairs
+  print(f"{name} is {age}")
+end
+
+points.map(|(x, y)| x + y)
+```
+
+**Rules:**
+- `_` ignores a value.
+- `[head | tail]` splits a list into first element(s) and rest.
+- Dict destructuring extracts by key; extra keys are ignored. Missing required keys = runtime error.
+- `?` suffix on a dict key makes it optional (null if missing).
+
+---
+
+## 5. Control Flow
+
+### 5.1 Conditionals
 
 ```opal
 # if / else
@@ -640,7 +717,7 @@ print("odd") unless n % 2 == 0
 status = if active then "on" else "off" end
 ```
 
-### 4.8 Loops & Iteration
+### 5.2 Loops & Iteration
 
 ```opal
 # while
@@ -675,7 +752,50 @@ for n in 1..100
 end
 ```
 
-### 4.9 Functions & Closures
+### 5.3 Pattern Matching
+
+```opal
+match value
+  case 0
+    "zero"
+  case 1..10
+    "small"
+  case x if x > 100
+    "large"
+  case _
+    "other"
+end
+```
+
+```opal
+# Destructuring tuples
+match point
+  case (0, 0)
+    "origin"
+  case (x, 0)
+    f"on x-axis at {x}"
+  case (0, y)
+    f"on y-axis at {y}"
+  case (x, y)
+    f"at ({x}, {y})"
+end
+
+# Matching on type
+match response
+  case s::String
+    print(s)
+  case n::Int32
+    print(f"code: {n}")
+  case (status, body)
+    print(f"{status}: {body}")
+end
+```
+
+---
+
+## 6. Functions & Types
+
+### 6.1 Functions & Closures
 
 Functions are defined with `def`. They are first-class values.
 
@@ -724,7 +844,44 @@ triple = |x| x * multiplier
 triple(10)  # => 30
 ```
 
-### 4.10 Classes & Methods
+### 6.2 Type System
+
+Opal uses **gradual typing**: unannotated code is dynamic, annotated code is checked.
+
+```opal
+# No annotations — fully dynamic
+def add(a, b)
+  a + b
+end
+
+# Annotated — type-checked at boundaries
+def add(a::Int32, b::Int32) -> Int32
+  a + b
+end
+
+# Type annotation syntax: :: for types
+name::String = "claudio"
+age::Int32 = 15
+
+# Explicit casting with `as`
+x = 3.14 as Int32   # => 3
+
+# Optional types
+def find(id::Int32) -> Person?
+  # may return null
+end
+```
+
+**Core types:** `Int8`, `Int16`, `Int32`, `Int64`, `Float32`, `Float64`, `Bool`, `Char`, `String`, `Template`, `Symbol`, `Null`, `List(T)`, `Tuple(...)`, `Dict(K, V)`, `Range(T)`, `Regex`.
+
+**Type rules:**
+- Unannotated parameters and variables are dynamic — no checking.
+- Annotated parameters are checked at call sites.
+- Return type annotations are checked at function exit.
+- `as` performs explicit type conversion.
+- `?` suffix denotes a nullable type (e.g., `String?` means `String | Null`).
+
+### 6.3 Classes & Methods
 
 Classes use `def :init()` for construction. Instance variables are accessed with the `.` prefix.
 
@@ -782,7 +939,7 @@ rex = Dog.new()
 rex.talk()  # => "Woof!"
 ```
 
-### 4.11 Modules & Namespaces
+### 6.4 Modules & Namespaces
 
 Modules group related functions, classes, and constants.
 
@@ -820,7 +977,7 @@ c = Geometry.Circle.new(radius: 5.0)
 c.area()  # => 78.539...
 ```
 
-### 4.12 Visibility / Access Control
+### 6.5 Visibility / Access Control
 
 ```opal
 class Account
@@ -854,7 +1011,7 @@ acct.calculate_interest()   # Error: private method called
 
 Default visibility is `public`. Mark methods `private` (accessible only within the class) or `protected` (accessible within the class and subclasses).
 
-### 4.13 Interfaces / Protocols
+### 6.6 Interfaces / Protocols
 
 Protocols define a contract that classes must fulfill. Methods without a body are **required** — implementors must define them. Methods with a body are **defaults** — inherited automatically, overridable.
 
@@ -958,127 +1115,7 @@ a.println()  # "20.0°" (default from Printable)
 
 If two protocols provide conflicting defaults for the same method name, the implementor must explicitly define it (ambiguity = compile-time error).
 
-### 4.14 Guards & Rules
-
-Guards validate data before a function body executes.
-
-```opal
-# Standalone guard function
-guard old_enough(age) fails :too_young
-  return age >= 18
-end
-
-class Registration
-  # Type guards on parameters
-  @name in (String, Symbol)
-  @email in (String)
-  def register(name, email)
-    print(f"Registered {name} with {email}")
-  end
-
-  # Business rule guard with external function
-  @old_enough
-  def register_voter(name, age)
-    print(f"{name} registered to vote")
-  end
-end
-```
-
-```opal
-# Guard with custom error
-guard positive(value) fails :must_be_positive
-  return value > 0
-end
-
-@positive
-def sqrt(value::Float64) -> Float64
-  # only executes if value > 0
-  value ** 0.5
-end
-```
-
-### 4.15 Null Objects
-
-Null objects provide default behavior instead of null checks.
-
-```opal
-class Person
-  def :init(name, age)
-    .name = name
-    .age = age
-  end
-
-  def greet()
-    print(f"Hi, I'm {.name}")
-  end
-end
-
-# Define a Null Object by extending Nullable
-class NullPerson as Nullable:Person
-  def greet(*)
-    print("Hi, I don't want to say my name")
-  end
-end
-
-# Or shortcut: create a null variant with default values
-class NullPerson as Person defaults {name: "anonymous", age: 0}
-```
-
-```opal
-# Usage
-def find_person(id)
-  result = database.find(id)
-  if result == null
-    NullPerson.new()
-  else
-    result
-  end
-end
-
-person = find_person(999)
-person.greet()  # no null check needed — NullPerson handles it
-```
-
-### 4.16 Pattern Matching
-
-```opal
-match value
-  case 0
-    "zero"
-  case 1..10
-    "small"
-  case x if x > 100
-    "large"
-  case _
-    "other"
-end
-```
-
-```opal
-# Destructuring tuples
-match point
-  case (0, 0)
-    "origin"
-  case (x, 0)
-    f"on x-axis at {x}"
-  case (0, y)
-    f"on y-axis at {y}"
-  case (x, y)
-    f"at ({x}, {y})"
-end
-
-# Matching on type
-match response
-  case s::String
-    print(s)
-  case n::Int32
-    print(f"code: {n}")
-  case (status, body)
-    print(f"{status}: {body}")
-end
-```
-
-### 4.17 Multiple Dispatch
+### 6.7 Multiple Dispatch
 
 Functions can have multiple definitions that dispatch based on argument types, arity, and guards.
 
@@ -1123,7 +1160,90 @@ process(5)   # => "positive integer" (guard match wins)
 process(-3)  # => "generic integer"  (guard fails, falls to base)
 ```
 
-### 4.18 Error Handling
+### 6.8 Iterator Protocol
+
+Two protocols — `Iterable` (the thing you iterate over) and `Iterator` (the cursor). Any class implementing `Iterable` works with `for ... in` and collection methods like `map`, `filter`, `reduce`.
+
+```opal
+# Built-in protocols
+protocol Iterable
+  def iter() -> Iterator
+end
+
+protocol Iterator
+  def next() -> (value, done::Bool)
+end
+```
+
+```opal
+# Custom collection: iterate lines of a file
+class FileLines implements Iterable
+  needs path::String
+
+  def iter()
+    FileLinesIterator.new(file: File.open(.path))
+  end
+end
+
+class FileLinesIterator implements Iterator
+  needs file::File
+
+  def next()
+    line = .file.read_line()
+    if line == null
+      (null, true)    # done
+    else
+      (line, false)   # value
+    end
+  end
+end
+
+# Works with for-in
+for line in FileLines.new(path: "data.txt")
+  print(line)
+end
+
+# Works with collection methods
+FileLines.new(path: "data.txt")
+  .map(|line| line.trim())
+  .filter(|line| line.length > 0)
+```
+
+```opal
+# Lazy infinite sequence
+class Counter implements Iterable
+  needs start::Int32
+
+  def iter()
+    CounterIterator.new(current: .start)
+  end
+end
+
+class CounterIterator implements Iterator
+  needs current::Int32
+
+  def next()
+    value = .current
+    .current += 1
+    (value, false)  # never done
+  end
+end
+
+for n in Counter.new(start: 0).take(5)
+  print(n)  # 0, 1, 2, 3, 4
+end
+```
+
+**Rules:**
+- `Iterator.next()` returns a tuple `(value, done::Bool)`.
+- Built-in types (`List`, `Dict`, `Range`, `String`) all implement `Iterable`.
+- Collection methods (`map`, `filter`, `reduce`, `take`, `zip`) work on any `Iterable`.
+
+---
+
+## 7. Error Handling & Safety
+
+### 7.1 Error Handling
 
 Opal uses `try` / `on fail` / `ensure` for structured error handling. Errors are classes that inherit from `Error`.
 
@@ -1219,7 +1339,90 @@ end
 
 `ensure` always executes, whether the block succeeded or failed.
 
-### 4.19 Concurrency
+### 7.2 Guards & Rules
+
+Guards validate data before a function body executes.
+
+```opal
+# Standalone guard function
+guard old_enough(age) fails :too_young
+  return age >= 18
+end
+
+class Registration
+  # Type guards on parameters
+  @name in (String, Symbol)
+  @email in (String)
+  def register(name, email)
+    print(f"Registered {name} with {email}")
+  end
+
+  # Business rule guard with external function
+  @old_enough
+  def register_voter(name, age)
+    print(f"{name} registered to vote")
+  end
+end
+```
+
+```opal
+# Guard with custom error
+guard positive(value) fails :must_be_positive
+  return value > 0
+end
+
+@positive
+def sqrt(value::Float64) -> Float64
+  # only executes if value > 0
+  value ** 0.5
+end
+```
+
+### 7.3 Null Objects
+
+Null objects provide default behavior instead of null checks.
+
+```opal
+class Person
+  def :init(name, age)
+    .name = name
+    .age = age
+  end
+
+  def greet()
+    print(f"Hi, I'm {.name}")
+  end
+end
+
+# Define a Null Object by extending Nullable
+class NullPerson as Nullable:Person
+  def greet(*)
+    print("Hi, I don't want to say my name")
+  end
+end
+
+# Or shortcut: create a null variant with default values
+class NullPerson as Person defaults {name: "anonymous", age: 0}
+```
+
+```opal
+# Usage
+def find_person(id)
+  result = database.find(id)
+  if result == null
+    NullPerson.new()
+  else
+    result
+  end
+end
+
+person = find_person(999)
+person.greet()  # no null check needed — NullPerson handles it
+```
+
+---
+
+## 8. Concurrency
 
 Opal's concurrency model has four layers: **actors** for stateful concurrent entities, **parallel blocks** for structured concurrency, **async/futures** for individual non-blocking calls, and **supervisors** for fault tolerance.
 
@@ -1228,7 +1431,7 @@ Opal's concurrency model has four layers: **actors** for stateful concurrent ent
 - **No colored functions** — there is no `async def`. Any expression can be made async at the call site.
 - **Structured concurrency** — concurrent work has a parent scope. No orphaned tasks.
 
-#### 4.19.1 Actors
+### 8.1 Actors
 
 Actors are long-lived concurrent entities with isolated state. All external interaction goes through message passing via `receive` blocks and `.send()`. Methods defined with `def` are internal only.
 
@@ -1289,7 +1492,7 @@ cache.send(:set, "user:1", "claudio")
 cache.send(:get, "user:1")  # => "claudio"
 ```
 
-#### 4.19.2 Structured Concurrency (`parallel`)
+### 8.2 Structured Concurrency (`parallel`)
 
 The `parallel` block runs expressions concurrently and waits for all to complete.
 
@@ -1333,7 +1536,7 @@ on fail as e
 end
 ```
 
-#### 4.19.3 Async / Futures
+### 8.3 Async / Futures
 
 For when `parallel` is too rigid and you need fine-grained control.
 
@@ -1378,7 +1581,7 @@ end
 - `.ready?()` checks completion without blocking.
 - Failures are captured in the Future and re-raised on await.
 
-#### 4.19.4 Supervisors
+### 8.4 Supervisors
 
 Supervisors watch child actors and restart them on failure.
 
@@ -1439,7 +1642,7 @@ actor Worker
 end
 ```
 
-#### 4.19.5 Complete Example
+### 8.5 Complete Example
 
 ```opal
 import Net
@@ -1509,137 +1712,11 @@ end
 | Fault tolerance | Supervisor | `supervisor`, `strategy`, `supervise` |
 | Crash recovery hooks | Lifecycle | `on_crash(reason)`, `on_restart()` |
 
-### 4.20 Specifications
+---
 
-The specification pattern allows composable business rules.
+## 9. Software Engineering Patterns
 
-```opal
-import "patterns.Specification"
-
-class Person
-  def :init(name, age, place_of_birth)
-    .name = name
-    .age = age
-    .place_of_birth = place_of_birth
-  end
-end
-
-class OverAgeSpec as Specification
-  @person in (Person)
-  def is_satisfied_by(person)
-    person.age >= 21
-  end
-end
-
-class BornAtSpec as Specification
-  @born_at in (String)
-  def :init(born_at)
-    .born_at = born_at
-  end
-
-  @person in (Person)
-  def is_satisfied_by(person)
-    person.place_of_birth == .born_at
-  end
-end
-
-claudio = Person.new(name: "claudio", age: 15, place_of_birth: "CA")
-andrea = Person.new(name: "andrea", age: 21, place_of_birth: "CT")
-people = [claudio, andrea]
-
-over_age = OverAgeSpec.new()
-over_age_people = people.where(over_age.is_satisfied_by)  # => [andrea]
-
-californian = BornAtSpec.new(born_at: "CA")
-
-# Logically combining business rules
-californian_and_under_21 = not over_age and californian
-some_people = people.where(californian_and_under_21.is_satisfied_by)  # => [claudio]
-```
-
-### 4.21 Type System
-
-Opal uses **gradual typing**: unannotated code is dynamic, annotated code is checked.
-
-```opal
-# No annotations — fully dynamic
-def add(a, b)
-  a + b
-end
-
-# Annotated — type-checked at boundaries
-def add(a::Int32, b::Int32) -> Int32
-  a + b
-end
-
-# Type annotation syntax: :: for types
-name::String = "claudio"
-age::Int32 = 15
-
-# Explicit casting with `as`
-x = 3.14 as Int32   # => 3
-
-# Optional types
-def find(id::Int32) -> Person?
-  # may return null
-end
-```
-
-**Core types:** `Int8`, `Int16`, `Int32`, `Int64`, `Float32`, `Float64`, `Bool`, `Char`, `String`, `Template`, `Symbol`, `Null`, `List(T)`, `Tuple(...)`, `Dict(K, V)`, `Range(T)`, `Regex`.
-
-**Type rules:**
-- Unannotated parameters and variables are dynamic — no checking.
-- Annotated parameters are checked at call sites.
-- Return type annotations are checked at function exit.
-- `as` performs explicit type conversion.
-- `?` suffix denotes a nullable type (e.g., `String?` means `String | Null`).
-
-### 4.22 Standard Library
-
-Opal ships with a standard library organized into modules:
-
-| Module | Purpose |
-|---|---|
-| `IO` | Standard input/output, printing, reading |
-| `File` | File reading, writing, path manipulation |
-| `Net` | HTTP client/server, TCP/UDP sockets |
-| `Math` | Mathematical functions and constants |
-| `Collections` | Advanced data structures (Set, Queue, Stack, etc.) |
-| `String` | String manipulation, formatting, template processing |
-| `Time` | Date, time, duration, formatting |
-| `JSON` | JSON parsing and generation |
-| `Test` | Built-in test framework, assertions |
-| `Mock` | Mocking and stubbing for tests |
-| `Spec` | Specification pattern base classes |
-| `Container` | Optional dependency injection container for large apps |
-| `Iter` | `Iterable` and `Iterator` protocols, lazy sequences |
-
-```opal
-import IO
-import File
-import JSON
-
-# Read a JSON config file
-content = File.read("config.json")
-config = JSON.parse(content)
-IO.print(f"Loaded {config.keys().length} settings")
-```
-
-```opal
-import Test
-
-Test.describe("Math operations")
-  Test.it("adds two numbers")
-    Test.assert_eq(2 + 2, 4)
-  end
-
-  Test.it("handles negative numbers")
-    Test.assert_eq(-1 + 1, 0)
-  end
-end
-```
-
-### 4.23 Dependency Injection (`needs`)
+### 9.1 Dependency Injection (`needs`)
 
 `needs` declares a dependency with a name and a protocol/type. Dependencies become instance variables (`.name`) and must be provided at construction time via `.new()`.
 
@@ -1739,7 +1816,7 @@ test_service = test_app.resolve(OrderService)
 
 `Container` is a standard library class, not a language keyword — the language stays small.
 
-### 4.24 Domain Events (`event`, `emit`, `on`)
+### 9.2 Domain Events (`event`, `emit`, `on`)
 
 Events are declared as named, immutable data structures. They're emitted with `emit` and handled with `on`. Under the hood, events are dispatched through an actor-based event bus — handlers get supervision and fault tolerance for free.
 
@@ -1929,154 +2006,627 @@ order_service.place_order(new_order)
 # 5. Reserves stock         (async, via InventoryHandler)
 ```
 
-### 4.25 Destructuring Assignment
+### 9.3 Specifications
 
-Pattern matching syntax extended to regular assignment, function parameters, `for` loops, and closures. Same patterns as `match` — one way to do it everywhere.
-
-#### Tuples
+The specification pattern allows composable business rules.
 
 ```opal
-(x, y) = get_point()
-(status, body) = http_get("/users")
+import "patterns.Specification"
 
-# Ignore with _
-(_, y) = get_point()
-
-# Nested
-(first, (a, b)) = (1, (2, 3))
-# first = 1, a = 2, b = 3
-```
-
-#### Dicts
-
-```opal
-{name: n, age: a} = {name: "claudio", age: 15, role: "admin"}
-# n = "claudio", a = 15 (extra keys ignored)
-
-# Optional keys with ?
-{name: n, age?: a} = {name: "claudio"}
-# n = "claudio", a = null
-```
-
-#### Lists (head/tail)
-
-```opal
-[first, second | rest] = [1, 2, 3, 4, 5]
-# first = 1, second = 2, rest = [3, 4, 5]
-
-[head | _] = [10, 20, 30]
-# head = 10
-```
-
-#### In Function Parameters
-
-```opal
-def distance((x1, y1), (x2, y2))
-  ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
-end
-
-distance((0, 0), (3, 4))  # => 5.0
-```
-
-#### In For Loops and Closures
-
-```opal
-pairs = [("alice", 30), ("bob", 25)]
-for (name, age) in pairs
-  print(f"{name} is {age}")
-end
-
-points.map(|(x, y)| x + y)
-```
-
-**Rules:**
-- `_` ignores a value.
-- `[head | tail]` splits a list into first element(s) and rest.
-- Dict destructuring extracts by key; extra keys are ignored. Missing required keys = runtime error.
-- `?` suffix on a dict key makes it optional (null if missing).
-
-### 4.26 Iterator Protocol
-
-Two protocols — `Iterable` (the thing you iterate over) and `Iterator` (the cursor). Any class implementing `Iterable` works with `for ... in` and collection methods like `map`, `filter`, `reduce`.
-
-```opal
-# Built-in protocols
-protocol Iterable
-  def iter() -> Iterator
-end
-
-protocol Iterator
-  def next() -> (value, done::Bool)
-end
-```
-
-```opal
-# Custom collection: iterate lines of a file
-class FileLines implements Iterable
-  needs path::String
-
-  def iter()
-    FileLinesIterator.new(file: File.open(.path))
+class Person
+  def :init(name, age, place_of_birth)
+    .name = name
+    .age = age
+    .place_of_birth = place_of_birth
   end
 end
 
-class FileLinesIterator implements Iterator
-  needs file::File
+class OverAgeSpec as Specification
+  @person in (Person)
+  def is_satisfied_by(person)
+    person.age >= 21
+  end
+end
 
-  def next()
-    line = .file.read_line()
-    if line == null
-      (null, true)    # done
-    else
-      (line, false)   # value
+class BornAtSpec as Specification
+  @born_at in (String)
+  def :init(born_at)
+    .born_at = born_at
+  end
+
+  @person in (Person)
+  def is_satisfied_by(person)
+    person.place_of_birth == .born_at
+  end
+end
+
+claudio = Person.new(name: "claudio", age: 15, place_of_birth: "CA")
+andrea = Person.new(name: "andrea", age: 21, place_of_birth: "CT")
+people = [claudio, andrea]
+
+over_age = OverAgeSpec.new()
+over_age_people = people.where(over_age.is_satisfied_by)  # => [andrea]
+
+californian = BornAtSpec.new(born_at: "CA")
+
+# Logically combining business rules
+californian_and_under_21 = not over_age and californian
+some_people = people.where(californian_and_under_21.is_satisfied_by)  # => [claudio]
+```
+
+---
+
+## 10. Metaprogramming
+
+Opal's metaprogramming system is Julia-inspired, adapted to Opal's `end`-block syntax and `:symbol` conventions. It provides quoting, interpolation, macros, and AST manipulation as first-class features.
+
+**Core principles:**
+- **Hygienic by default.** Macro-introduced variables don't leak into the caller's scope. Explicit `esc()` to opt out.
+- **Valid AST only.** Macros produce Opal AST nodes, not arbitrary text. No C-preprocessor-style pitfalls.
+- **No generated functions.** Opal's multiple dispatch + macros covers the same ground — YAGNI.
+- **Subdomains as macro packages.** Users and Opal itself can define domain-specific extensions as packages of macros.
+
+### 10.1 Quoting — Code as Data
+
+Code is captured as `Expr` (AST node) using `quote ... end`. Inside a quote, `$` interpolates values.
+
+#### Basic Quoting
+
+```opal
+# Capture code as data
+ast = quote x + y * 2 end
+typeof(ast)   # => Expr
+ast.head      # => :call
+ast.args      # => [:+, :x, Expr(:call, :*, :y, 2)]
+
+# Multi-line quoting
+ast = quote
+  x = 1
+  y = 2
+  x + y
+end
+```
+
+#### Interpolation
+
+```opal
+# Splice runtime values into the AST
+name = :greet
+message = "hello"
+ast = quote
+  def $name()
+    print($message)
+  end
+end
+# ast represents: def greet() print("hello") end
+
+# Splat interpolation for lists
+params = [:a, :b, :c]
+ast = quote f($params...) end
+# ast represents: f(a, b, c)
+```
+
+#### Programmatic AST Construction
+
+```opal
+# Build AST without quoting
+ast = Expr.new(:call, :+, 1, 2)
+eval(ast)  # => 3
+
+# Equivalent to:
+ast = quote 1 + 2 end
+eval(ast)  # => 3
+```
+
+#### Rules
+
+- `quote ... end` returns an `Expr` — code as a manipulable data structure.
+- `$expr` inside a quote splices the value of `expr` into the AST at construction time.
+- `$list...` splats a list of expressions into argument position.
+- `Expr.new(head, args...)` constructs AST nodes programmatically.
+- `eval(expr)` evaluates an `Expr` at runtime (metaprogramming use only).
+
+### 10.2 Macros
+
+Macros receive AST at parse time and return transformed AST. They're hygienic by default.
+
+#### Basic Macros
+
+```opal
+macro say_hello()
+  quote
+    print("Hello, world!")
+  end
+end
+
+@say_hello  # => "Hello, world!"
+```
+
+#### Macros with Arguments
+
+```opal
+macro say_hello(name)
+  quote
+    print(f"Hello, {$name}")
+  end
+end
+
+@say_hello "claudio"  # => "Hello, claudio"
+```
+
+#### Hygiene
+
+Variables introduced inside a macro's `quote` are scoped to the macro — they don't shadow or leak into the caller's scope.
+
+```opal
+macro measure(body)
+  quote
+    start = Time.now()
+    result = $body
+    elapsed = Time.since(start)
+    print(f"Took {elapsed}")
+    result
+  end
+end
+
+# Safe — caller's 'start' is NOT shadowed
+start = "hello"
+@measure do
+  expensive_operation()
+end
+print(start)  # still "hello"
+```
+
+#### Escaping Hygiene
+
+Use `esc(expr)` to explicitly inject an expression into the caller's scope:
+
+```opal
+macro define_var(name, value)
+  quote
+    $(esc(name)) = $value
+  end
+end
+
+@define_var x, 42
+print(x)  # => 42 (x exists in caller's scope because of esc)
+```
+
+#### Debugging Macros
+
+```opal
+# See what a macro expands to without executing it
+macroexpand(@measure do 1 + 1 end)
+# => Expr representing the expanded code
+```
+
+#### Rules
+
+- `macro name(params) ... end` defines a macro. The body must return an `Expr`.
+- `@name args` invokes a macro at parse time.
+- Macros receive arguments as `Expr` (AST), not evaluated values.
+- **Hygienic by default:** variables in macro quotes don't leak.
+- `esc(expr)` escapes into the caller's scope (opt-in).
+- `macroexpand(@name args)` shows expansion without executing.
+
+### 10.3 AST Reflection & Introspection
+
+#### Inspecting Expressions
+
+```opal
+ast = quote x + y * 2 end
+ast.dump()
+# Expr(:call, :+,
+#   :x,
+#   Expr(:call, :*, :y, 2))
+
+ast.head       # => :call
+ast.args       # => [:+, :x, Expr(:call, :*, :y, 2)]
+ast.args[0]    # => :+ (the operator)
+ast.args[1]    # => :x
+```
+
+#### Transforming AST
+
+```opal
+def double_literals(expr::Expr)
+  match expr
+    case n::Int32
+      n * 2
+    case Expr(head, args)
+      Expr.new(head, args.map(|a| double_literals(a))...)
+    case other
+      other
+  end
+end
+
+ast = quote 1 + 2 * 3 end
+doubled = double_literals(ast)
+eval(doubled)  # => eval(2 + 4 * 6) => 26
+```
+
+#### Runtime Introspection
+
+```opal
+# Introspect functions
+methods(greet)         # => list of dispatch variants
+typeof(greet)          # => Function
+code_ast(greet)        # => the Expr representing the function body
+
+# Introspect classes
+User.fields()          # => [(:name, String), (:email, String), (:age, Int32)]
+User.methods()         # => [:to_json, :from_json, :new, ...]
+User.needs()           # => [(:db, Database), (:mailer, Mailer)]
+User.implements()      # => [Printable, Comparable]
+```
+
+### 10.4 Practical Macro Examples
+
+#### Code Generation — JSON Serialization
+
+```opal
+macro json_serializable(class_def)
+  fields = class_def.needs_fields()
+
+  to_json = quote
+    def to_json()
+      JSON.object($(generate_field_pairs(fields)...))
+    end
+  end
+
+  from_json = quote
+    def self.from_json(data::String)
+      parsed = JSON.parse(data)
+      self.new($(generate_from_json(fields)...))
+    end
+  end
+
+  class_def.add_methods(to_json, from_json)
+end
+
+@json_serializable
+class User
+  needs name::String
+  needs email::String
+  needs age::Int32
+end
+
+user = User.new(name: "claudio", email: "c@opal.dev", age: 15)
+user.to_json()   # => '{"name":"claudio","email":"c@opal.dev","age":15}'
+User.from_json('{"name":"claudio","email":"c@opal.dev","age":15}')
+```
+
+#### DSL Creation — Test Framework
+
+```opal
+macro test(name, body)
+  quote
+    try
+      $body
+      Test.pass($name)
+    on fail as e
+      Test.fail($name, e.message)
     end
   end
 end
 
-# Works with for-in
-for line in FileLines.new(path: "data.txt")
-  print(line)
+macro describe(name, body)
+  quote
+    Test.group($name)
+    $body
+    Test.end_group()
+  end
 end
 
-# Works with collection methods
-FileLines.new(path: "data.txt")
-  .map(|line| line.trim())
-  .filter(|line| line.length > 0)
+@describe "Math" do
+  @test "addition" do
+    assert_eq(2 + 2, 4)
+  end
+
+  @test "negative numbers" do
+    assert_eq(-1 + 1, 0)
+  end
+end
+```
+
+#### Debugging — @debug Macro
+
+```opal
+macro debug(expr)
+  name = string(expr)
+  quote
+    value = $expr
+    print(f"Debug: {$name} = {value}")
+    value
+  end
+end
+
+x = 42
+@debug x * 2 + 1  # => "Debug: x * 2 + 1 = 85"
+```
+
+#### Memoization
+
+```opal
+macro memoize(fn_def)
+  fn_name = fn_def.name
+  quote
+    _cache = {:}
+
+    def $fn_name($(fn_def.params...))
+      key = ($(fn_def.params...),)
+      if _cache.has?(key)
+        return _cache[key]
+      end
+      result = $(fn_def.body)
+      _cache[key] = result
+      result
+    end
+  end
+end
+
+@memoize
+def fibonacci(n::Int32) -> Int32
+  if n <= 1 then n else fibonacci(n - 1) + fibonacci(n - 2) end
+end
+```
+
+### 10.5 Self-Hosting Potential
+
+With quoting + macros, some of Opal's own features could be defined in Opal itself. This doesn't mean they *must* be — core keywords can stay in the parser for performance and clarity. But the macro system is powerful enough that users could build equivalent constructs.
+
+#### What Stays in the Parser (Core Syntax)
+
+These are fundamental to the language and must be parsed natively:
+
+- `def`, `class`, `module`, `actor`, `if`, `for`, `while`, `match`, `try`
+- `quote`, `macro`, `$` (metaprogramming primitives)
+- `=`, `.`, `::`, operators
+
+#### What Could Be Macros
+
+These are essentially code transformations and could theoretically be implemented as macros:
+
+- `needs` — generates constructor injection
+- `event` — generates an immutable data class
+- `emit` — generates actor-based event dispatch
+- `on` — generates event handler registration
+- `guard` — generates pre-condition checks
+- `supervisor` — generates actor supervision setup
+
+Whether they stay as keywords or become macros is an implementation decision. The key insight is that the macro system is *expressive enough* to define them.
+
+### 10.6 Domain Extension Guidelines
+
+Opal's macro system enables **subdomains** — packages of macros that extend the language for a specific problem domain. This is how Opal and its ecosystem grow without bloating the core language.
+
+#### What is a Subdomain?
+
+A subdomain is a module that exports macros, providing domain-specific syntax and abstractions. It's a mini-language within Opal, tailored to a particular problem.
+
+#### Creating a Subdomain
+
+A subdomain is a standard Opal module that exports macros:
+
+```opal
+# File: opal_web/macros.opl
+module OpalWeb
+  # Route definition DSL
+  macro get(path, body)
+    quote
+      app.route("GET", $path, |req, res|
+        $body
+      end)
+    end
+  end
+
+  macro post(path, body)
+    quote
+      app.route("POST", $path, |req, res|
+        $body
+      end)
+    end
+  end
+
+  # Middleware DSL
+  macro middleware(name, body)
+    quote
+      app.use($name, |req, res, next|
+        $body
+        next()
+      end)
+    end
+  end
+end
 ```
 
 ```opal
-# Lazy infinite sequence
-class Counter implements Iterable
-  needs start::Int32
+# Usage — the subdomain provides web-specific syntax
+import OpalWeb
 
-  def iter()
-    CounterIterator.new(current: .start)
-  end
+@middleware :logging do
+  print(f"[{Time.now()}] {req.method} {req.path}")
 end
 
-class CounterIterator implements Iterator
-  needs current::Int32
-
-  def next()
-    value = .current
-    .current += 1
-    (value, false)  # never done
-  end
+@get "/" do
+  res.send("Hello, world!")
 end
 
-for n in Counter.new(start: 0).take(5)
-  print(n)  # 0, 1, 2, 3, 4
+@post "/users" do
+  user = User.from_json(req.body)
+  user.save()
+  res.json(user.to_json())
 end
 ```
 
-**Rules:**
-- `Iterator.next()` returns a tuple `(value, done::Bool)`.
-- Built-in types (`List`, `Dict`, `Range`, `String`) all implement `Iterable`.
-- Collection methods (`map`, `filter`, `reduce`, `take`, `zip`) work on any `Iterable`.
+#### Subdomain Guidelines
+
+**1. Name macros as verbs or nouns that read naturally at the call site.**
+
+```opal
+# Good — reads like a sentence
+@get "/users" do ... end
+@test "addition" do ... end
+@memoize def fib(n) ... end
+
+# Bad — unclear at the call site
+@r "/users" do ... end
+@m def fib(n) ... end
+```
+
+**2. One macro per concept. Don't overload a macro to do multiple things.**
+
+```opal
+# Good — separate macros for separate concepts
+@get "/users" do ... end
+@post "/users" do ... end
+
+# Bad — one macro with a mode parameter
+@route "GET", "/users" do ... end
+```
+
+**3. Macros should produce valid, inspectable code.**
+
+```opal
+# Always test with macroexpand
+macroexpand(@get "/" do res.send("hello") end)
+# Should produce clean, readable Opal
+```
+
+**4. Document what the macro expands to.**
+
+Every macro should include a comment or doc showing the equivalent non-macro code:
+
+```opal
+# @get "/" do ... end
+# expands to:
+# app.route("GET", "/", |req, res| ... end)
+```
+
+**5. Prefer macros that compose with existing features.**
+
+Macros should work with guards, pattern matching, DI, and events — not bypass them:
+
+```opal
+# Good — composes with guards
+@positive
+@memoize
+def sqrt(x::Float64) -> Float64
+  x ** 0.5
+end
+
+# Good — composes with needs
+@json_serializable
+class User
+  needs name::String  # needs still works inside macro-processed class
+end
+```
+
+**6. Subdomains should be importable and scoped.**
+
+```opal
+# Import a subdomain
+import OpalWeb          # all macros available
+import OpalWeb.{get, post}  # selective import
+
+# Macros from different subdomains don't conflict
+import OpalWeb
+import OpalTest
+# @get is from OpalWeb, @test is from OpalTest
+```
+
+#### Opal's Own Subdomains
+
+Opal's standard library can use this same model. Rather than hardcoding every feature, the stdlib provides subdomains:
+
+| Subdomain | Provides | Macros |
+|---|---|---|
+| `Opal.Core` | Core language (parser-level) | None — native syntax |
+| `Opal.Test` | Testing framework | `@test`, `@describe`, `@assert` |
+| `Opal.Web` | Web framework | `@get`, `@post`, `@middleware` |
+| `Opal.Data` | Database/ORM | `@schema`, `@migration`, `@query` |
+| `Opal.Bench` | Benchmarking | `@benchmark`, `@profile` |
+| `Opal.Debug` | Debugging tools | `@debug`, `@trace`, `@breakpoint` |
+| `Opal.Serial` | Serialization | `@json_serializable`, `@msgpack` |
+
+Each subdomain is an independent package — you only import what you use.
+
+#### Summary
+
+**What Opal Gets from Julia:**
+
+| Julia Feature | Opal Adaptation |
+|---|---|
+| `:(expr)` quoting | `quote expr end` / `quote ... end` |
+| `$var` interpolation | `$var` (identical) |
+| `Expr` type | `Expr` type with `.head`, `.args`, `.dump()` |
+| `macro ... end` | `macro ... end` (identical structure) |
+| `@name` invocation | `@name` (identical) |
+| `eval()` | `eval()` (identical) |
+| `esc()` | `esc()` (identical) |
+| `macroexpand()` | `macroexpand()` (identical) |
+| `@generated function` | Skipped — multiple dispatch + macros covers it |
+| Non-standard string literals | Already in Opal (`f"..."`, `r"..."`, `t"..."`) |
+
+**New Keywords:**
+
+| Keyword | Purpose |
+|---|---|
+| `quote ... end` | Capture code as AST |
+| `$` (inside quote) | Interpolate into AST |
+| `macro ... end` | Define a macro |
+| `@name` | Invoke a macro |
 
 ---
 
-## 5. Tooling
+## 11. Standard Library
+
+Opal ships with a standard library organized into modules:
+
+| Module | Purpose |
+|---|---|
+| `IO` | Standard input/output, printing, reading |
+| `File` | File reading, writing, path manipulation |
+| `Net` | HTTP client/server, TCP/UDP sockets |
+| `Math` | Mathematical functions and constants |
+| `Collections` | Advanced data structures (Set, Queue, Stack, etc.) |
+| `String` | String manipulation, formatting, template processing |
+| `Time` | Date, time, duration, formatting |
+| `JSON` | JSON parsing and generation |
+| `Test` | Built-in test framework, assertions |
+| `Mock` | Mocking and stubbing for tests |
+| `Spec` | Specification pattern base classes |
+| `Container` | Optional dependency injection container for large apps |
+| `Iter` | `Iterable` and `Iterator` protocols, lazy sequences |
+
+```opal
+import IO
+import File
+import JSON
+
+# Read a JSON config file
+content = File.read("config.json")
+config = JSON.parse(content)
+IO.print(f"Loaded {config.keys().length} settings")
+```
+
+```opal
+import Test
+
+Test.describe("Math operations")
+  Test.it("adds two numbers")
+    Test.assert_eq(2 + 2, 4)
+  end
+
+  Test.it("handles negative numbers")
+    Test.assert_eq(-1 + 1, 0)
+  end
+end
+```
+
+---
+
+## 12. Tooling
 
 ### Project Scaffolding
 
@@ -2151,7 +2701,7 @@ The `with` keyword is reserved for DSL-style configuration blocks like the above
 
 ---
 
-## 6. Pretotyping
+## 13. Pretotyping
 
 ([No, it's not a typo.](http://www.pretotyping.org/))
 
