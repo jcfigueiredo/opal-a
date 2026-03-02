@@ -72,6 +72,9 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
                    | <unary_op> <expression>
                    | <expression> "." IDENTIFIER
                    | <expression> "." IDENTIFIER "(" <args> ")"
+                   | <expression> "?." IDENTIFIER
+                   | <expression> "?." IDENTIFIER "(" <args> ")"
+                   | <expression> "??" <expression>
                    | <expression> "[" <expression> "]"
                    | <function_call>
                    | <lambda>
@@ -124,11 +127,11 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
                    | IDENTIFIER "::" TYPE
                    | IDENTIFIER "=" <expression>
 
-<conditional>   ::= "if" <expression> NEWLINE <block> ("else" NEWLINE <block>)? "end"
-                   | "unless" <expression> NEWLINE <block> ("else" NEWLINE <block>)? "end"
+<conditional>   ::= "if" <expression> NEWLINE <block>
+                     ("elsif" <expression> NEWLINE <block>)*
+                     ("else" NEWLINE <block>)? "end"
 
 <loop>          ::= "while" <expression> NEWLINE <block> "end"
-                   | "until" <expression> NEWLINE <block> "end"
                    | "for" IDENTIFIER "in" <expression> NEWLINE <block> "end"
 
 <destructure>   ::= "(" <destruct_target> ("," <destruct_target>)* ")" "=" <expression>
@@ -247,6 +250,7 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
                    | "==" | "!=" | "<" | ">" | "<=" | ">="
                    | "and" | "or"
                    | ".." | "..."
+                   | "|>"
 <unary_op>      ::= "-" | "not"
 ```
 
@@ -667,7 +671,49 @@ The method form `def +(other::T)` inside a class is sugar for `def +(self::Self,
 | Indexing | `[]`, `[]=` |
 | Conversion | `to_string()`, `to_bool()`, `iter()` |
 
-**Not overloadable** (language semantics): `=`, `and`, `or`, `not`, `..`, `...`, `is`, `as`.
+**Not overloadable** (language semantics): `=`, `and`, `or`, `not`, `..`, `...`, `is`, `as`, `|>`, `?.`, `??`.
+
+#### Pipe Operator
+
+The pipe operator `|>` passes the result of the left-hand expression as the first argument to the right-hand function. It enables readable left-to-right data transformation chains.
+
+```opal
+# Basic pipeline — each step feeds into the next
+result = read_file("data.csv") |> parse |> validate |> format
+
+# Pipe with additional arguments — the piped value becomes the first argument
+active_users = users |> filter(|u| u.active?()) |> take(10)
+
+# Multi-line pipeline
+report = transactions
+  |> filter(|t| t.amount > 100)
+  |> group_by(|t| t.category)
+  |> map(|(cat, txns)| (cat, txns.sum(|t| t.amount)))
+  |> sort_by(|(_, total)| total, descending: true)
+```
+
+The pipe operator is left-associative: `a |> b |> c` is equivalent to `c(b(a))`.
+
+#### Null-Safe Chaining and Null Coalescing
+
+The `?.` operator short-circuits a method or property chain when the receiver is `null`, returning `null` instead of raising an error. The `??` operator provides a default value when the left-hand side is `null`.
+
+```opal
+# Null-safe property access — returns null if user or address is null
+city = user?.address?.city
+
+# Null-safe method calls — returns null if any step is null
+length = user?.name?.upper()?.length
+
+# Null coalescing — provide a default when the value is null
+city = user?.address?.city ?? "Unknown"
+display_name = user?.name ?? "Anonymous"
+
+# Combine with regular method calls
+greeting = f"Hello, {user?.name?.capitalize() ?? "Guest"}"
+```
+
+`?.` propagates `null` — if the receiver is `null`, the entire chain from that point evaluates to `null` without executing further methods. `??` evaluates its right-hand side only when the left-hand side is `null`.
 
 ### 4.5 Collections
 
@@ -882,16 +928,19 @@ else
   c = 2
 end
 
-# unless (inverted if)
-unless a != b
-  c = 1
+# if / elsif / else
+if score >= 90
+  grade = "A"
+elsif score >= 80
+  grade = "B"
+elsif score >= 70
+  grade = "C"
 else
-  c = 2
+  grade = "F"
 end
 
 # Suffix form (single expression)
 print("even") if n % 2 == 0
-print("odd") unless n % 2 == 0
 
 # Ternary-style inline
 status = if active then "on" else "off" end
@@ -902,11 +951,6 @@ status = if active then "on" else "off" end
 ```opal
 # while
 while count < 10
-  count += 1
-end
-
-# until (inverted while)
-until count >= 10
   count += 1
 end
 
