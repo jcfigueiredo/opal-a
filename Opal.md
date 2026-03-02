@@ -56,6 +56,8 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
                    | <on_handler>
                    | <macro_def>
                    | <quote_expr>
+                   | <type_alias>
+                   | <implements_for>
 
 <assignment>    ::= IDENTIFIER "=" <expression>
 
@@ -129,7 +131,6 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
 
 <operator_def>  ::= "def" OPERATOR "(" <params> ")" NEWLINE <block> "end"
 
-<class_def>     ::= "class" IDENTIFIER ("<" IDENTIFIER)? NEWLINE <class_body> "end"
 <class_body>    ::= (<needs_decl> | <function_def> | <operator_def> | <assignment>)*
 
 <module_def>    ::= "module" IDENTIFIER NEWLINE <module_body> "end"
@@ -167,6 +168,25 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
 <macro_invoke>  ::= "@" IDENTIFIER <args>?
 <quote_expr>    ::= "quote" <expression> "end"
                    | "quote" NEWLINE <block> "end"
+
+<type_alias>    ::= "type" IDENTIFIER ("(" <type_params> ")")? "=" <type_expr>
+<type_expr>     ::= TYPE
+                   | <type_expr> "|" <type_expr>
+                   | TYPE "(" <type_args> ")"
+                   | TYPE "?"
+                   | "|" <type_list> "|" "->" <type_expr>
+<type_params>   ::= <type_param> ("," <type_param>)*
+<type_param>    ::= IDENTIFIER ("implements" TYPE ("," TYPE)*)?
+<type_args>     ::= <type_expr> ("," <type_expr>)*
+<where_clause>  ::= "where" <constraint> ("," <constraint>)*
+<constraint>    ::= IDENTIFIER "implements" TYPE ("," TYPE)*
+
+<implements_for>::= "implements" TYPE "for" TYPE NEWLINE <class_body> "end"
+
+<is_expr>       ::= <expression> "is" TYPE
+
+<class_def>     ::= "class" IDENTIFIER ("(" <type_params> ")")? ("<" IDENTIFIER)?
+                     (<where_clause>)? NEWLINE <class_body> "end"
 
 <block>         ::= <statement>+
 
@@ -846,7 +866,11 @@ triple(10)  # => 30
 
 ### 6.2 Type System
 
-Opal uses **gradual typing**: unannotated code is dynamic, annotated code is checked.
+Opal uses **gradual typing**: unannotated code is fully dynamic, annotated code is checked at boundaries (function entry, return, annotated assignment). Types serve two equal purposes: catching bugs early and documenting intent.
+
+> See [Type System Design](docs/plans/2026-03-01-type-system-design.md) for the full rationale.
+
+#### Core Rules
 
 ```opal
 # No annotations — fully dynamic
@@ -856,30 +880,201 @@ end
 
 # Annotated — type-checked at boundaries
 def add(a::Int32, b::Int32) -> Int32
-  a + b
+  x = a + b   # x is NOT checked (internal)
+  x            # checked against -> Int32 on return
 end
 
-# Type annotation syntax: :: for types
+add(1, 2)      # checked: args are Int32
+add(1, "hi")   # TYPE ERROR at call site
+
+# Annotated assignment — checked
 name::String = "claudio"
 age::Int32 = 15
 
 # Explicit casting with `as`
 x = 3.14 as Int32   # => 3
 
-# Optional types
+# Optional types (nullable)
 def find(id::Int32) -> Person?
-  # may return null
+  # may return null — Person? is sugar for Person | Null
 end
 ```
 
 **Core types:** `Int8`, `Int16`, `Int32`, `Int64`, `Float32`, `Float64`, `Bool`, `Char`, `String`, `Template`, `Symbol`, `Null`, `List(T)`, `Tuple(...)`, `Dict(K, V)`, `Range(T)`, `Regex`.
 
-**Type rules:**
+**Boundary checking rules:**
 - Unannotated parameters and variables are dynamic — no checking.
 - Annotated parameters are checked at call sites.
 - Return type annotations are checked at function exit.
-- `as` performs explicit type conversion.
+- Annotated variable assignments are checked when assigned.
+- Internal variables without annotations are unchecked.
+- `as` performs explicit type conversion. Raises a runtime error if conversion fails.
 - `?` suffix denotes a nullable type (e.g., `String?` means `String | Null`).
+
+#### Generics
+
+Type parameters are declared explicitly on classes, protocols, and type aliases. At call sites, they're inferred from arguments.
+
+```opal
+# Define with explicit type parameter
+class Stack(T)
+  needs items::List(T)
+
+  def push(item::T)
+    .items.append(item)
+  end
+
+  def pop() -> T?
+    .items.pop()
+  end
+end
+
+# Inferred at call site
+s = Stack.new(items: [1, 2, 3])   # T = Int32
+s.push(42)    # ok
+s.push("hi")  # type error
+
+# Explicit when ambiguous (e.g., empty collection)
+s = Stack(Int32).new(items: [])
+```
+
+Generic functions infer type parameters from annotated arguments:
+
+```opal
+def first(items::List(T)) -> T?
+  items[0]
+end
+
+first([1, 2, 3])       # T inferred as Int32, returns Int32?
+first(["a", "b"])       # T inferred as String, returns String?
+```
+
+#### Generic Constraints
+
+Constraints restrict what types can fill a type parameter. Simple constraints go inline, complex ones use a `where` clause.
+
+```opal
+# Inline — single constraint
+class SortedList(T implements Comparable)
+  needs items::List(T)
+
+  def insert(item::T)
+    # compare_to guaranteed available
+  end
+end
+
+# Where clause — multiple constraints
+class Cache(K, V)
+    where K implements Hashable,
+          V implements Printable
+  needs store::Dict(K, V)
+end
+
+# Functions — where clause
+def max(a::T, b::T) -> T
+    where T implements Comparable
+  if a > b then a else b end
+end
+
+# Functions — inline for simple cases
+def sort(items::List(T implements Comparable)) -> List(T)
+  # ...
+end
+```
+
+#### Union Types
+
+A value can be one of several types, expressed with `|`. The nullable `?` suffix is sugar for `T | Null`.
+
+```opal
+# Union return type
+def parse(input::String) -> Int32 | Float64 | Error
+  # can return any of these
+end
+
+# Pattern match to narrow
+match parse("42")
+  case n::Int32
+    print(f"integer: {n}")
+  case f::Float64
+    print(f"float: {f}")
+  case e::Error
+    print(f"error: {e.message}")
+end
+
+# Union in parameters
+def display(value::String | Int32 | Float64)
+  print(f"{value}")
+end
+```
+
+Union rules:
+- `A | B` is a union — the value is one of the listed types.
+- `T?` is exactly `T | Null`.
+- Unions are unordered — `Int32 | String` is the same type as `String | Int32`.
+- Pattern matching with `case x::Type` narrows a union to a specific type.
+
+#### Type Aliases
+
+The `type` keyword names a complex type. Aliases are transparent — the alias and the original type are fully interchangeable.
+
+```opal
+# Simple aliases — semantic names for primitives
+type UserID = Int64
+type Email = String
+
+# Parameterized aliases
+type Result(T) = T | Error
+type Pair(A, B) = (A, B)
+
+# Function type alias
+type Handler = |Request, Response| -> Null
+
+# Usage
+def find_user(id::UserID) -> Result(User)
+  # returns User | Error
+end
+```
+
+Type alias rules:
+- `type Name = Type` creates a transparent alias.
+- `type Name(T) = ...` creates a parameterized alias.
+- Aliases are interchangeable with their underlying type — `UserID` and `Int64` are the same type.
+- Aliases can reference other aliases, unions, generics, and function types.
+
+#### Runtime Type Introspection
+
+```opal
+# Type of a value
+typeof(42)          # => Int32
+typeof("hello")     # => String
+typeof([1, 2, 3])   # => List(Int32)
+
+# Type narrowing with `is`
+if value is String
+  # value is known to be String here
+  print(value.length)
+end
+
+# `is` with unions
+def handle(result::Int32 | String | Error)
+  if result is Error
+    print(f"failed: {result.message}")
+  else
+    print(f"ok: {result}")
+  end
+end
+
+# `is` with protocols
+if shape is Drawable
+  shape.draw()
+end
+```
+
+Introspection rules:
+- `typeof(expr)` returns the runtime type as a Type object.
+- `is` checks if a value is an instance of a type, protocol, or union member.
+- `is` narrows the type in the enclosing branch (flow-sensitive narrowing).
 
 ### 6.3 Classes & Methods
 
@@ -1114,6 +1309,75 @@ a.println()  # "20.0°" (default from Printable)
 ```
 
 If two protocols provide conflicting defaults for the same method name, the implementor must explicitly define it (ambiguity = compile-time error).
+
+Opal uses **nominal typing** — a class must declare `implements Protocol` to satisfy it. Having the right methods is not enough:
+
+```opal
+protocol Drawable
+  def draw() -> String
+end
+
+class Circle implements Drawable
+  def draw() -> String
+    f"circle at ({.x}, {.y})"
+  end
+end
+
+class Coin
+  def draw() -> String  # same shape, but NOT Drawable
+    "coin"
+  end
+end
+
+def render(shape::Drawable)
+  shape.draw()
+end
+
+render(Circle.new(x: 0, y: 0))  # ok
+render(Coin.new())               # TYPE ERROR — Coin doesn't implement Drawable
+```
+
+**Retroactive conformance** lets you add protocol conformance to types you don't own:
+
+```opal
+implements Drawable for ThirdPartyShape
+  def draw() -> String
+    .render()  # delegate to existing method
+  end
+end
+
+render(ThirdPartyShape.new())  # now works
+```
+
+Retroactive conformance rules:
+- `implements Protocol for Type` adds conformance after the fact.
+- Can define new methods or delegate to existing ones.
+- Cannot access private fields of the target type.
+- If two retroactive conformances conflict, the one in the current module wins.
+
+**Generic protocols** use type parameters like classes:
+
+```opal
+protocol Collection(T)
+  def add(item::T)
+  def contains?(item::T) -> Bool
+  def size() -> Int32
+end
+
+class Set(T implements Hashable) implements Collection(T)
+  def add(item::T)
+    # ...
+  end
+
+  def contains?(item::T) -> Bool
+    # ...
+  end
+
+  def size() -> Int32
+    .items.length
+  end
+end
+```
 
 ### 6.7 Multiple Dispatch
 
