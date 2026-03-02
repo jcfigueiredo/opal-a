@@ -10,7 +10,7 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
 
 - **Readability is paramount.** Code is read far more than it is written.
 - **One explicit way.** There should be one obvious way to do something — no alternative syntax for the same operation.
-- **Software engineering concepts are first-class.** Dependency injection, domain events, specifications, preconditions, null objects, validated models, settings, the actor model, metaprogramming, and pipe-based composition are built into the language, not bolted on.
+- **Software engineering concepts are first-class.** Dependency injection, domain events, specifications, preconditions, null objects, validated models, settings, the actor model, metaprogramming, annotations, and pipe-based composition are built into the language, not bolted on.
 - **Batteries included.** Built-in testing, mocking, fixtures, documentation generation, project scaffolding, and package management.
 - **Immutable by intent.** `let` bindings and immutable-by-default parameters support correctness.
 - **Gradual typing.** Write quick scripts with no annotations, then add types at module boundaries for safety.
@@ -2586,7 +2586,7 @@ user = User(
 
 user.to_dict()   # => {"name": "claudio", "email": "c@test.com",
                  #     "address": {"street": "123 Main", ...}}
-user.to_json()   # => '{"name": "claudio", ...}'
+user.to_json()   # => "{\"name\": \"claudio\", ...}"
 
 # Deserialize — validates on load
 user = User.from_dict({"name": "claudio", "email": "c@test.com",
@@ -3964,8 +3964,8 @@ class User
 end
 
 user = User.new(name: "claudio", email: "c@opal.dev", age: 15)
-user.to_json()   # => '{"name":"claudio","email":"c@opal.dev","age":15}'
-User.from_json('{"name":"claudio","email":"c@opal.dev","age":15}')
+user.to_json()   # => "{\"name\":\"claudio\",\"email\":\"c@opal.dev\",\"age\":15}"
+User.from_json("{\"name\":\"claudio\",\"email\":\"c@opal.dev\",\"age\":15}")
 ```
 
 #### DSL Creation — Test Framework
@@ -4276,6 +4276,7 @@ Opal ships with a standard library organized into modules:
 | `Option` | `Option(T)` enum — `Some(value)` or `None` for explicit nullable handling; used by `Iterator(T)` |
 | `Result` | `Result(T, E)` enum — `Ok(value)` or `Err(error)` for error handling |
 | `Settings` | Base for `settings model` definitions — env/config/file loading with source priority |
+| `Reflect` | Runtime introspection: `annotations()`, `field_annotations()`, `typeof()`, `methods()` |
 
 ```opal
 import IO

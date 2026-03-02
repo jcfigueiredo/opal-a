@@ -161,7 +161,7 @@ user.to_dict()
 #     "tags": []}
 
 user.to_json()
-# => '{"name": "claudio", ...}'
+# => "{\"name\": \"claudio\", ...}"
 
 # Deserialize — validates on load
 user = User.from_dict({
@@ -171,7 +171,7 @@ user = User.from_dict({
   "address": {"street": "123 Main", "city": "Springfield", "zip": "62704"}
 })
 
-user = User.from_json('{"name": "claudio", ...}')
+user = User.from_json("{\"name\": \"claudio\", ...}")
 ```
 
 ### Rules
