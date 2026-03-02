@@ -3361,18 +3361,13 @@ if __name__ == "__main__":
 
 **Opal equivalent:**
 ```opal
-import Flask
+import OpalWeb
 
-app = Flask.new("app name")
+app = OpalWeb.App.new("app name")
 
-app.get "/" and
-  return "Hello world!"
+@get "/" do
+  "Hello world!"
 end
-
-# One-liner routes
-app.get "/" and return "Hello world!"!
-app.get "/foo" and return ("Hello world!", 200)!
-app.get "/bar" and return ("http://foo.bar/", 301)!
 
 app.run!
 ```
