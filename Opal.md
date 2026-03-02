@@ -60,6 +60,8 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
                    | <implements_for>
                    | <enum_def>
                    | <model_def>
+                   | <import_stmt>
+                   | <export_stmt>
 
 <assignment>    ::= IDENTIFIER "=" <expression>
 
@@ -200,6 +202,15 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
                      "where" <field_constraint> ("," <field_constraint>)*
 <field_constraint> ::= <lambda> | IDENTIFIER ("(" <args> ")")?
 <validate_block>::= "validate" "do" NEWLINE <block> "end"
+
+<import_stmt>   ::= "import" <module_path>
+                   | "import" <module_path> "as" IDENTIFIER
+                   | "import" <module_path> ".{" <import_list> "}"
+<import_list>   ::= <import_item> ("," <import_item>)*
+<import_item>   ::= IDENTIFIER
+                   | IDENTIFIER "as" IDENTIFIER
+<module_path>   ::= IDENTIFIER ("." IDENTIFIER)*
+<export_stmt>   ::= "export" <module_path> ".{" <import_list> "}"
 
 <is_expr>       ::= <expression> "is" TYPE
 <propagate_expr>::= <expression> "!"
@@ -1162,40 +1173,126 @@ rex.talk()  # => "Woof!"
 
 ### 6.4 Modules & Namespaces
 
+> See [Imports & Modules](docs/features/imports-and-modules.md) for the full design rationale.
+
 Modules group related functions, classes, and constants.
 
-```opal
-module Math
-  PI = 3.14159265358979
+#### File-to-Module Mapping
 
-  def abs(x::Number)
-    if x < 0 then -x else x end
-  end
+Each `.opl` file implicitly defines a module matching its filename in PascalCase. Directories create module hierarchies:
 
-  def max(a, b)
-    if a > b then a else b end
-  end
-end
-
-Math.abs(-5)   # => 5
-Math.PI        # => 3.14159265358979
+```
+src/
+  app.opl           -> App
+  math.opl          -> Math
+  math/
+    vector.opl      -> Math.Vector
+    matrix.opl      -> Math.Matrix
 ```
 
 ```opal
-module Geometry
-  class Circle
-    def :init(radius::Float32)
-      .radius = radius
-    end
+# file: src/math.opl
+# Implicitly the Math module
 
-    def area()
-      Math.PI * .radius ** 2
-    end
+PI = 3.14159
+
+def abs(x::Number)
+  if x < 0 then -x else x end
+end
+
+def max(a, b)
+  if a > b then a else b end
+end
+
+module Trig           # Math.Trig (nested)
+  def sin(x::Float64) -> Float64
+    # ...
+  end
+end
+
+Math.abs(-5)    # => 5
+Math.PI         # => 3.14159
+Math.Trig.sin(1.0)
+```
+
+Modules can contain classes:
+
+```opal
+# file: src/geometry.opl
+# Implicitly the Geometry module
+
+class Circle
+  def :init(radius::Float32)
+    .radius = radius
+  end
+
+  def area()
+    Math.PI * .radius ** 2
   end
 end
 
 c = Geometry.Circle.new(radius: 5.0)
 c.area()  # => 78.539...
+```
+
+#### Import Syntax
+
+```opal
+import Math                          # whole module — Math.abs(), Math.PI
+import Math.Vector                   # nested — Math.Vector.dot()
+import Math.{abs, max}               # selective — abs() and max() directly
+import Math.Vector as Vec            # aliased — Vec.dot()
+import Math.{abs, max as maximum}    # selective + alias
+```
+
+Collision rule — two selective imports with the same name are a compile-time error:
+
+```opal
+import Math.{max}
+import Stats.{max}       # COMPILE ERROR — 'max' already imported
+
+import Math.{max as math_max}
+import Stats.{max as stats_max}  # ok
+```
+
+#### Re-exports
+
+```opal
+# file: src/opal_web.opl
+import OpalWeb.Router
+import OpalWeb.Middleware
+
+export Router.{get, post, put, delete}
+export Middleware.{use}
+```
+
+```opal
+# Consumer
+import OpalWeb
+OpalWeb.get("/", handler)   # works — re-exported from Router
+```
+
+#### Module Rules
+
+- Each `.opl` file implicitly defines a module matching its filename (PascalCase).
+- `module` blocks inside a file create nested sub-modules.
+- Subdirectories create module hierarchies. Both approaches (file-level and directory-level) work.
+- All imports are absolute from the project root — no relative imports.
+- Circular imports are a compile-time error. Extract shared code to break cycles.
+- `export Module.{names}` re-exports symbols for clean public APIs.
+- All top-level definitions are public by default. Use `private` to hide.
+
+#### Packages
+
+A package is a directory with `opal.toml` + `src/`. External packages are imported by name:
+
+```opal
+# Import from an external package (installed via opal pkg)
+import OpalWeb
+import OpalWeb.Router
+
+# Within your own package — absolute from package root
+import MyApp.Models.User
 ```
 
 ### 6.5 Visibility / Access Control
