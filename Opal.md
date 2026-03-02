@@ -431,6 +431,8 @@ Symbols are self-identifying constants. They do not need to be assigned a value.
 
 ### 4.4 Operators
 
+> See [Self-Hosting Foundations](docs/features/self-hosting-foundations.md) for the operator overloading design rationale.
+
 #### Arithmetic
 | Operator | Description |
 |---|---|
@@ -643,6 +645,8 @@ end
 ```
 
 ### 4.7 Destructuring Assignment
+
+> See [Self-Hosting Foundations](docs/features/self-hosting-foundations.md) for the destructuring design rationale.
 
 Pattern matching syntax extended to regular assignment, function parameters, `for` loops, and closures. Same patterns as `match` — one way to do it everywhere.
 
@@ -868,7 +872,7 @@ triple(10)  # => 30
 
 Opal uses **gradual typing**: unannotated code is fully dynamic, annotated code is checked at boundaries (function entry, return, annotated assignment). Types serve two equal purposes: catching bugs early and documenting intent.
 
-> See [Type System Design](docs/plans/2026-03-01-type-system-design.md) for the full rationale.
+> See [Type System Design](docs/features/type-system.md) for the full rationale.
 
 #### Core Rules
 
@@ -1208,6 +1212,8 @@ Default visibility is `public`. Mark methods `private` (accessible only within t
 
 ### 6.6 Interfaces / Protocols
 
+> See [Self-Hosting Foundations](docs/features/self-hosting-foundations.md) for the protocol defaults design rationale.
+
 Protocols define a contract that classes must fulfill. Methods without a body are **required** — implementors must define them. Methods with a body are **defaults** — inherited automatically, overridable.
 
 ```opal
@@ -1426,6 +1432,8 @@ process(-3)  # => "generic integer"  (guard fails, falls to base)
 
 ### 6.8 Iterator Protocol
 
+> See [Self-Hosting Foundations](docs/features/self-hosting-foundations.md) for the iterator protocol design rationale.
+
 Two protocols — `Iterable` (the thing you iterate over) and `Iterator` (the cursor). Any class implementing `Iterable` works with `for ... in` and collection methods like `map`, `filter`, `reduce`.
 
 ```opal
@@ -1508,6 +1516,8 @@ end
 ## 7. Error Handling & Safety
 
 ### 7.1 Error Handling
+
+> See [Self-Hosting Foundations](docs/features/self-hosting-foundations.md) for the custom error types design rationale.
 
 Opal uses `try` / `on fail` / `ensure` for structured error handling. Errors are classes that inherit from `Error`.
 
@@ -1687,6 +1697,8 @@ person.greet()  # no null check needed — NullPerson handles it
 ---
 
 ## 8. Concurrency
+
+> See [Concurrency Design](docs/features/concurrency.md) for the full design rationale.
 
 Opal's concurrency model has four layers: **actors** for stateful concurrent entities, **parallel blocks** for structured concurrency, **async/futures** for individual non-blocking calls, and **supervisors** for fault tolerance.
 
@@ -1981,6 +1993,8 @@ end
 ## 9. Software Engineering Patterns
 
 ### 9.1 Dependency Injection (`needs`)
+
+> See [Dependency Injection & Events Design](docs/features/dependency-injection-and-events.md) for the full design rationale.
 
 `needs` declares a dependency with a name and a protocol/type. Dependencies become instance variables (`.name`) and must be provided at construction time via `.new()`.
 
@@ -2321,6 +2335,8 @@ some_people = people.where(californian_and_under_21.is_satisfied_by)  # => [clau
 ---
 
 ## 10. Metaprogramming
+
+> See [Metaprogramming Design](docs/features/metaprogramming.md) for the full design rationale.
 
 Opal's metaprogramming system is Julia-inspired, adapted to Opal's `end`-block syntax and `:symbol` conventions. It provides quoting, interpolation, macros, and AST manipulation as first-class features.
 

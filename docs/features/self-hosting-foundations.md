@@ -1,7 +1,4 @@
-# Self-Hosting Foundations Design for Opal
-
-**Date:** 2026-03-01
-**Status:** Approved
+# Self-Hosting Foundations
 
 ---
 

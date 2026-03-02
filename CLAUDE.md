@@ -8,8 +8,8 @@ Opal (Opinionated Programming Algorithmic Language) is a programming language in
 
 ## Repository Structure
 
-- **`Opal.md`** — The complete language specification (~2800 lines). This is the primary artifact. Organized into 13 sections from foundational to generalist: Philosophy, Facts, BNF Grammar, Basics, Control Flow, Functions & Types, Error Handling, Concurrency, Software Engineering Patterns, Metaprogramming, Standard Library, Tooling, Pretotyping, plus appendices.
-- **`docs/plans/`** — Approved design documents for major features, each created through a brainstorming process before being integrated into Opal.md.
+- **`Opal.md`** — The complete language specification (~3000 lines). This is the primary artifact. Organized into 13 sections from foundational to generalist: Philosophy, Facts, BNF Grammar, Basics, Control Flow, Functions & Types, Error Handling, Concurrency, Software Engineering Patterns, Metaprogramming, Standard Library, Tooling, Pretotyping, plus appendices.
+- **`docs/features/`** — Deep-dive feature documentation with design rationale, trade-offs, and extended examples. Linked from Opal.md at the relevant sections.
 
 ## Key Language Design Rules
 
@@ -28,16 +28,17 @@ These rules are enforced across all examples and specifications. Violating them 
 
 New language features follow this workflow:
 1. Brainstorm with clarifying questions, approach comparison, and design approval
-2. Write design document to `docs/plans/YYYY-MM-DD-<topic>-design.md`
-3. Integrate approved design into `Opal.md` (update BNF, add section, update stdlib table)
+2. Write feature document to `docs/features/<topic>.md`
+3. Integrate into `Opal.md` (update BNF, add section, update stdlib table) and link to the feature doc
 
 When updating Opal.md, always check that changes are consistent across: BNF grammar (section 3), the relevant syntax section, the stdlib table (section 11), and the philosophy line (section 1) if a new first-class concept is added.
 
-## Existing Design Documents
+## Feature Documents
 
 | File | Covers |
 |---|---|
-| `2026-03-01-async-concurrency-design.md` | Four-layer model: actors, parallel, async/futures, supervisors |
-| `2026-03-01-di-and-events-design.md` | `needs` keyword, `event`/`emit`/`on`, optional Container |
-| `2026-03-01-metaprogramming-design.md` | Julia-adapted quoting, hygienic macros, AST, subdomains |
-| `2026-03-01-self-hosting-foundations-design.md` | Operator overloading, iterators, custom errors, destructuring, protocol defaults |
+| `docs/features/type-system.md` | Generics, constraints, union types, aliases, nominal typing, retroactive conformance |
+| `docs/features/concurrency.md` | Four-layer model: actors, parallel, async/futures, supervisors |
+| `docs/features/dependency-injection-and-events.md` | `needs` keyword, `event`/`emit`/`on`, optional Container |
+| `docs/features/metaprogramming.md` | Julia-adapted quoting, hygienic macros, AST, subdomains |
+| `docs/features/self-hosting-foundations.md` | Operator overloading, iterators, custom errors, destructuring, protocol defaults |
