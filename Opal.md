@@ -2588,31 +2588,24 @@ order_service.place_order(new_order)
 The specification pattern allows composable business rules.
 
 ```opal
-import "patterns.Specification"
+import Spec.Specification
 
 class Person
-  def :init(name, age, place_of_birth)
-    .name = name
-    .age = age
-    .place_of_birth = place_of_birth
-  end
+  needs name::String
+  needs age::Int32
+  needs place_of_birth::String
 end
 
 class OverAgeSpec as Specification
-  @person in (Person)
-  def is_satisfied_by(person)
+  def is_satisfied_by(person::Person) -> Bool
     person.age >= 21
   end
 end
 
 class BornAtSpec as Specification
-  @born_at in (String)
-  def :init(born_at)
-    .born_at = born_at
-  end
+  needs born_at::String
 
-  @person in (Person)
-  def is_satisfied_by(person)
+  def is_satisfied_by(person::Person) -> Bool
     person.place_of_birth == .born_at
   end
 end
@@ -2622,13 +2615,13 @@ andrea = Person.new(name: "andrea", age: 21, place_of_birth: "CT")
 people = [claudio, andrea]
 
 over_age = OverAgeSpec.new()
-over_age_people = people.where(over_age.is_satisfied_by)  # => [andrea]
+over_age_people = people.filter(|p| over_age.is_satisfied_by(p))  # => [andrea]
 
 californian = BornAtSpec.new(born_at: "CA")
 
 # Logically combining business rules
-californian_and_under_21 = not over_age and californian
-some_people = people.where(californian_and_under_21.is_satisfied_by)  # => [claudio]
+spec = over_age.not().and(californian)
+some_people = people.filter(|p| spec.is_satisfied_by(p))  # => [claudio]
 ```
 
 ### 9.4 Settings
