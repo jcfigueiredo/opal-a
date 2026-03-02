@@ -22,7 +22,7 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
 | Question | Answer |
 |---|---|
 | Direct pointer access? | No. |
-| Data types? | Rich: integers, floats, chars, strings, booleans, null, symbols, lists, tuples, dicts, ranges, regex. |
+| Data types? | Rich: integers, floats, strings, booleans, null, symbols, lists, tuples, dicts, ranges, regex. |
 | Static or dynamic? | Dynamic, interpreted. |
 | Memory model? | Garbage collected (inherited from host runtime). |
 | Concurrency model? | Actor model. |
@@ -89,12 +89,12 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
                    | <dict_comp>
                    | "(" <expression> ")"
 
-<literal>       ::= INTEGER | FLOAT | CHAR | STRING | BOOL | NULL
+<literal>       ::= INTEGER | FLOAT | STRING | BOOL | NULL
                    | SYMBOL | <list> | <tuple> | <dict> | <range> | <regex>
                    | <f_string> | <r_string> | <t_string>
 
-<char>          ::= "'" ( CHAR_CONTENT | ESCAPE_SEQ ) "'"
 <string>        ::= '"' ( STRING_CONTENT | ESCAPE_SEQ )* '"'
+                   | "'" ( STRING_CONTENT | ESCAPE_SEQ )* "'"
                    | '"""' ( STRING_CONTENT | ESCAPE_SEQ | NEWLINE )* '"""'
 <f_string>      ::= 'f"' ( STRING_CONTENT | ESCAPE_SEQ | "{" <expression> FORMAT_SPEC? "}" )* '"'
                    | 'f"""' ( STRING_CONTENT | ESCAPE_SEQ | NEWLINE | "{" <expression> FORMAT_SPEC? "}" )* '"""'
@@ -409,45 +409,58 @@ x.wrapping_add(1)  # => -2_147_483_648
 - Integer overflow raises `OverflowError`. Use `.wrapping_add()`, `.wrapping_mul()` etc. for unchecked arithmetic.
 - Default types: integer literals are `Int32`, float literals are `Float32`.
 
-#### 4.3.4 Characters
+#### 4.3.4 Strings — Single and Double Quotes
 
-Characters use single quotes. A char is a single Unicode code point.
+Both single and double quotes produce strings. Use whichever avoids escaping:
 
 ```opal
-'a'
-'ሴ'
-'\''       # single quote
-'\\'       # backslash
-'\n'       # newline
-'\t'       # tab
-'\r'       # carriage return
-'\e'       # escape
-'\f'       # form feed
-'\v'       # vertical tab
-
-# Octal code point (up to three digits)
-'\101'     # == 'A'
-'\123'     # == 'S'
-
-# Unicode code point (four hex digits)
-'\u0041'   # == 'A'
-
-# Unicode code point (up to six hex digits in braces)
-'\u{41}'   # == 'A'
-'\u{1F52E}'# == '🔮'
+name = "claudio"
+name = 'claudio'           # identical
+json = '{"name": "claudio"}'  # single quotes avoid escaping
+html = "<p class='bold'>hi</p>"  # double quotes avoid escaping
 ```
 
-#### 4.3.5 Strings
+Escape sequences work in both:
 
-Strings are immutable sequences of characters. They use double quotes. Opal provides several string prefixes for different use cases.
+```opal
+"hello\n"    # newline
+'hello\n'    # also newline
+"it's"       # apostrophe in double quotes
+'it\'s'      # escaped in single quotes
+"say \"hi\"" # escaped in double quotes
+'say "hi"'   # no escaping needed
+```
 
-**Regular strings** — double quotes, supports escape sequences:
+All escape sequences:
+
+| Escape | Meaning |
+|---|---|
+| `\\` | Backslash |
+| `\'` | Single quote |
+| `\"` | Double quote |
+| `\n` | Newline |
+| `\t` | Tab |
+| `\r` | Carriage return |
+| `\e` | Escape |
+| `\f` | Form feed |
+| `\v` | Vertical tab |
+| `\101` | Octal code point |
+| `\u0041` | Unicode (4 hex digits) |
+| `\u{1F52E}` | Unicode (1-6 hex digits) |
+
+There is no separate `Char` type — a "character" is a length-1 string.
+
+#### 4.3.5 String Prefixes & Methods
+
+Opal provides several string prefixes for different use cases.
+
+**Regular strings** — single or double quotes, supports escape sequences:
 
 ```opal
 name = "claudio"
 move_message = "my move is ♘ to ♚"
 
-# Escape sequences: \n, \t, \\, \", etc. (same as chars)
+# Escape sequences: \n, \t, \\, \", \', etc.
 tab_separated = "col1\tcol2\tcol3"
 ```
 
@@ -558,6 +571,8 @@ Template strings give libraries control over how interpolated values are process
 | `r` | Raw, no escape processing | `String` |
 | `t` | Template for safe interpolation | `Template` |
 
+String prefixes (`f`, `r`, `t`) work with both single and double quotes: `f'Hello {name}'` is identical to `f"Hello {name}"`.
+
 #### String Methods
 
 Strings are immutable UTF-8 sequences. All methods return new strings (never mutate).
@@ -584,7 +599,7 @@ Strings are immutable UTF-8 sequences. All methods return new strings (never mut
 ["a", "b", "c"].join(", ")  # => "a, b, c"
 
 # Slicing
-"hello"[0]                  # => 'h' (Char)
+"hello"[0]                  # => "h"
 "hello"[1..3]               # => "ell" (String)
 
 # Conversion
@@ -595,7 +610,7 @@ Strings are immutable UTF-8 sequences. All methods return new strings (never mut
 
 **String rules:**
 - Strings are immutable UTF-8 sequences.
-- Indexing a string returns a `Char`. Slicing returns a `String`.
+- Indexing a string returns a length-1 `String`. Slicing also returns a `String`.
 - All transformation methods return new strings.
 
 #### 4.3.6 Symbols
@@ -697,7 +712,7 @@ end
 ```opal
 3 in [1, 2, 3, 4]         # => true
 "key" in {"key": "value"}  # => true (checks keys)
-'c' in 'a'..'z'            # => true
+"c" in "a".."z"            # => true
 42 not in [1, 2, 3]        # => true
 
 # in is sugar for .contains?()
@@ -932,11 +947,11 @@ Tuples are ordered, immutable sequences. They use parentheses.
 ```opal
 ()                              # empty tuple
 point = (10, 20)                # Tuple(Int32, Int32)
-record = (:banana, "apple", '🙈')  # Tuple(Symbol, String, Char)
+record = (:banana, "apple", "🙈")  # Tuple(Symbol, String, String)
 
 record[0]                       # => :banana
 record[1]                       # => "apple"
-record[2]                       # => '🙈'
+record[2]                       # => "🙈"
 ```
 
 #### 4.5.3 Dictionaries
@@ -963,7 +978,7 @@ A range is constructed with a range literal. Types on both extremes must be the 
 ```opal
 1..10       # inclusive range: 1, 2, 3, ..., 10
 1...10      # exclusive range: 1, 2, 3, ..., 9
-'a'..'z'    # character range
+"a".."z"    # character range
 
 # Ranges are iterable
 for i in 1..5
@@ -1106,7 +1121,7 @@ for item in [1, 2, 3]
   print(item)
 end
 
-for char in 'a'..'z'
+for char in "a".."z"
   print(char)
 end
 
@@ -1510,7 +1525,7 @@ def find(id::Int32) -> Person?
 end
 ```
 
-**Core types:** `Int8`, `Int16`, `Int32`, `Int64`, `Float32`, `Float64`, `Bool`, `Char`, `String`, `Template`, `Symbol`, `Null`, `List(T)`, `Tuple(...)`, `Dict(K, V)`, `Range(T)`, `Regex`.
+**Core types:** `Int8`, `Int16`, `Int32`, `Int64`, `Float32`, `Float64`, `Bool`, `String`, `Template`, `Symbol`, `Null`, `List(T)`, `Tuple(...)`, `Dict(K, V)`, `Range(T)`, `Regex`.
 
 **Boundary checking rules:**
 - Unannotated parameters and variables are dynamic — no checking.

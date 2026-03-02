@@ -15,8 +15,8 @@ Opal (Opinionated Programming Algorithmic Language) is a programming language in
 
 These rules are enforced across all examples and specifications. Violating them in code examples is a bug:
 
-- **Single quotes for chars only**: `'a'`, `'ñ'` — never for multi-character strings
-- **Double quotes for strings**: `"hello"`, `f"hi {name}"`, `r"raw\n"`, `t"template {x}"`
+- **Both quote styles for strings**: `"hello"` and `'hello'` are identical. Use whichever avoids escaping.
+- **String prefixes use either quote style**: `f"hi {name}"`, `f'hi {name}'`, `r"raw\n"`, `t"template {x}"`
 - **`with` keyword is ONLY for DSL config blocks** (nginx-style). Object creation uses `.new()` with named args. String interpolation uses f-strings.
 - **`defaults` keyword** (not `with`) for null object variant creation
 - **`::` for type annotations**: `name::String`
