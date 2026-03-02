@@ -40,7 +40,7 @@ When updating Opal.md, always check that changes are consistent across: BNF gram
 | File | Covers |
 |---|---|
 | `docs/features/type-system.md` | Generics, constraints, union types, aliases, nominal typing, retroactive conformance, symbol sets |
-| `docs/features/concurrency.md` | Four-layer model: actors, parallel, async/futures, supervisors |
+| `docs/05-concurrency/concurrency.md` | Four-layer model: actors, parallel, async/futures, supervisors |
 | `docs/features/dependency-injection-and-events.md` | `needs` keyword, `event`/`emit`/`on`, optional Container |
 | `docs/features/metaprogramming.md` | Julia-adapted quoting, hygienic macros, AST, subdomains, annotations (`@[...]`) |
 | `docs/features/self-hosting-foundations.md` | Operator overloading, iterators, custom errors, destructuring, protocol defaults |

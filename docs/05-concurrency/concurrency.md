@@ -1,19 +1,18 @@
 # Concurrency
 
+Opal's concurrency model has four layers: **actors** for stateful concurrent entities, **parallel blocks** for structured concurrency, **async/futures** for individual non-blocking calls, and **supervisors** for fault tolerance.
+
+**Core principles:**
+- **Sync by default** — all calls block and return values. Async is opt-in.
+- **No colored functions** — there is no `async def`. Any expression can be made async at the call site with the `async` keyword.
+- **Structured concurrency** — the `parallel` block is the primary tool for concurrent work. All concurrent work has a parent scope — no orphaned tasks.
+- **One way to do each thing** — actors for stateful concurrency, `parallel` for fan-out, `async` for individual futures, supervisors for fault tolerance.
+
 ---
 
-## Design Principles
+## Actors
 
-- **Sync by default.** All calls block and return values directly. Async is opt-in.
-- **No colored functions.** There is no `async def`. Any expression can be made async at the call site with the `async` keyword.
-- **Structured concurrency.** The `parallel` block is the primary tool for concurrent work. All concurrent work has a parent scope — no orphaned tasks.
-- **One way to do each thing.** Actors for stateful concurrency, `parallel` for fan-out, `async` for individual futures, supervisors for fault tolerance.
-
----
-
-## Layer 1: Actors
-
-Actors are long-lived concurrent entities with isolated state. All external interaction goes through message passing.
+Actors are long-lived concurrent entities with isolated state. All external interaction goes through message passing via `receive` blocks and `.send()`. Methods defined with `def` are internal only.
 
 ### Rules
 
@@ -22,7 +21,7 @@ Actors are long-lived concurrent entities with isolated state. All external inte
 - `.send()` sends a message to an actor. **Sync by default:** blocks until the actor replies.
 - `reply` sends a value back to the caller.
 
-### Syntax
+### Basic Actor
 
 ```opal
 actor Counter
@@ -43,12 +42,13 @@ actor Counter
       reply :ok
   end
 
-  # Internal helper — NOT accessible from outside
+  # Internal helper — not accessible from outside
   private def validate_count()
     .count >= 0
   end
 end
 
+# All interaction through .send() — sync by default
 c = Counter.new()
 c.send(:increment)     # => 1 (blocks until reply)
 c.send(:increment)     # => 2
@@ -86,39 +86,77 @@ cache.send(:get, "user:1")  # => "claudio"
 
 ---
 
-## Layer 2: Structured Concurrency (`parallel`)
+## Actor Message Typing
+
+Actors can optionally declare their message interface with `receives`, enabling compile-time checking of `.send()` calls:
+
+```opal
+actor Cache
+  receives :get, :set, :delete
+
+  receive
+    case :get(key)
+      reply .store[key]
+    case :set(key, value)
+      .store[key] = value
+      reply :ok
+    case :delete(key)
+      .store.delete(key)
+      reply :ok
+  end
+end
+
+cache = Cache.new()
+cache.send(:get, "user:1")     # OK — :get is in receives
+cache.send(:gett, "user:1")    # COMPILE WARNING: :gett not in Cache.receives
+```
+
+**Rules:**
+- `receives :msg1, :msg2, ...` is optional — actors without it accept any symbol (backward compatible).
+- When present, `.send()` calls are checked at compile time.
+- `receives` uses symbol sets under the hood.
+- Named symbol sets work too: `receives HttpMethod` where `type HttpMethod = :get | :post | :put | :delete | :patch`.
+- The `receive` block must handle all declared messages (exhaustiveness check).
+- Queryable: `Cache.receives()` returns the set of accepted messages.
+
+---
+
+## Structured Concurrency (`parallel`)
 
 The `parallel` block runs expressions concurrently and waits for all to complete.
 
 ### Fan-out
 
 ```opal
+# Fan-out: run expressions concurrently, collect all results
 users, orders, inventory = parallel
   fetch_users()
   fetch_orders()
   fetch_inventory()
 end
-# All three run concurrently.
-# Block returns when all complete.
-# Results are returned as a tuple, matching the order of expressions.
+# Blocks until ALL complete.
+# Results returned as a tuple, matching the order of expressions.
+# If any expression fails, the others are cancelled.
 ```
 
 ### Parallel For
 
 ```opal
+# Parallel iteration
 pages = parallel for url in urls
   Net.fetch(url)
 end
-# Returns a list of responses, fetched concurrently.
+# Returns a list of responses, fetched concurrently
 ```
 
 ### Concurrency Limit
 
 ```opal
+# With a concurrency limit
 pages = parallel max: 5 for url in urls
   Net.fetch(url)
 end
-# At most 5 fetches run at a time.
+# At most 5 fetches run at a time
 ```
 
 ### Parallel with Actors
@@ -132,7 +170,7 @@ end
 total = counts[0] + counts[1] + counts[2]
 ```
 
-### Cancellation Rule
+### Cancellation
 
 If any branch in a `parallel` block fails, all sibling branches are cancelled and the failure propagates to the caller. This is structured concurrency — no orphaned work.
 
@@ -163,11 +201,9 @@ end
 
 ---
 
-## Layer 3: Async / Futures
+## Async / Futures
 
 For when `parallel` is too rigid and you need fine-grained control over individual concurrent operations.
-
-### Syntax
 
 ```opal
 # async turns any expression into a Future
@@ -178,18 +214,11 @@ prepare_template()
 
 # Auto-await: using the future's value blocks until ready
 print(f"Hello, {user_future.name}")  # blocks here if not yet done
-```
 
-### Explicit Await
-
-```opal
-# When you want to be clear about the blocking point
+# Explicit await (when you want to be clear about the blocking point)
 user = await user_future
-```
 
-### Checking Readiness
-
-```opal
+# Check readiness without blocking
 if user_future.ready?()
   print("done!")
 end
@@ -227,20 +256,18 @@ end
 
 ---
 
-## Layer 4: Supervisors
+## Supervisors
 
 Supervisors watch child actors and restart them on failure.
 
-### Syntax
-
 ```opal
 supervisor AppSupervisor
-  strategy :one_for_one
-  max_restarts 3, 60
+  strategy :one_for_one       # only restart the failed child
+  max_restarts 3, 60           # give up after 3 crashes in 60 seconds
 
-  supervise Logger.new()
-  supervise Cache.new(ttl: 60)
-  supervise Worker.new()
+  supervise Logger()
+  supervise Cache(ttl: 60)
+  supervise Worker()
 end
 
 app = AppSupervisor.start!
@@ -333,35 +360,78 @@ actor RateLimiter
 end
 
 def fetch_dashboard(user_id)
-  limiter = RateLimiter.new(max_per_second: 10)
+  limiter = RateLimiter(max_per_second: 10)
 
-  # Layer 1: Actor message (sync by default)
+  # Actor message (sync by default)
   status = limiter.send(:check)
   if status == :limited
-    fail RateLimitError.new("Too many requests")
+    fail RateLimitError("Too many requests")
   end
 
-  # Layer 2: Structured concurrency
+  # Structured concurrency
   profile, notifications, feed = parallel
     fetch_profile(user_id)
     fetch_notifications(user_id)
     fetch_feed(user_id)
   end
 
-  # Layer 3: Async for background work (don't need result now)
+  # Async for background work (don't need result now)
   async log_access(user_id)
 
   {profile: profile, notifications: notifications, feed: feed}
 end
 
-# Layer 4: Supervision for production
+# Supervision for production
 supervisor DashboardSupervisor
   strategy :one_for_one
   max_restarts 5, 30
 
-  supervise RateLimiter.new(max_per_second: 100)
+  supervise RateLimiter(max_per_second: 100)
 end
 ```
+
+---
+
+## Design Rationale
+
+### Why Four Layers?
+
+Each concurrency layer addresses a distinct need. This avoids a single overloaded primitive that tries to do everything:
+
+| Layer | Purpose | When to use |
+|---|---|---|
+| Actors | Stateful concurrent entities with isolated state | Long-lived services, shared mutable state behind message passing |
+| `parallel` | Structured fan-out with automatic cancellation | Running N independent tasks and waiting for all results |
+| `async` / Futures | Fine-grained non-blocking calls | Fire-and-forget work, or when you need a result later but not now |
+| Supervisors | Fault tolerance and crash recovery | Production systems where actors must survive failures |
+
+### Why Sync by Default?
+
+Most concurrency models force developers to choose async from the start, infecting every caller up the chain. Opal inverts this: all calls are synchronous and blocking by default. You opt into concurrency explicitly with `async`, `parallel`, or actor `.send()`.
+
+This means:
+- Functions are simpler to write and test — no async/await ceremony.
+- The default path (sync) is always correct, just potentially slower.
+- Concurrency is a conscious choice at the call site, not a viral annotation.
+
+### Why No Colored Functions?
+
+Many languages have "function coloring" — once a function is `async`, every caller must also be `async`. This creates two incompatible worlds.
+
+Opal avoids this entirely. There is no `async def`. Any expression can be made async at the call site:
+
+```opal
+# The function itself is just a normal function
+def fetch_user(id)
+  Net.get(f"/users/{id}")
+end
+
+# The CALLER decides whether to run it async
+user = fetch_user(1)                 # sync (blocking)
+user_future = async fetch_user(1)    # async (non-blocking)
+```
+
+This keeps function signatures simple and gives the caller full control over execution strategy.
 
 ---
 
@@ -374,5 +444,6 @@ end
 | Run N items concurrently | Parallel for | `parallel for x in xs ... end` |
 | Limit concurrency | Parallel max | `parallel max: N for ...` |
 | Make one call non-blocking | Async/Future | `async expr`, auto-await on use |
+| Declare actor interface | Message typing | `receives :msg1, :msg2` |
 | Fault tolerance | Supervisor | `supervisor`, `strategy`, `supervise` |
 | Crash recovery hooks | Lifecycle | `on_crash(reason)`, `on_restart()` |
