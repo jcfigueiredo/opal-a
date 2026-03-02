@@ -101,7 +101,7 @@ print(f"result: {c}")  # => "result: (4.0, 6.0)"
 
 - Method form `def +(other::T)` inside a class is sugar for `def +(self::Self, other::T)`.
 - Standalone form `def +(a::A, b::B)` dispatches on all argument types.
-- Same multiple dispatch resolution as regular functions (exact type > guard > arity > ambiguity error).
+- Same multiple dispatch resolution as regular functions (exact type > precondition > arity > ambiguity error).
 - `to_string()` is called automatically by f-strings and `print`.
 - `to_bool()` is called automatically by conditionals.
 - `iter()` is called automatically by `for ... in`.
@@ -240,7 +240,7 @@ class ValidationError < Error
   def :init(field, reason)
     .field = field
     .reason = reason
-    super(message: f"Validation failed on {field}: {reason}")
+    super(message: f"Validaticatched on {field}: {reason}")
   end
 end
 ```
@@ -253,10 +253,10 @@ class AuthError < AppError end
 class PermissionDenied < AuthError end
 class TokenExpired < AuthError end
 
-# on fail AuthError catches both PermissionDenied and TokenExpired
+# catch AuthError catches both PermissionDenied and TokenExpired
 try
   authenticate(token)
-on fail AuthError as e
+catch AuthError as e
   print(f"Auth failed: {e.message}")
 end
 ```
@@ -273,11 +273,11 @@ end
 
 try
   config = read_config("missing.json")
-on fail FileNotFound as e
+catch FileNotFound as e
   print(f"Missing: {e.path}")
-on fail ValidationError as e
+catch ValidationError as e
   print(f"Bad field: {e.field} — {e.reason}")
-on fail Error as e
+catch Error as e
   print(f"Unexpected: {e.message}")
 end
 ```
@@ -286,7 +286,7 @@ end
 
 - `class MyError < Error` defines a custom error type.
 - `fail expr` raises any `Error` subclass.
-- `on fail Type as e` catches errors of that type **and its subclasses**.
+- `catch Type as e` catches errors of that type **and its subclasses**.
 - `Error` provides `.message` and `.stack_trace()` by default.
 - Custom fields via `needs` (like any class).
 - `super(message: ...)` chains to the parent Error constructor.

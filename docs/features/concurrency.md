@@ -139,7 +139,7 @@ try
     fetch_a()   # succeeds
     fetch_b()   # fails!
   end
-on fail as e
+catch as e
   # fetch_a() is cancelled, error from fetch_b() is raised here
   print(f"Failed: {e.message}")
 end
@@ -208,8 +208,8 @@ Failures are captured in the Future and re-raised when awaited.
 future = async risky_operation()
 try
   result = await future
-on fail as e
-  print(f"Operation failed: {e.message}")
+catch as e
+  print(f"Operaticatched: {e.message}")
 end
 ```
 
@@ -226,7 +226,7 @@ end
 
 ## Layer 4: Supervisors
 
-Supervisors watch child actors and restart them on failure.
+Supervisors watch child actors and restart them catchure.
 
 ### Syntax
 

@@ -258,7 +258,7 @@ macro test(name, body)
     try
       $body
       Test.pass($name)
-    on fail as e
+    catch as e
       Test.fail($name, e.message)
     end
   end
@@ -347,7 +347,7 @@ These are essentially code transformations and could theoretically be implemente
 - `event` — generates an immutable data class
 - `emit` — generates actor-based event dispatch
 - `on` — generates event handler registration
-- `guard` — generates pre-condition checks
+- `requires` — generates pre-condition checks
 - `supervisor` — generates actor supervision setup
 
 Whether they stay as keywords or become macros is an implementation decision. The key insight is that the macro system is *expressive enough* to define them.
@@ -463,13 +463,13 @@ Every macro should include a comment or doc showing the equivalent non-macro cod
 
 **5. Prefer macros that compose with existing features.**
 
-Macros should work with guards, pattern matching, DI, and events — not bypass them:
+Macros should work with preconditions, pattern matching, DI, and events — not bypass them:
 
 ```opal
-# Good — composes with guards
-@positive
+# Good — composes with preconditions
 @memoize
 def sqrt(x::Float64) -> Float64
+  requires x >= 0
   x ** 0.5
 end
 

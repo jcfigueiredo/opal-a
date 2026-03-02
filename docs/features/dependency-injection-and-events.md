@@ -158,10 +158,16 @@ module AnalyticsHandler
   end
 end
 
-# With guards
-@only_business_hours
+# With preconditions
+def business_hours?() -> Bool
+  hour = Time.now().hour
+  hour >= 9 and hour < 17
+end
+
 on OrderPlaced do |e|
-  notify_sales_team(e.order)
+  if business_hours?()
+    notify_sales_team(e.order)
+  end
 end
 ```
 
@@ -215,7 +221,7 @@ def place_order(order)
 
   try
     await delivery  # did all handlers complete ok?
-  on fail as e
+  catch as e
     log(f"Event handling failed: {e.message}")
   end
 end
@@ -350,7 +356,7 @@ actor PaymentProcessor
     try
       .gateway.charge(order.total)
       reply :ok
-    on fail as e
+    catch as e
       emit PaymentFailed.new(order: order, reason: e.message)
       reply :failed
     end

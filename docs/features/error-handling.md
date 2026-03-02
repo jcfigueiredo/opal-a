@@ -6,7 +6,7 @@
 
 Opal has two error handling mechanisms for different situations:
 
-- **Exceptions** (`fail` / `try` / `on fail`) — for truly exceptional, unrecoverable, or unexpected errors. These propagate implicitly up the call stack.
+- **Exceptions** (`fail` / `try` / `catch`) — for truly exceptional, unrecoverable, or unexpected errors. These propagate implicitly up the call stack.
 - **Result types** (`Result(T, E)`) — for expected, recoverable errors. These are explicit return values that force the caller to handle both cases.
 
 ---
@@ -29,7 +29,7 @@ Opal has two error handling mechanisms for different situations:
 
 ## 2. Exceptions
 
-Exceptions are the existing `fail` / `try` / `on fail` / `ensure` mechanism. Errors are classes inheriting from `Error`.
+Exceptions are the existing `fail` / `try` / `catch` / `ensure` mechanism. Errors are classes inheriting from `Error`.
 
 ### Custom Error Types
 
@@ -64,9 +64,9 @@ end
 
 try
   config = read_config("missing.json")
-on fail FileNotFound as e
+catch FileNotFound as e
   print(f"Missing: {e.path}")
-on fail as e
+catch as e
   log(f"Unexpected: {e.message}")
   fail(e)  # re-raise
 ensure
@@ -85,7 +85,7 @@ class TokenExpired < AuthError end
 # Catches both PermissionDenied and TokenExpired
 try
   authenticate(token)
-on fail AuthError as e
+catch AuthError as e
   print(f"Auth failed: {e.message}")
 end
 ```
@@ -93,8 +93,8 @@ end
 ### Rules
 
 - `fail expr` raises any `Error` subclass.
-- `on fail Type as e` catches errors of that type and its subclasses.
-- `on fail as e` (no type) catches any error.
+- `catch Type as e` catches errors of that type and its subclasses.
+- `catch as e` (no type) catches any error.
 - `ensure` always executes, whether the block succeeded or failed.
 - `Error` provides `.message` and `.stack_trace()` by default.
 
@@ -246,7 +246,7 @@ end
 
 | Feature | Purpose |
 |---|---|
-| `fail` / `try` / `on fail` | Exceptions — unrecoverable/unexpected errors |
+| `fail` / `try` / `catch` | Exceptions — unrecoverable/unexpected errors |
 | `Result(T, E)` | Explicit return values — expected/recoverable errors |
 | `!` operator | Postfix on Result — unwraps Ok or propagates Err |
 | `.unwrap()` | Converts Result.Err to an exception |

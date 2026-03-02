@@ -56,36 +56,36 @@ updated = user.copy(age: 16)
 
 ## 2. Field Validation
 
-Simple constraints go inline with `where`. Complex cross-field validation uses a `validate` block. Named guards from Opal's guard system work directly in `where` clauses.
+Simple constraints go inline with `where`. Complex cross-field validation uses a `validate` block. Named validators (regular functions returning `Bool`) work directly in `where` clauses.
 
 ### Three Forms of `where`
 
 ```opal
-# Define reusable guards
-guard is_email(value) fails :invalid_email
-  return /^[^@]+@[^@]+\.[^@]+$/.match?(value)
+# Define reusable validators (regular functions returning Bool)
+def valid_email?(value) -> Bool
+  /^[^@]+@[^@]+\.[^@]+$/.match?(value)
 end
 
-guard is_required(value) fails :required
-  return value != null and value.to_string().length > 0
+def is_required?(value) -> Bool
+  value != null and value.to_string().length > 0
 end
 
-guard min_length(value, n) fails :too_short
-  return value.length >= n
+def min_length?(value, n) -> Bool
+  value.length >= n
 end
 
 model User
-  # Named guard — value passed automatically
-  needs email::String where is_email
+  # Named validator — value passed automatically
+  needs email::String where valid_email?
 
   # Inline closure
   needs age::Int32 where |v| v >= 0
 
-  # Named guard with partial application
-  needs username::String where min_length(3)
+  # Named validator with partial application
+  needs username::String where min_length?(3)
 
   # Multiple constraints (comma-separated, all must pass)
-  needs password::String where is_required, |v| v.length >= 8
+  needs password::String where is_required?, |v| v.length >= 8
 
   needs role::String = "member"
 end
@@ -118,10 +118,10 @@ end
 
 ### Rules
 
-- `where guard_name` — named guard, value passed automatically.
+- `where validator_name` — named validator, value passed automatically.
 - `where |v| expr` — inline closure, must return Bool.
-- `where guard_name(args)` — partial application, value is the first argument.
-- Comma-separated to combine: `where is_required, is_email`.
+- `where validator_name(args)` — partial application, value is the first argument.
+- Comma-separated to combine: `where is_required?, valid_email?`.
 - If a `where` returns false, raises `ValidationError` with the field name.
 - `validate do ... end` runs after all fields pass individual checks.
 - Multiple `validate` blocks allowed — run in declaration order.
@@ -308,9 +308,9 @@ Environment variables are strings. Settings automatically coerces:
 |---|---|
 | Keyword | `model` — dedicated construct, distinct from `class` |
 | Immutability | Models are immutable, `.copy()` for modified copies |
-| Inline validation | `where |v| expr` or `where guard_name` |
-| Named guards | `where is_email`, `where min_length(3)` — reuses guard system |
-| Multiple constraints | Comma-separated: `where is_required, is_email` |
+| Inline validation | `where |v| expr` or `where validator_name` |
+| Named validators | `where valid_email?`, `where min_length?(3)` — reuses regular functions |
+| Multiple constraints | Comma-separated: `where is_required?, valid_email?` |
 | Cross-field validation | `validate do ... end` blocks |
 | Validation order | Type check -> inline `where` -> `validate` blocks |
 | Serialization | Built-in `to_dict`/`from_dict`, `to_json`/`from_json`, recursive |

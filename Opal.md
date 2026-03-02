@@ -10,7 +10,7 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
 
 - **Readability is paramount.** Code is read far more than it is written.
 - **One explicit way.** There should be one obvious way to do something — no alternative syntax for the same operation.
-- **Software engineering concepts are first-class.** Dependency injection, domain events, specifications, guards, null objects, validated models, settings, the actor model, and metaprogramming are built into the language, not bolted on.
+- **Software engineering concepts are first-class.** Dependency injection, domain events, specifications, preconditions, null objects, validated models, settings, the actor model, and metaprogramming are built into the language, not bolted on.
 - **Batteries included.** Built-in testing, mocking, fixtures, documentation generation, project scaffolding, and package management.
 - **Gradual typing.** Write quick scripts with no annotations, then add types at module boundaries for safety.
 
@@ -79,6 +79,8 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
                    | <function_call>
                    | <lambda>
                    | <with_expr>
+                   | <list_comp>
+                   | <dict_comp>
                    | "(" <expression> ")"
 
 <literal>       ::= INTEGER | FLOAT | CHAR | STRING | BOOL | NULL
@@ -103,6 +105,11 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
 <dict>          ::= "{" <dict_entry> ("," <dict_entry>)* "}"
                    | "{:}"
 <dict_entry>    ::= <expression> ":" <expression>
+<list_comp>     ::= "[" <expression> "for" IDENTIFIER "in" <expression>
+                     ("for" IDENTIFIER "in" <expression>)*
+                     ("if" <expression>)? "]"
+<dict_comp>     ::= "{" <expression> ":" <expression> "for" IDENTIFIER "in" <expression>
+                     ("if" <expression>)? "}"
 <range>         ::= <expression> ".." <expression>
                    | <expression> "..." <expression>
 <regex>         ::= "/" REGEX_CONTENT "/" REGEX_FLAGS?
@@ -169,7 +176,8 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
 <enum_pattern>   ::= <module_path> "." IDENTIFIER ("(" <pattern> ("," <pattern>)* ")")?
 
 <try_expr>      ::= "try" NEWLINE <block>
-                     ("on" "fail" TYPE ("as" IDENTIFIER)? NEWLINE <block>)*
+                     ("catch" TYPE ("as" IDENTIFIER)? NEWLINE <block>)*
+                     ("catch" ("as" IDENTIFIER)? NEWLINE <block>)?
                      ("ensure" NEWLINE <block>)?
                      "end"
 
@@ -239,6 +247,7 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
 
 <is_expr>       ::= <expression> "is" TYPE
 <propagate_expr>::= <expression> "!"
+<requires_expr> ::= "requires" <expression> ("," STRING)?
 
 <class_def>     ::= "class" IDENTIFIER ("(" <type_params> ")")? ("<" IDENTIFIER)?
                      (<where_clause>)? NEWLINE <class_body> "end"
@@ -777,6 +786,29 @@ numbers.group_by(|x| if x > 3 then "big" else "small" end)
 # Iteration
 numbers.each(|x| print(x))             # prints each, returns null
 ```
+
+#### Comprehensions
+
+Comprehensions provide a concise syntax for building lists and dicts from iteration and filtering.
+
+```opal
+# List comprehension
+squares = [x ** 2 for x in 1..10]
+
+# With filter
+even_squares = [x ** 2 for x in 1..10 if x % 2 == 0]
+
+# Dict comprehension
+name_lengths = {name: name.length for name in ["alice", "bob", "carol"]}
+
+# Nested iteration
+pairs = [(x, y) for x in 1..3 for y in 1..3 if x != y]
+
+# With destructuring
+adults = [name for (name, age) in people if age >= 18]
+```
+
+Comprehensions are sugar for `filter` + `map`. Both styles are available — use whichever reads better for the situation.
 
 #### 4.5.2 Tuples
 
@@ -1997,23 +2029,23 @@ end
 **Resolution order:**
 
 1. **Exact type match** — argument types match a definition exactly.
-2. **Guard-constrained match** — a guard narrows the valid inputs.
+2. **Precondition-constrained match** — a `requires` narrows the valid inputs.
 3. **Signature arity match** — number of arguments selects among overloads.
 4. **Ambiguity = compile-time error** — if two definitions match equally well, the compiler rejects the program.
 
 ```opal
-# Dispatch with guards
+# Dispatch with preconditions
 def process(value::Int32)
   print("generic integer")
 end
 
-@positive
 def process(value::Int32)
+  requires value > 0
   print("positive integer")
 end
 
-process(5)   # => "positive integer" (guard match wins)
-process(-3)  # => "generic integer"  (guard fails, falls to base)
+process(5)   # => "positive integer" (requires passes)
+process(-3)  # => "generic integer"  (requires fails, falls to base)
 ```
 
 ### 6.8 Iterator Protocol
@@ -2251,7 +2283,7 @@ The `model` keyword defines validated, immutable data structures — Opal's equi
 ```opal
 model User
   needs name::String where |v| v.length > 0
-  needs email::String where is_email
+  needs email::String where valid_email?
   needs age::Int32 where |v| v >= 0
   needs role::String = "member"
 end
@@ -2269,23 +2301,23 @@ updated = user.copy(age: 16)
 
 #### Field Validation
 
-Three forms of `where` — inline closures, named guards, and guards with partial application. Comma-separated to combine.
+Three forms of `where` — inline closures, named validators, and validators with partial application. Comma-separated to combine.
 
 ```opal
-# Reusable guards
-guard is_email(value) fails :invalid_email
-  return /^[^@]+@[^@]+\.[^@]+$/.match?(value)
+# Reusable validators (regular functions returning Bool)
+def valid_email?(value) -> Bool
+  /^[^@]+@[^@]+\.[^@]+$/.match?(value)
 end
 
-guard min_length(value, n) fails :too_short
-  return value.length >= n
+def min_length?(value, n) -> Bool
+  value.length >= n
 end
 
 model Account
-  needs email::String where is_email                     # named guard
+  needs email::String where valid_email?                  # named validator
   needs age::Int32 where |v| v >= 0                      # inline closure
-  needs username::String where min_length(3)             # partial application
-  needs password::String where is_required, |v| v.length >= 8  # multiple
+  needs username::String where min_length?(3)            # partial application
+  needs password::String where is_required?, |v| v.length >= 8  # multiple
   needs discount::Float64 = 0.0
   needs price::Float64
 
@@ -2313,7 +2345,7 @@ end
 
 model User
   needs name::String where |v| v.length > 0
-  needs email::String where is_email
+  needs email::String where valid_email?
   needs address::Address
 end
 
@@ -2333,7 +2365,7 @@ user = User.from_dict({"name": "claudio", "email": "c@test.com",
 
 **Model rules:**
 - All fields declared with `needs` — same syntax as classes.
-- `where |v| expr` inline closure, `where guard_name`, or `where guard_name(args)` for partial application.
+- `where |v| expr` inline closure, `where validator_name`, or `where validator_name(args)` for partial application.
 - Comma-separated `where` constraints: all must pass.
 - `validate do ... end` for cross-field validation, runs after all fields pass.
 - Validation runs on `.new()`, `.from_dict()`, `.from_json()`, and `.copy()`.
@@ -2375,14 +2407,14 @@ hypotenuse = sqrt(x ** 2 + y ** 2)
 
 Opal has two error handling mechanisms for different situations:
 
-- **Exceptions** (`fail` / `try` / `on fail`) — for truly exceptional, unrecoverable, or unexpected errors. Propagate implicitly up the call stack.
+- **Exceptions** (`fail` / `try` / `catch`) — for truly exceptional, unrecoverable, or unexpected errors. Propagate implicitly up the call stack.
 - **Result types** (`Result(T, E)`) — for expected, recoverable errors. Explicit return values that force the caller to handle both cases.
 
 **When to use which:** If the caller should *always* handle it, use `Result`. If the caller *shouldn't need to know* how to handle it, use exceptions.
 
 #### Exceptions
 
-Errors are classes inheriting from `Error`. `fail` raises, `try`/`on fail` catches, `ensure` always runs.
+Errors are classes inheriting from `Error`. `fail` raises, `try`/`catch` catches, `ensure` always runs.
 
 ```opal
 # Custom error types — classes with needs fields
@@ -2395,7 +2427,7 @@ class FileNotFound < Error
   end
 end
 
-# Error hierarchies — on fail catches subclasses
+# Error hierarchies — catch catches subclasses
 class AppError < Error end
 class AuthError < AppError end
 class PermissionDenied < AuthError end
@@ -2412,12 +2444,12 @@ end
 
 try
   config = read_config("missing.json")
-on fail FileNotFound as e
+catch FileNotFound as e
   print(f"Missing: {e.path}")
-on fail AuthError as e
+catch AuthError as e
   # Catches both PermissionDenied and TokenExpired
   print(f"Auth failed: {e.message}")
-on fail as e
+catch as e
   log(f"Unexpected: {e.message}")
   fail(e)  # re-raise
 ensure
@@ -2495,7 +2527,7 @@ end
 
 **Error handling rules:**
 - `fail expr` raises any `Error` subclass.
-- `on fail Type as e` catches that type and subclasses. `on fail as e` catches all.
+- `catch Type as e` catches that type and subclasses. `catch as e` catches all.
 - `ensure` always runs.
 - `expr!` on a `Result` unwraps `Ok` or returns `Err` from the enclosing function.
 - The enclosing function must return `Result` — using `!` elsewhere is a compile-time error.
@@ -2503,45 +2535,63 @@ end
 - `Result.from do ... end` catches exceptions into `Result.Err`.
 - `Result.from(Type) do ... end` catches only that type.
 
-### 7.2 Guards & Rules
+### 7.2 Preconditions & Validation
 
-Guards validate data before a function body executes. Guard functions are reusable — the same guard works as a function pre-condition (`@guard`) and as a model field constraint (`where guard`).
+#### Function Preconditions (`requires`)
+
+`requires` validates conditions at the start of a function body. If the condition is false, raises a `PreconditionError`.
 
 ```opal
-# Define reusable guards
-guard positive(value) fails :must_be_positive
-  return value > 0
-end
-
-guard old_enough(age) fails :too_young
-  return age >= 18
-end
-
-# As function pre-condition (decorator) — guard receives the function's arguments
-@positive
 def sqrt(value::Float64) -> Float64
+  requires value >= 0, "sqrt requires non-negative input"
   value ** 0.5
 end
 
-@old_enough
-def register_voter(name::String, age::Int32)
-  print(f"{name} registered to vote")
+sqrt(4.0)   # => 2.0
+sqrt(-1.0)  # raises PreconditionError: "sqrt requires non-negative input"
+
+# Multiple preconditions
+def transfer(from::Account, to::Account, amount::Float64)
+  requires amount > 0, "amount must be positive"
+  requires from.balance >= amount, "insufficient funds"
+  from.withdraw(amount)
+  to.deposit(amount)
+end
+```
+
+#### Reusable Validators
+
+Validators are regular functions returning `Bool`. They work in both `requires` and model `where` clauses.
+
+```opal
+def positive?(value) -> Bool
+  value > 0
 end
 
-# Same guards work in model field validation (where clause)
-model Registration
-  needs name::String where |v| v.length > 0
-  needs age::Int32 where old_enough
-  needs deposit::Float64 where positive
+def valid_email?(value) -> Bool
+  /^[^@]+@[^@]+\.[^@]+$/.match?(value)
+end
+
+# In function preconditions
+def sqrt(value::Float64) -> Float64
+  requires positive?(value)
+  value ** 0.5
+end
+
+# Same validators in model fields
+model Account
+  needs email::String where valid_email?
+  needs age::Int32 where |v| v >= 0
+  needs deposit::Float64 where positive?
 end
 ```
 
 **Rules:**
-- `guard name(params) fails :symbol ... end` defines a reusable guard function.
-- `@guard_name` before a function definition = pre-condition. The guard receives the function's arguments. If it fails, raises a `GuardError` with the `:symbol`.
-- `where guard_name` on a model field = field validation. The guard receives the field's value. See [6.10 Models](#610-models-validated-data).
-- For type constraints on parameters, use type annotations: `param::Type` (see [6.2](#62-type-system)).
-- `@` is used for both guard decorators and macro invocations. Guards are resolved first; if no guard matches, it's treated as a macro.
+- `requires expr` at the start of a function body validates a condition.
+- `requires expr, "message"` provides a custom error message.
+- If the condition is false, raises `PreconditionError`.
+- Multiple `requires` are checked in order.
+- Validators are regular functions — reuse them in `requires` and model `where`.
 
 ### 7.3 Null Objects
 
@@ -2701,7 +2751,7 @@ try
     fetch_a()   # succeeds
     fetch_b()   # fails!
   end
-on fail as e
+catch as e
   # fetch_a() is cancelled, error from fetch_b() is raised here
   print(f"Failed: {e.message}")
 end
@@ -2740,7 +2790,7 @@ count = await count_future
 future = async risky_operation()
 try
   result = await future
-on fail as e
+catch as e
   print(f"Operation failed: {e.message}")
 end
 ```
@@ -3052,10 +3102,16 @@ module AnalyticsHandler
   end
 end
 
-# With guards
-@only_business_hours
+# With preconditions
+def business_hours?() -> Bool
+  hour = Time.now().hour
+  hour >= 9 and hour < 17
+end
+
 on OrderPlaced do |e|
-  notify_sales_team(e.order)
+  if business_hours?()
+    notify_sales_team(e.order)
+  end
 end
 ```
 
@@ -3143,7 +3199,7 @@ actor PaymentProcessor
     try
       .gateway.charge(order.total)
       reply :ok
-    on fail as e
+    catch as e
       emit PaymentFailed.new(order: order, reason: e.message)
       reply :failed
     end
@@ -3429,6 +3485,7 @@ macroexpand(@measure do 1 + 1 end)
 
 - `macro name(params) ... end` defines a macro. The body must return an `Expr`.
 - `@name args` invokes a macro at parse time.
+- `@` is reserved exclusively for macros.
 - Macros receive arguments as `Expr` (AST), not evaluated values.
 - **Hygienic by default:** variables in macro quotes don't leak.
 - `esc(expr)` escapes into the caller's scope (opt-in).
@@ -3529,7 +3586,7 @@ macro test(name, body)
     try
       $body
       Test.pass($name)
-    on fail as e
+    catch as e
       Test.fail($name, e.message)
     end
   end
@@ -3618,7 +3675,7 @@ These are essentially code transformations and could theoretically be implemente
 - `event` — generates an immutable data class
 - `emit` — generates actor-based event dispatch
 - `on` — generates event handler registration
-- `guard` — generates pre-condition checks
+- `requires` — generates pre-condition checks
 - `supervisor` — generates actor supervision setup
 
 Whether they stay as keywords or become macros is an implementation decision. The key insight is that the macro system is *expressive enough* to define them.
@@ -3732,13 +3789,13 @@ Every macro should include a comment or doc showing the equivalent non-macro cod
 
 **5. Prefer macros that compose with existing features.**
 
-Macros should work with guards, pattern matching, DI, and events — not bypass them:
+Macros should work with preconditions, pattern matching, DI, and events — not bypass them:
 
 ```opal
-# Good — composes with guards
-@positive
+# Good — composes with preconditions
 @memoize
 def sqrt(x::Float64) -> Float64
+  requires x >= 0
   x ** 0.5
 end
 
