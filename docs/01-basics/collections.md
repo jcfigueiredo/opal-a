@@ -16,7 +16,7 @@ Lists are ordered, mutable sequences.
 []                        # empty list
 numbers = [1, 2, 3, 4, 5]
 names = ["alice", "bob"]
-mixed = [1, "hello", :ok] # List(Int32 | String | Symbol)
+mixed = [1, "hello", :ok] # List[Int32 | String | Symbol]
 
 # Access
 numbers[0]                # => 1
@@ -36,8 +36,8 @@ Tuples are ordered, immutable sequences. They use parentheses.
 
 ```opal
 ()                              # empty tuple
-point = (10, 20)                # Tuple(Int32, Int32)
-record = (:banana, "apple", "🙈")  # Tuple(Symbol, String, String)
+point = (10, 20)                # Tuple[Int32, Int32]
+record = (:banana, "apple", "🙈")  # Tuple[Symbol, String, String]
 
 record[0]                       # => :banana
 record[1]                       # => "apple"
@@ -50,10 +50,10 @@ Dictionaries are mutable mappings of key-value pairs. Keys can be any immutable 
 
 ```opal
 {:}                             # empty dict
-{1: 2, 3: 4}                   # Dict(Int32, Int32)
-{1: 2, "a": 3}                 # Dict(Int32 | String, Int32)
-{"α": "alpha", "β": "beta"}    # Dict(String, String)
-{:plane: "✈", :train: "🚂"}    # Dict(Symbol, String)
+{1: 2, 3: 4}                   # Dict[Int32, Int32]
+{1: 2, "a": 3}                 # Dict[Int32 | String, Int32]
+{"α": "alpha", "β": "beta"}    # Dict[String, String]
+{:plane: "✈", :train: "🚂"}    # Dict[Symbol, String]
 
 # Access
 ages = {"alice": 30, "bob": 25}

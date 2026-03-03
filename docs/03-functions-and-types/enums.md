@@ -41,7 +41,7 @@ end
 
 ```opal
 enum Response
-  Success(body::String, headers::Dict(String, String))
+  Success(body::String, headers::Dict[String, String])
   NotFound(path::String)
   ServerError(reason::String, code::Int32)
   Unauthorized
@@ -199,15 +199,15 @@ s.println()     # "Circle(r=5.0)" — default from Printable
 
 ## 4. Generic Enums
 
-Enums support type parameters, enabling foundational stdlib types like `Option(T)` and `Result(T, E)`.
+Enums support type parameters, enabling foundational stdlib types like `Option[T]` and `Result[T, E]`.
 
 ```opal
-enum Option(T)
+enum Option[T]
   Some(value::T)
   None
 end
 
-enum Result(T, E)
+enum Result[T, E]
   Ok(value::T)
   Err(error::E)
 end
@@ -217,11 +217,11 @@ end
 
 ```opal
 # Type inferred from construction
-opt = Option.Some(value: 42)       # Option(Int32)
-opt = Option(String).None           # explicit when ambiguous
+opt = Option.Some(value: 42)       # Option[Int32]
+opt = Option[String].None           # explicit when ambiguous
 
 # Result in practice
-def parse_int(s::String) -> Result(Int32, String)
+def parse_int(s::String) -> Result[Int32, String]
   # ...
 end
 
@@ -236,7 +236,7 @@ end
 ### Constraints
 
 ```opal
-enum SortedPair(T implements Comparable)
+enum SortedPair[T implements Comparable]
   Pair(first::T, second::T)
   Empty
 end
@@ -245,8 +245,8 @@ end
 ### Relationship to `?` Nullable
 
 - `T?` stays as `T | Null` -- lightweight nullable for everyday use.
-- `Option(T)` is a stdlib enum for explicit `Some`/`None` with exhaustive matching.
-- They are separate types. `Option(T)` does not replace `?`.
+- `Option[T]` is a stdlib enum for explicit `Some`/`None` with exhaustive matching.
+- They are separate types. `Option[T]` does not replace `?`.
 
 ---
 
@@ -306,7 +306,7 @@ event OrderStatusChanged(order::Order, from::OrderStatus, to::OrderStatus)
 ### Enums with Type Aliases
 
 ```opal
-type Result(T) = Result(T, Error)  # alias with default error type
+type Result[T] = Result[T, Error]  # alias with default error type
 ```
 
 ---
@@ -341,7 +341,7 @@ Enum values are immutable because they represent facts, not state. A `Direction.
 | Protocols | Enums can `implements` protocols, including retroactive conformance |
 | Generics | Type parameters with constraints, same as classes |
 | Exhaustiveness | `match` on enum must cover all variants or have `case _` -- compile-time error |
-| Nullable | `T?` stays as `T | Null`. `Option(T)` is a separate stdlib enum |
+| Nullable | `T?` stays as `T | Null`. `Option[T]` is a separate stdlib enum |
 | Immutability | Enum values are immutable |
 | Composition | Works with unions, collections, DI, events, type aliases |
 

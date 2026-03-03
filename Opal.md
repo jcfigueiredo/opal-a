@@ -225,10 +225,10 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
 <quote_expr>    ::= "quote" <expression> "end"
                    | "quote" NEWLINE <block> "end"
 
-<type_alias>    ::= "type" IDENTIFIER ("(" <type_params> ")")? "=" <type_expr>
+<type_alias>    ::= "type" IDENTIFIER ("[" <type_params> "]")? "=" <type_expr>
 <type_expr>     ::= TYPE
                    | <type_expr> "|" <type_expr>
-                   | TYPE "(" <type_args> ")"
+                   | TYPE "[" <type_args> "]"
                    | TYPE "?"
                    | "|" <type_list> "|" "->" <type_expr>
 <type_params>   ::= <type_param> ("," <type_param>)*
@@ -239,14 +239,14 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
 
 <implements_for>::= "implements" TYPE "for" TYPE NEWLINE <class_body> "end"
 
-<enum_def>      ::= "enum" IDENTIFIER ("(" <type_params> ")")?
+<enum_def>      ::= "enum" IDENTIFIER ("[" <type_params> "]")?
                      ("implements" TYPE ("," TYPE)*)? NEWLINE
                      <variant>+ <function_def>* "end"
 <variant>       ::= IDENTIFIER ("(" <params> ")")?
 
-<model_def>     ::= "model" IDENTIFIER ("(" <type_params> ")")? NEWLINE
+<model_def>     ::= "model" IDENTIFIER ("[" <type_params> "]")? NEWLINE
                      (<needs_decl> | <where_field> | <validate_block> | <function_def>)* "end"
-<settings_def>  ::= "settings" "model" IDENTIFIER ("(" <type_params> ")")? NEWLINE
+<settings_def>  ::= "settings" "model" IDENTIFIER ("[" <type_params> "]")? NEWLINE
                      (<needs_decl> | <where_field> | <validate_block> | <function_def>)* "end"
 <where_field>   ::= "needs" IDENTIFIER "::" TYPE ("=" <expression>)?
                      "where" <field_constraint> ("," <field_constraint>)*
@@ -269,7 +269,7 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
 <propagate_expr>::= <expression> "!"
 <requires_expr> ::= "requires" <expression> ("," STRING)?
 
-<class_def>     ::= <annotation>* "class" IDENTIFIER ("(" <type_params> ")")? ("<" IDENTIFIER)?
+<class_def>     ::= <annotation>* "class" IDENTIFIER ("[" <type_params> "]")? ("<" IDENTIFIER)?
                      (<where_clause>)? NEWLINE <class_body> "end"
 <null_object_def> ::= "class" IDENTIFIER "<" IDENTIFIER "defaults" <dict>
 
@@ -432,7 +432,7 @@ def add(a::Int32, b::Int32) -> Int32
   a + b
 end
 
-type Result(T) = T | Error
+type Result[T] = T | Error
 ```
 
 > See [Type System](docs/03-functions-and-types/type-system.md) for generics, constraints, union types, aliases, and introspection.
@@ -498,7 +498,7 @@ def render(shape::Rectangle) then draw_rect(shape)
 
 ### Iterators
 
-Two protocols: `Iterable` (provides `iter()`) and `Iterator(T)` (provides `next() -> Option(T)`). Any `Iterable` works with `for...in` and collection methods.
+Two protocols: `Iterable` (provides `iter()`) and `Iterator[T]` (provides `next() -> Option[T]`). Any `Iterable` works with `for...in` and collection methods.
 
 > See [Iterators](docs/03-functions-and-types/iterators.md) for custom iterators, lazy sequences, and the full protocol.
 
@@ -541,10 +541,10 @@ Placeholder `extern` syntax for calling functions from external shared libraries
 
 ### Error Handling
 
-Two-track model: **exceptions** (`fail`/`try`/`catch`/`ensure`) for unexpected errors, **Result types** (`Result(T, E)`) for expected errors. The `!` operator propagates `Err` from the enclosing function. `Result.from do...end` bridges exceptions into Result values.
+Two-track model: **exceptions** (`fail`/`try`/`catch`/`ensure`) for unexpected errors, **Result types** (`Result[T, E]`) for expected errors. The `!` operator propagates `Err` from the enclosing function. `Result.from do...end` bridges exceptions into Result values.
 
 ```opal
-def process(path::String) -> Result(Config, Error)
+def process(path::String) -> Result[Config, Error]
   content = read_file(path)!
   config = parse_json(content)!
   Result.Ok(config)
@@ -662,9 +662,9 @@ end
 | `Mock` | Mock creation for tests -- `Mock.new(Protocol)`, stubs, call verification |
 | `Spec` | Specification pattern base classes |
 | `Container` | Optional dependency injection container for large apps |
-| `Iter` | `Iterable` and `Iterator(T)` protocols, lazy sequences |
-| `Option` | `Option(T)` enum -- `Some(value)` or `None` for explicit nullable handling; used by `Iterator(T)` |
-| `Result` | `Result(T, E)` enum -- `Ok(value)` or `Err(error)` for error handling |
+| `Iter` | `Iterable` and `Iterator[T]` protocols, lazy sequences |
+| `Option` | `Option[T]` enum -- `Some(value)` or `None` for explicit nullable handling; used by `Iterator[T]` |
+| `Result` | `Result[T, E]` enum -- `Ok(value)` or `Err(error)` for error handling |
 | `Settings` | Base for `settings model` definitions -- env/config/file loading with source priority |
 | `Reflect` | Runtime introspection: `annotations()`, `field_annotations()`, `typeof()`, `methods()` |
 

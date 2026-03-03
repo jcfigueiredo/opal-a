@@ -202,13 +202,13 @@ render(ThirdPartyShape.new())  # now works
 Protocols support type parameters like classes:
 
 ```opal
-protocol Collection(T)
+protocol Collection[T]
   def add(item::T)
   def contains?(item::T) -> Bool
   def size() -> Int32
 end
 
-class Set(T implements Hashable) implements Collection(T)
+class Set[T implements Hashable] implements Collection[T]
   def add(item::T)
     # ...
   end
@@ -261,4 +261,4 @@ Third-party libraries may define types that fit your protocols perfectly but don
 | Multiple protocols | `class X implements A, B, C` -- receives all defaults |
 | Conflict resolution | Conflicting defaults = compile-time error, implementor must resolve |
 | Retroactive conformance | `implements Protocol for Type` -- add conformance to types you don't own |
-| Generic protocols | `protocol Collection(T)` -- type parameters with constraints |
+| Generic protocols | `protocol Collection[T]` -- type parameters with constraints |

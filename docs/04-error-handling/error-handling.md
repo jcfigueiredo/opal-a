@@ -65,10 +65,10 @@ end
 
 ## 3. Result Types & the `!` Operator
 
-`Result(T, E)` is an enum (see [Enums & Algebraic Data Types](../03-functions-and-types/enums-and-algebraic-types.md)) for expected, recoverable errors. The caller must handle both `Ok` and `Err` cases.
+`Result[T, E]` is an enum (see [Enums & Algebraic Data Types](../03-functions-and-types/enums-and-algebraic-types.md)) for expected, recoverable errors. The caller must handle both `Ok` and `Err` cases.
 
 ```opal
-enum Result(T, E)
+enum Result[T, E]
   Ok(value::T)
   Err(error::E)
 end
@@ -77,7 +77,7 @@ end
 ### Basic Usage
 
 ```opal
-def parse_int(s::String) -> Result(Int32, String)
+def parse_int(s::String) -> Result[Int32, String]
   # ...
 end
 
@@ -95,7 +95,7 @@ The `!` postfix operator unwraps `Ok` or propagates `Err` — the enclosing func
 
 ```opal
 # Without ! — nested matching
-def process(path::String) -> Result(Config, Error)
+def process(path::String) -> Result[Config, Error]
   match read_file(path)
     case Result.Ok(content)
       match parse_json(content)
@@ -110,7 +110,7 @@ def process(path::String) -> Result(Config, Error)
 end
 
 # With ! — linear and clean
-def process(path::String) -> Result(Config, Error)
+def process(path::String) -> Result[Config, Error]
   content = read_file(path)!
   config = parse_json(content)!
   Result.Ok(config)
@@ -175,7 +175,7 @@ config = parse_config(data).unwrap("config parsing failed")
 
 ```opal
 # Library returns Result
-def parse_config(data::String) -> Result(Config, ValidationError)
+def parse_config(data::String) -> Result[Config, ValidationError]
   # ...
 end
 
@@ -187,7 +187,7 @@ def start_app()
 end
 
 # Or: your code wraps exceptions into Results
-def start_app() -> Result(App, Error)
+def start_app() -> Result[App, Error]
   data = Result.from do
     File.read("config.json")
   end!  # propagate if Err
@@ -215,7 +215,7 @@ Errors are classes that inherit from `Error`. Define domain-specific errors by s
 class Error
   needs message::String
 
-  def stack_trace() -> List(String)
+  def stack_trace() -> List[String]
     # provided by runtime
   end
 end
@@ -330,7 +330,7 @@ Rather than inventing special syntax, bridging uses a standard library method th
 |---|---|
 | `fail` / `try` / `catch` | Exceptions — unrecoverable/unexpected errors |
 | `ensure` | Always-run cleanup block |
-| `Result(T, E)` | Explicit return values — expected/recoverable errors |
+| `Result[T, E]` | Explicit return values — expected/recoverable errors |
 | `!` operator | Postfix on Result — unwraps Ok or propagates Err |
 | `.unwrap()` | Converts Result.Err to an exception |
 | `Result.from do ... end` | Catches exceptions into Result.Err |

@@ -247,7 +247,7 @@ end
 
 ### Rules
 
-- `async expr` returns a `Future(T)` — the expression runs concurrently.
+- `async expr` returns a `Future[T]` — the expression runs concurrently.
 - **Auto-await on use:** accessing a Future's value blocks until the result is ready.
 - `await` is available for explicit blocking points.
 - `.ready?()` checks completion without blocking.

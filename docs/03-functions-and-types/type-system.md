@@ -61,7 +61,7 @@ end
 
 ### Core Types
 
-`Int8`, `Int16`, `Int32`, `Int64`, `Float32`, `Float64`, `Bool`, `String`, `Template`, `Symbol`, `Null`, `List(T)`, `Tuple(...)`, `Dict(K, V)`, `Range(T)`, `Regex`.
+`Int8`, `Int16`, `Int32`, `Int64`, `Float32`, `Float64`, `Bool`, `String`, `Template`, `Symbol`, `Null`, `List[T]`, `Tuple[...]`, `Dict[K, V]`, `Range[T]`, `Regex`.
 
 ### Symbol Sets
 
@@ -83,8 +83,8 @@ Type parameters are declared explicitly on classes, protocols, and type aliases.
 ### Defining Generic Classes
 
 ```opal
-class Stack(T)
-  needs items::List(T)
+class Stack[T]
+  needs items::List[T]
 
   def push(item::T)
     .items.append(item)
@@ -105,7 +105,7 @@ s.push(42)    # ok
 s.push("hi")  # type error
 
 # Explicit when ambiguous (e.g., empty collection)
-s = Stack(Int32).new(items: [])
+s = Stack[Int32].new(items: [])
 ```
 
 ### Generic Functions
@@ -113,7 +113,7 @@ s = Stack(Int32).new(items: [])
 The type parameter is inferred from annotated arguments -- no separate declaration needed:
 
 ```opal
-def first(items::List(T)) -> T?
+def first(items::List[T]) -> T?
   items[0]
 end
 
@@ -123,10 +123,10 @@ first(["a", "b"])       # T inferred as String, returns String?
 
 ### Rules
 
-- Type parameters are declared at the definition site: `class Name(T)`, `protocol Name(T)`, `type Name(T) = ...`.
+- Type parameters are declared at the definition site: `class Name[T]`, `protocol Name[T]`, `type Name[T] = ...`.
 - At call sites, type parameters are inferred from arguments when possible.
-- Explicit type parameters at call sites (`Stack(Int32)`) only needed when inference is ambiguous.
-- Type parameters are scoped to their definition -- `T` in `Stack(T)` is not the same as `T` in another class.
+- Explicit type parameters at call sites (`Stack[Int32]`) only needed when inference is ambiguous.
+- Type parameters are scoped to their definition -- `T` in `Stack[T]` is not the same as `T` in another class.
 
 ---
 
@@ -138,8 +138,8 @@ Constraints restrict what types can fill a type parameter. Simple constraints go
 
 ```opal
 # Single constraint on one parameter
-class SortedList(T implements Comparable)
-  needs items::List(T)
+class SortedList[T implements Comparable]
+  needs items::List[T]
 
   def insert(item::T)
     # compare_to guaranteed available
@@ -151,10 +151,10 @@ end
 
 ```opal
 # Multiple parameters or multiple constraints
-class Cache(K, V)
+class Cache[K, V]
     where K implements Hashable,
           V implements Printable
-  needs store::Dict(K, V)
+  needs store::Dict[K, V]
 end
 ```
 
@@ -168,7 +168,7 @@ def max(a::T, b::T) -> T
 end
 
 # Inline on functions for simple cases
-def sort(items::List(T implements Comparable)) -> List(T)
+def sort(items::List[T implements Comparable]) -> List[T]
   # ...
 end
 ```
@@ -237,14 +237,14 @@ type UserID = Int64
 type Email = String
 
 # Parameterized aliases
-type Result(T) = T | Error
-type Pair(A, B) = (A, B)
+type Result[T] = T | Error
+type Pair[A, B] = (A, B)
 
 # Function type alias
 type Handler = |Request, Response| -> Null
 
 # Usage
-def find_user(id::UserID) -> Result(User)
+def find_user(id::UserID) -> Result[User]
   # returns User | Error
 end
 
@@ -256,7 +256,7 @@ end
 ### Rules
 
 - `type Name = Type` creates a transparent alias.
-- `type Name(T) = ...` creates a parameterized alias.
+- `type Name[T] = ...` creates a parameterized alias.
 - Aliases are interchangeable with their underlying type -- `UserID` and `Int64` are the same type. No "newtype" distinction.
 - Aliases can reference other aliases, unions, generics, and function types.
 
@@ -329,7 +329,7 @@ end
 # Type of a value
 typeof(42)          # => Int32
 typeof("hello")     # => String
-typeof([1, 2, 3])   # => List(Int32)
+typeof([1, 2, 3])   # => List[Int32]
 
 # Type narrowing with `is`
 if value is String
@@ -374,25 +374,25 @@ def serialize(value::String) -> String
   f"\"{value}\""
 end
 
-def serialize(value::List(T)) -> String
+def serialize(value::List[T]) -> String
   items = value.map(|v| serialize(v)).join(", ")
   f"[{items}]"
 end
 
 serialize(42)            # dispatches to Int32 variant
-serialize([1, 2, 3])    # dispatches to List(T) variant, T = Int32
+serialize([1, 2, 3])    # dispatches to List[T] variant, T = Int32
 ```
 
 ### Generics + Protocols
 
 ```opal
-protocol Collection(T)
+protocol Collection[T]
   def add(item::T)
   def contains?(item::T) -> Bool
   def size() -> Int32
 end
 
-class Set(T implements Hashable) implements Collection(T)
+class Set[T implements Hashable] implements Collection[T]
   def add(item::T)
     # ...
   end
@@ -410,9 +410,9 @@ end
 ### Type Aliases + Generics + Constraints
 
 ```opal
-type SortedPair(T implements Comparable) = (T, T)
+type SortedPair[T implements Comparable] = (T, T)
 
-def make_sorted_pair(a::T, b::T) -> SortedPair(T)
+def make_sorted_pair(a::T, b::T) -> SortedPair[T]
     where T implements Comparable
   if a <= b then (a, b) else (b, a) end
 end
@@ -421,9 +421,9 @@ end
 ### Unions + Pattern Matching
 
 ```opal
-type Result(T) = T | Error
+type Result[T] = T | Error
 
-def divide(a::Float64, b::Float64) -> Result(Float64)
+def divide(a::Float64, b::Float64) -> Result[Float64]
   if b == 0.0
     fail Error.new(message: "division by zero")
   end

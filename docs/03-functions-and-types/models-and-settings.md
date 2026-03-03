@@ -137,7 +137,7 @@ model User
   needs email::String where valid_email?
   needs age::Int32 where |v| v >= 0
   needs address::Address
-  needs tags::List(String) = []
+  needs tags::List[String] = []
 end
 
 # Serialize
@@ -169,7 +169,7 @@ user = User.from_json("""{"name": "claudio", ...}""")
 
 ### Rules
 
-- `to_dict()` returns `Dict(String, Any)` -- field names as keys, values serialized recursively.
+- `to_dict()` returns `Dict[String, Any]` -- field names as keys, values serialized recursively.
 - `to_json()` returns a JSON string.
 - `from_dict(dict)` and `from_json(json)` are static methods that construct and validate.
 - Nested models are serialized/deserialized recursively.
@@ -280,7 +280,7 @@ ttl = 7200
 Environment variables are strings. Settings automatically coerces:
 - `"true"` / `"false"` -> `Bool`
 - `"5432"` -> `Int32`
-- `"a,b,c"` -> `List(String)` (comma-separated)
+- `"a,b,c"` -> `List[String]` (comma-separated)
 - `"3.14"` -> `Float64`
 
 ### Rules

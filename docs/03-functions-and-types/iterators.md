@@ -15,12 +15,12 @@ protocol Iterable
   def iter() -> Iterator
 end
 
-protocol Iterator(T)
-  def next() -> Option(T)
+protocol Iterator[T]
+  def next() -> Option[T]
 end
 ```
 
-`Iterable` returns an `Iterator`, and `Iterator.next()` returns `Option(T)` -- `Some(value)` for the next element, `None` when exhausted.
+`Iterable` returns an `Iterator`, and `Iterator.next()` returns `Option[T]` -- `Some(value)` for the next element, `None` when exhausted.
 
 ---
 
@@ -37,10 +37,10 @@ class FileLines implements Iterable
   end
 end
 
-class FileLinesIterator implements Iterator(String)
+class FileLinesIterator implements Iterator[String]
   needs file::File
 
-  def next() -> Option(String)
+  def next() -> Option[String]
     line = .file.read_line()
     if line == null
       Option.None
@@ -65,7 +65,7 @@ FileLines.new(path: "data.txt")
 
 ## 3. Lazy Infinite Sequences
 
-Because `Iterator.next()` returns `Option(T)`, iterators can be infinite -- they never return `None`. Consumers use methods like `take` to limit output.
+Because `Iterator.next()` returns `Option[T]`, iterators can be infinite -- they never return `None`. Consumers use methods like `take` to limit output.
 
 ```opal
 class Counter implements Iterable
@@ -76,10 +76,10 @@ class Counter implements Iterable
   end
 end
 
-class CounterIterator implements Iterator(Int32)
+class CounterIterator implements Iterator[Int32]
   needs current::Int32
 
-  def next() -> Option(Int32)
+  def next() -> Option[Int32]
     value = .current
     .current += 1
     Option.Some(value)  # never exhausted
@@ -99,9 +99,9 @@ end
 
 Separating `Iterable` and `Iterator` lets one collection produce multiple independent iterators. A `List` can be iterated by two nested loops simultaneously because each `iter()` call returns a fresh cursor. This mirrors the design in Java, Python, and Rust, adapted to Opal's protocol system.
 
-### Why `Option(T)` for `next()`?
+### Why `Option[T]` for `next()`?
 
-Using `Option(T)` instead of a sentinel value or exception:
+Using `Option[T]` instead of a sentinel value or exception:
 - Makes exhaustion explicit in the type system.
 - Enables exhaustive matching on iterator results.
 - Composes naturally with Opal's `Option`/`Result` ecosystem.
@@ -120,7 +120,7 @@ Using `Option(T)` instead of a sentinel value or exception:
 ## 5. Rules
 
 - Any class implementing `Iterable` works with `for ... in`.
-- `Iterator.next()` returns `Option(T)` -- `Some(value)` for the next element, `None` when exhausted.
+- `Iterator.next()` returns `Option[T]` -- `Some(value)` for the next element, `None` when exhausted.
 - Built-in types (`List`, `Dict`, `Range`, `String`) all implement `Iterable`.
 - Collection methods (`map`, `filter`, `reduce`, `take`, `zip`) work on any `Iterable`.
 - `iter()` is called automatically by `for ... in`.
@@ -132,7 +132,7 @@ Using `Option(T)` instead of a sentinel value or exception:
 | Feature | Decision |
 |---|---|
 | Iterable protocol | `def iter() -> Iterator` -- returns a cursor |
-| Iterator protocol | `def next() -> Option(T)` -- returns next element or `None` |
+| Iterator protocol | `def next() -> Option[T]` -- returns next element or `None` |
 | For-in integration | Any `Iterable` works with `for ... in` automatically |
 | Collection methods | `map`, `filter`, `reduce`, `take`, `zip` work on any `Iterable` |
 | Built-in support | `List`, `Dict`, `Range`, `String` all implement `Iterable` |
