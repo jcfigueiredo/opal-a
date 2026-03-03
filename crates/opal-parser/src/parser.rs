@@ -76,6 +76,26 @@ impl<'src> Parser<'src> {
             return self.parse_while_loop(start);
         }
 
+        // Class definition
+        if self.check(&Token::Class) {
+            return self.parse_class_def(start);
+        }
+
+        // Module definition
+        if self.check(&Token::Module) {
+            return self.parse_module_def(start);
+        }
+
+        // From import
+        if self.check(&Token::From) {
+            return self.parse_from_import(start);
+        }
+
+        // Needs declaration (inside class body)
+        if self.check(&Token::Needs) {
+            return self.parse_needs_decl(start);
+        }
+
         // Try to parse an expression — could be expression statement or assignment
         let expr = self.parse_expression(0)?;
 
@@ -253,6 +273,123 @@ impl<'src> Parser<'src> {
         let end = self.previous_span().end;
         Ok(Stmt {
             kind: StmtKind::While { condition, body },
+            span: Span {
+                start: start.start,
+                end,
+            },
+        })
+    }
+
+    fn parse_class_def(&mut self, start: Span) -> Result<Stmt, ParseError> {
+        self.advance(); // consume 'class'
+        let name = self.expect_identifier()?;
+        self.expect_newline()?;
+        self.skip_newlines();
+
+        let mut needs = Vec::new();
+        let mut methods = Vec::new();
+
+        while !self.check(&Token::End) && !self.is_at_end() {
+            if self.check(&Token::Needs) {
+                let stmt = self.parse_needs_decl(self.current_span())?;
+                if let StmtKind::NeedsDecl(decl) = stmt.kind {
+                    needs.push(decl);
+                }
+            } else if self.check(&Token::Def) {
+                methods.push(self.parse_function_def()?);
+            } else {
+                self.skip_newlines();
+                if self.check(&Token::End) {
+                    break;
+                }
+                return Err(ParseError::UnexpectedToken {
+                    found: self.peek().unwrap().clone(),
+                    expected: "needs, def, or end in class body".into(),
+                    span: self.current_span(),
+                });
+            }
+            self.skip_newlines();
+        }
+
+        self.expect_token(&Token::End, "end")?;
+        let end = self.previous_span().end;
+        Ok(Stmt {
+            kind: StmtKind::ClassDef {
+                name,
+                needs,
+                methods,
+            },
+            span: Span {
+                start: start.start,
+                end,
+            },
+        })
+    }
+
+    fn parse_needs_decl(&mut self, start: Span) -> Result<Stmt, ParseError> {
+        self.advance(); // consume 'needs'
+        let name = self.expect_identifier()?;
+        let type_annotation = if self.check(&Token::Colon) {
+            self.advance();
+            Some(self.expect_identifier()?)
+        } else {
+            None
+        };
+        self.expect_statement_end()?;
+        let end = self.previous_span().end;
+        Ok(Stmt {
+            kind: StmtKind::NeedsDecl(NeedsDecl {
+                name,
+                type_annotation,
+            }),
+            span: Span {
+                start: start.start,
+                end,
+            },
+        })
+    }
+
+    fn parse_module_def(&mut self, start: Span) -> Result<Stmt, ParseError> {
+        self.advance(); // consume 'module'
+        let name = self.expect_identifier()?;
+        self.expect_newline()?;
+
+        let mut body = Vec::new();
+        self.skip_newlines();
+        while !self.check(&Token::End) && !self.is_at_end() {
+            body.push(self.parse_statement()?);
+            self.skip_newlines();
+        }
+        self.expect_token(&Token::End, "end")?;
+        let end = self.previous_span().end;
+        Ok(Stmt {
+            kind: StmtKind::ModuleDef { name, body },
+            span: Span {
+                start: start.start,
+                end,
+            },
+        })
+    }
+
+    fn parse_from_import(&mut self, start: Span) -> Result<Stmt, ParseError> {
+        self.advance(); // consume 'from'
+        let module_path = self.expect_identifier()?;
+        self.expect_token(&Token::Import, "import")?;
+        let mut names = Vec::new();
+        loop {
+            names.push(self.expect_identifier()?);
+            if !self.check(&Token::Comma) {
+                break;
+            }
+            self.advance();
+        }
+        self.expect_statement_end()?;
+        let end = self.previous_span().end;
+        Ok(Stmt {
+            kind: StmtKind::FromImport {
+                module_path,
+                names,
+            },
             span: Span {
                 start: start.start,
                 end,
@@ -469,6 +606,19 @@ impl<'src> Parser<'src> {
                 let end = self.previous_span().end;
                 Ok(Expr {
                     kind: ExprKind::List(elements),
+                    span: Span {
+                        start: span.start,
+                        end,
+                    },
+                })
+            }
+            // Instance variable: .field (at start of expression, not after another expr)
+            Some(Token::Dot) => {
+                self.advance();
+                let field = self.expect_identifier()?;
+                let end = self.previous_span().end;
+                Ok(Expr {
+                    kind: ExprKind::InstanceVar(field),
                     span: Span {
                         start: span.start,
                         end,
@@ -1134,5 +1284,64 @@ mod tests {
     fn parse_while_loop() {
         let prog = parse("while x > 0\n  x = x - 1\nend");
         assert!(matches!(prog.statements[0].kind, StmtKind::While { .. }));
+    }
+
+    #[test]
+    fn parse_class_def() {
+        let prog = parse("class Circle\n  needs radius: Float\n\n  def area()\n    .radius\n  end\nend");
+        match &prog.statements[0].kind {
+            StmtKind::ClassDef {
+                name,
+                needs,
+                methods,
+            } => {
+                assert_eq!(name, "Circle");
+                assert_eq!(needs.len(), 1);
+                assert_eq!(needs[0].name, "radius");
+                assert_eq!(methods.len(), 1);
+            }
+            _ => panic!("expected class def"),
+        }
+    }
+
+    #[test]
+    fn parse_module_def() {
+        let prog = parse("module Shapes\n  class Circle\n    needs radius: Float\n  end\nend");
+        assert!(matches!(
+            prog.statements[0].kind,
+            StmtKind::ModuleDef { .. }
+        ));
+    }
+
+    #[test]
+    fn parse_from_import() {
+        let prog = parse("from Shapes import Circle, Rectangle");
+        match &prog.statements[0].kind {
+            StmtKind::FromImport {
+                module_path,
+                names,
+            } => {
+                assert_eq!(module_path, "Shapes");
+                assert_eq!(names, &["Circle", "Rectangle"]);
+            }
+            _ => panic!("expected from import"),
+        }
+    }
+
+    #[test]
+    fn parse_instance_var() {
+        let prog = parse("def area()\n  .radius * .radius\nend");
+        match &prog.statements[0].kind {
+            StmtKind::FuncDef { body, .. } => match &body[0].kind {
+                StmtKind::Expr(expr) => match &expr.kind {
+                    ExprKind::BinaryOp { left, .. } => {
+                        assert!(matches!(left.kind, ExprKind::InstanceVar(_)));
+                    }
+                    _ => panic!("expected binary op"),
+                },
+                _ => panic!("expected expr"),
+            },
+            _ => panic!("expected func def"),
+        }
     }
 }
