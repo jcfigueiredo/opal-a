@@ -1,0 +1,7 @@
+[package]
+name = "opal-stdlib"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+opal-runtime.workspace = true

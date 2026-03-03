@@ -1,0 +1,10 @@
+[package]
+name = "opal-interp"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+opal-parser.workspace = true
+opal-runtime.workspace = true
+opal-stdlib.workspace = true
+thiserror.workspace = true

@@ -1,0 +1,11 @@
+[package]
+name = "opal-parser"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+opal-lexer.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true

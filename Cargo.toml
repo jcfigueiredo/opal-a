@@ -1,0 +1,32 @@
+[workspace]
+members = [
+    "crates/opal-lexer",
+    "crates/opal-parser",
+    "crates/opal-interp",
+    "crates/opal-runtime",
+    "crates/opal-stdlib",
+    "crates/opal-cli",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+
+[workspace.dependencies]
+# External
+logos = "0.15"
+clap = { version = "4.5", features = ["derive"] }
+criterion = { version = "0.5.1", features = ["html_reports"] }
+proptest = "1.9"
+miette = { version = "7", features = ["fancy"] }
+thiserror = "2"
+
+# Internal
+opal-lexer = { path = "crates/opal-lexer" }
+opal-parser = { path = "crates/opal-parser" }
+opal-interp = { path = "crates/opal-interp" }
+opal-runtime = { path = "crates/opal-runtime" }
+opal-stdlib = { path = "crates/opal-stdlib" }
