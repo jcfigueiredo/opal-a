@@ -8,3 +8,8 @@ logos.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "lex_bench"
+harness = false
