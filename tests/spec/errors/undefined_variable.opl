@@ -1,0 +1,2 @@
+# expect-error: NameError
+print(undefined_variable)
