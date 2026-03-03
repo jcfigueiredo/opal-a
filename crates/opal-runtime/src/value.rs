@@ -1,5 +1,6 @@
 use std::fmt;
 
+use crate::closure::ClosureId;
 use crate::function::FunctionId;
 
 /// A runtime value in the Opal interpreter
@@ -17,6 +18,10 @@ pub enum Value {
     Null,
     /// User-defined function (ID into the interpreter's function table)
     Function(FunctionId),
+    /// List of values
+    List(Vec<Value>),
+    /// Closure (ID into interpreter's closure table)
+    Closure(ClosureId),
 }
 
 impl fmt::Display for Value {
@@ -34,6 +39,17 @@ impl fmt::Display for Value {
             Value::Bool(b) => write!(f, "{}", b),
             Value::Null => write!(f, "null"),
             Value::Function(id) => write!(f, "<function #{}>", id.0),
+            Value::List(items) => {
+                write!(f, "[")?;
+                for (i, item) in items.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", item)?;
+                }
+                write!(f, "]")
+            }
+            Value::Closure(id) => write!(f, "<closure #{}>", id.0),
         }
     }
 }
