@@ -15,7 +15,7 @@ Opal's parser handles a minimal core: definitions, control flow, metaprogramming
 │         Parser Core (fixed)         │
 │  def, class, module, actor, enum    │
 │  if, for, while, match, try        │
-│  quote, macro, $, @, @[...]        │
+│  ast, macro, $, @, @[...]          │
 │  =, ., :, operators                │
 └─────────────────────────────────────┘
               ▲ builds on
@@ -76,26 +76,26 @@ macro needs(body)
   # Build init parameters
   params = declarations.map do |decl|
     if decl.default
-      quote $decl.name: $decl.type = $decl.default end
+      ast($decl.name: $decl.type = $decl.default)
     else
-      quote $decl.name: $decl.type end
+      ast($decl.name: $decl.type)
     end
   end
 
   # Build assignments
   assignments = declarations.map do |decl|
     name = decl.name
-    quote .$name = $name end
+    ast(.$name = $name)
   end
 
   # Build getter methods
   getters = declarations.map do |decl|
     name = decl.name
     type = decl.type
-    quote def $name() -> $type = .$name end
+    ast(def $name() -> $type = .$name)
   end
 
-  quote
+  ast
     def init($params...)
       $assignments...
     end
@@ -150,7 +150,7 @@ That's it -- `event` is syntactic sugar for `model`. Both produce immutable data
 
 ```opal
 macro event(name, body)
-  quote
+  ast
     model $name
       $body
     end
@@ -180,7 +180,7 @@ EventBus.dispatch(OrderPlaced.new(order: current_order, placed_at: Time.now()))
 
 ```opal
 macro emit(event_expr)
-  quote
+  ast
     EventBus.dispatch($event_expr)
   end
 end
@@ -224,7 +224,7 @@ end
 
 ```opal
 macro on(event_type, handler)
-  quote
+  ast
     EventBus.register($event_type, $handler)
   end
 end
@@ -276,7 +276,7 @@ end
 
 ```opal
 macro requires(condition, message)
-  quote
+  ast
     if !($condition)
       raise PreconditionError.new(message: $message)
     end
@@ -291,7 +291,7 @@ The message parameter is optional. Without it, the macro uses the condition's so
 ```opal
 macro requires(condition)
   source = condition.to_string()
-  quote
+  ast
     if !($condition)
       raise PreconditionError.new(message: $source)
     end
@@ -411,10 +411,10 @@ macro supervisor(name, body)
   children = body.select(|n| n.head == :supervise).map do |node|
     type = node.args[0]
     args = node.args[1..]
-    quote start_child($type, $args...) end
+    ast(start_child($type, $args...))
   end
 
-  quote
+  ast
     actor $name
       receives :child_exited, :status
 
@@ -464,7 +464,7 @@ For example, suppose the community builds a popular `@pipeline` macro for data t
 ```opal
 macro pipeline(steps)
   steps.reduce do |acc, step|
-    quote $step($acc) end
+    ast($step($acc))
   end
 end
 
@@ -489,4 +489,4 @@ This keeps Opal's core small (~20 keywords) while the ecosystem grows without bo
 | `needs` | Medium | Collects declarations, generates init + getters |
 | `supervisor` | Complex | Generates full actor with restart logic |
 
-The complexity gradient is the point. Trivial macros like `event` prove that macros are useful even when the transformation is minimal -- the value is in naming and intent. Complex macros like `supervisor` prove that the macro system is powerful enough to generate entire subsystems. Everything in between confirms that Opal's `quote`/`$`/`macro` primitives scale smoothly from one-liners to full code generators.
+The complexity gradient is the point. Trivial macros like `event` prove that macros are useful even when the transformation is minimal -- the value is in naming and intent. Complex macros like `supervisor` prove that the macro system is powerful enough to generate entire subsystems. Everything in between confirms that Opal's `ast`/`$`/`macro` primitives scale smoothly from one-liners to full code generators.

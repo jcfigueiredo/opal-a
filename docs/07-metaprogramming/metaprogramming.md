@@ -1,6 +1,6 @@
 # Metaprogramming
 
-Opal's metaprogramming system is Julia-inspired, adapted to Opal's `end`-block syntax and `:symbol` conventions. It provides quoting, interpolation, macros, annotations, and AST manipulation as first-class features.
+Opal's metaprogramming system is Julia-inspired, adapted to Opal's `end`-block syntax and `:symbol` conventions. It provides AST literals, interpolation, macros, annotations, and AST manipulation as first-class features.
 
 **Core principles:**
 
@@ -11,21 +11,21 @@ Opal's metaprogramming system is Julia-inspired, adapted to Opal's `end`-block s
 
 ---
 
-## Quoting -- Code as Data
+## AST Literals -- Code as Data
 
-Code is captured as `Expr` (AST node) using `quote ... end`. Inside a quote, `$` interpolates values.
+Code is captured as `Expr` (AST node) using `ast(...)`  or `ast ... end`. Inside an ast block, `$` interpolates values.
 
-### Basic Quoting
+### Basic AST Capture
 
 ```opal
 # Capture code as data
-ast = quote x + y * 2 end
-typeof(ast)   # => Expr
-ast.head      # => :call
-ast.args      # => [:+, :x, Expr(:call, :*, :y, 2)]
+node = ast(x + y * 2)
+typeof(node)  # => Expr
+node.head     # => :call
+node.args     # => [:+, :x, Expr(:call, :*, :y, 2)]
 
-# Multi-line quoting
-ast = quote
+# Multi-line AST capture
+node = ast
   x = 1
   y = 2
   x + y
@@ -38,37 +38,37 @@ end
 # Splice runtime values into the AST
 name = :greet
 message = "hello"
-ast = quote
+node = ast
   def $name()
     print($message)
   end
 end
-# ast represents: def greet() print("hello") end
+# node represents: def greet() print("hello") end
 
 # Splat interpolation for lists
 params = [:a, :b, :c]
-ast = quote f($params...) end
-# ast represents: f(a, b, c)
+node = ast(f($params...))
+# node represents: f(a, b, c)
 ```
 
 ### Programmatic AST Construction
 
 ```opal
-# Build AST without quoting
-ast = Expr.new(:call, :+, 1, 2)
-eval(ast)  # => 3
+# Build AST without ast literal
+node = Expr.new(:call, :+, 1, 2)
+eval(node)  # => 3
 
 # Equivalent to:
-ast = quote 1 + 2 end
-eval(ast)  # => 3
+node = ast(1 + 2)
+eval(node)  # => 3
 ```
 
 Note: `eval()` is a metaprogramming primitive for evaluating AST at runtime. It operates on Opal's own `Expr` type, not arbitrary strings. It is intended for macro expansion and code generation, not for evaluating untrusted input.
 
 ### Rules
 
-- `quote ... end` returns an `Expr` -- code as a manipulable data structure.
-- `$expr` inside a quote splices the value of `expr` into the AST at construction time.
+- `ast(expr)` or `ast ... end` returns an `Expr` -- code as a manipulable data structure.
+- `$expr` inside an ast block splices the value of `expr` into the AST at construction time.
 - `$list...` splats a list of expressions into argument position.
 - `Expr.new(head, args...)` constructs AST nodes programmatically.
 - `eval(expr)` evaluates an `Expr` at runtime (metaprogramming use only).
@@ -83,7 +83,7 @@ Macros receive AST at parse time and return transformed AST. They are hygienic b
 
 ```opal
 macro say_hello()
-  quote
+  ast
     print("Hello, world!")
   end
 end
@@ -95,7 +95,7 @@ end
 
 ```opal
 macro say_hello(name)
-  quote
+  ast
     print(f"Hello, {$name}")
   end
 end
@@ -105,11 +105,11 @@ end
 
 ### Hygiene
 
-Variables introduced inside a macro's `quote` are scoped to the macro -- they don't shadow or leak into the caller's scope.
+Variables introduced inside a macro's `ast` block are scoped to the macro -- they don't shadow or leak into the caller's scope.
 
 ```opal
 macro measure(body)
-  quote
+  ast
     start = Time.now()
     result = $body
     elapsed = Time.since(start)
@@ -132,7 +132,7 @@ Use `esc(expr)` to explicitly inject an expression into the caller's scope:
 
 ```opal
 macro define_var(name, value)
-  quote
+  ast
     $(esc(name)) = $value
   end
 end
@@ -156,7 +156,7 @@ macroexpand(@measure do 1 + 1 end)
 - `@[key: val]` attaches annotation metadata (see Annotations section below).
 - `@` followed by an identifier is a macro; `@` followed by `[` is an annotation.
 - Macros receive arguments as `Expr` (AST), not evaluated values.
-- **Hygienic by default:** variables in macro quotes don't leak.
+- **Hygienic by default:** variables in macro ast blocks don't leak.
 - `esc(expr)` escapes into the caller's scope (opt-in).
 - `macroexpand(@name args)` shows expansion without executing.
 
@@ -281,16 +281,16 @@ end
 ### Inspecting Expressions
 
 ```opal
-ast = quote x + y * 2 end
-ast.dump()
+node = ast(x + y * 2)
+node.dump()
 # Expr(:call, :+,
 #   :x,
 #   Expr(:call, :*, :y, 2))
 
-ast.head       # => :call
-ast.args       # => [:+, :x, Expr(:call, :*, :y, 2)]
-ast.args[0]    # => :+ (the operator)
-ast.args[1]    # => :x
+node.head      # => :call
+node.args      # => [:+, :x, Expr(:call, :*, :y, 2)]
+node.args[0]   # => :+ (the operator)
+node.args[1]   # => :x
 ```
 
 ### Transforming AST
@@ -307,8 +307,8 @@ def double_literals(expr: Expr)
   end
 end
 
-ast = quote 1 + 2 * 3 end
-doubled = double_literals(ast)
+node = ast(1 + 2 * 3)
+doubled = double_literals(node)
 eval(doubled)  # => eval(2 + 4 * 6) => 26
 ```
 
@@ -337,13 +337,13 @@ User.implements()      # => [Printable, Comparable]
 macro json_serializable(class_def)
   fields = class_def.needs_fields()
 
-  to_json = quote
+  to_json = ast
     def to_json()
       JSON.object($(generate_field_pairs(fields)...))
     end
   end
 
-  from_json = quote
+  from_json = ast
     def self.from_json(data: String)
       parsed = JSON.parse(data)
       self.new($(generate_from_json(fields)...))
@@ -369,7 +369,7 @@ User.from_json("""{"name":"claudio","email":"c@opal.dev","age":15}""")
 
 ```opal
 macro test(name, body)
-  quote
+  ast
     try
       $body
       Test.pass($name)
@@ -380,7 +380,7 @@ macro test(name, body)
 end
 
 macro describe(name, body)
-  quote
+  ast
     Test.group($name)
     $body
     Test.end_group()
@@ -405,7 +405,7 @@ This is how Opal's built-in test framework (`OpalTest` subdomain) is implemented
 ```opal
 macro debug(expr)
   name = string(expr)
-  quote
+  ast
     value = $expr
     print(f"Debug: {$name} = {value}")
     value
@@ -421,7 +421,7 @@ x = 42
 ```opal
 macro memoize(fn_def)
   fn_name = fn_def.name
-  quote
+  ast
     _cache = {:}
 
     def $fn_name($(fn_def.params...))
@@ -446,14 +446,14 @@ end
 
 ## Self-Hosting Potential
 
-With quoting + macros, some of Opal's own features could be defined in Opal itself. This doesn't mean they *must* be -- core keywords can stay in the parser for performance and clarity. But the macro system is powerful enough that users could build equivalent constructs.
+With ast literals + macros, some of Opal's own features could be defined in Opal itself. This doesn't mean they *must* be -- core keywords can stay in the parser for performance and clarity. But the macro system is powerful enough that users could build equivalent constructs.
 
 ### What Stays in the Parser (Core Syntax)
 
 These are fundamental to the language and must be parsed natively:
 
 - `def`, `class`, `module`, `actor`, `if`, `for`, `while`, `match`, `try`
-- `quote`, `macro`, `$` (metaprogramming primitives)
+- `ast`, `macro`, `$` (metaprogramming primitives)
 - `=`, `.`, `:`, operators
 
 ### What Could Be Macros
@@ -490,7 +490,7 @@ A subdomain is a standard Opal module that exports macros:
 module OpalWeb
   # Route definition DSL
   macro get(path, body)
-    quote
+    ast
       app.route("GET", $path, |req, res|
         $body
       end)
@@ -498,7 +498,7 @@ module OpalWeb
   end
 
   macro post(path, body)
-    quote
+    ast
       app.route("POST", $path, |req, res|
         $body
       end)
@@ -507,7 +507,7 @@ module OpalWeb
 
   # Middleware DSL
   macro middleware(name, body)
-    quote
+    ast
       app.use($name, |req, res, next|
         $body
         next()
@@ -634,18 +634,18 @@ Each subdomain is an independent package -- you only import what you use.
 
 ### What Opal Adapts from Julia
 
-Opal's metaprogramming is directly inspired by Julia. The core model -- quoting, interpolation, `Expr` type, hygienic macros, `esc`, `macroexpand` -- maps closely. The adaptations are syntactic: Opal uses `quote ... end` instead of `:(...)` (which would conflict with `:symbol`), and Opal adds the `@[key: val]` annotation syntax which Julia does not have.
+Opal's metaprogramming is directly inspired by Julia. The core model -- AST literals, interpolation, `Expr` type, hygienic macros, `esc`, `macroexpand` -- maps closely. The adaptations are syntactic: Opal uses `ast(expr)` / `ast ... end` instead of `:(...)` (which would conflict with `:symbol`), and Opal adds the `@[key: val]` annotation syntax which Julia does not have.
 
 ### What Opal Skips
 
-- **`:(expr)` single-expression quoting** -- conflicts with `:symbol` syntax.
+- **`:(expr)` single-expression AST capture** -- conflicts with `:symbol` syntax.
 - **`@generated function`** -- YAGNI with multiple dispatch + macros covering the same ground.
 
 ### Julia Comparison Table
 
 | Julia Feature | Opal Adaptation |
 |---|---|
-| `:(expr)` quoting | `quote expr end` / `quote ... end` |
+| `:(expr)` quoting | `ast(expr)` / `ast ... end` |
 | `$var` interpolation | `$var` (identical) |
 | `Expr` type | `Expr` type with `.head`, `.args`, `.dump()` |
 | `macro ... end` | `macro ... end` (identical structure) |
@@ -665,10 +665,10 @@ Opal's metaprogramming is directly inspired by Julia. The core model -- quoting,
 
 | Keyword | Purpose |
 |---|---|
-| `quote ... end` | Capture code as AST |
-| `$` (inside quote) | Interpolate into AST |
+| `ast(expr)` / `ast ... end` | Capture code as AST |
+| `$` (inside ast) | Interpolate into AST |
 | `macro ... end` | Define a macro |
 | `@name` | Invoke a macro |
 | `@[key: val]` | Attach metadata annotation |
 
-Opal's metaprogramming gives users the same tools the language uses internally: quoting captures code as data, macros transform it at parse time, annotations attach metadata without transformation, and subdomains package macros into domain-specific extensions. The system is hygienic by default, produces valid AST only, and composes with all other language features.
+Opal's metaprogramming gives users the same tools the language uses internally: ast literals capture code as data, macros transform it at parse time, annotations attach metadata without transformation, and subdomains package macros into domain-specific extensions. The system is hygienic by default, produces valid AST only, and composes with all other language features.
