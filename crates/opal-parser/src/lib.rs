@@ -1,1 +1,3 @@
-// Opal parser
+pub mod ast;
+
+pub use ast::*;
