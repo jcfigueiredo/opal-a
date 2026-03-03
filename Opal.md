@@ -56,7 +56,7 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
                    | <emit_expr>
                    | <on_handler>
                    | <macro_def>
-                   | <quote_expr>
+                   | <ast_expr>
                    | <type_alias>
                    | <implements_for>
                    | <enum_def>
@@ -220,8 +220,8 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
 <annotation>    ::= "@[" <annot_entry> ("," <annot_entry>)* "]"
 <annot_entry>   ::= IDENTIFIER
                    | IDENTIFIER ":" <expression>
-<quote_expr>    ::= "quote" <expression> "end"
-                   | "quote" NEWLINE <block> "end"
+<ast_expr>      ::= "ast" "(" <expression> ")"
+                   | "ast" NEWLINE <block> "end"
 
 <type_alias>    ::= "type" IDENTIFIER ("[" <type_params> "]")? "=" <type_expr>
 <type_expr>     ::= TYPE
@@ -644,11 +644,11 @@ end
 
 ## 10. Metaprogramming
 
-Opal's metaprogramming is Julia-inspired: `quote...end` captures code as `Expr` AST nodes, `$` interpolates values, `macro...end` defines hygienic macros invoked with `@name`. Annotations (`@[key: val]`) attach queryable metadata to declarations. Subdomains are macro packages that extend the language for specific problem domains.
+Opal's metaprogramming is Julia-inspired: `ast(...)` captures code as `Expr` AST nodes, `$` interpolates values, `macro...end` defines hygienic macros invoked with `@name`. Annotations (`@[key: val]`) attach queryable metadata to declarations. Subdomains are macro packages that extend the language for specific problem domains.
 
 ```opal
 macro memoize(fn_def)
-  quote
+  ast
     _cache = {:}
     def $(fn_def.name)($(fn_def.params...))
       key = ($(fn_def.params...),)
@@ -661,7 +661,7 @@ macro memoize(fn_def)
 end
 ```
 
-> See [Metaprogramming](docs/07-metaprogramming/metaprogramming.md) for quoting, macros, annotations, AST reflection, and subdomain guidelines.
+> See [Metaprogramming](docs/07-metaprogramming/metaprogramming.md) for ast capture, macros, annotations, AST reflection, and subdomain guidelines.
 
 ---
 
