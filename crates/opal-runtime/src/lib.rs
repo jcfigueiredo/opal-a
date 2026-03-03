@@ -6,4 +6,4 @@ pub mod value;
 pub use closure::ClosureId;
 pub use env::Environment;
 pub use function::FunctionId;
-pub use value::Value;
+pub use value::{ClassId, InstanceId, ModuleId, Value};

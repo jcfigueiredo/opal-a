@@ -22,7 +22,25 @@ pub enum Value {
     List(Vec<Value>),
     /// Closure (ID into interpreter's closure table)
     Closure(ClosureId),
+    /// Class
+    Class(ClassId),
+    /// Instance of a class
+    Instance(InstanceId),
+    /// Module
+    Module(ModuleId),
 }
+
+/// Opaque ID for a class
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ClassId(pub usize);
+
+/// Opaque ID for an instance
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InstanceId(pub usize);
+
+/// Opaque ID for a module
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ModuleId(pub usize);
 
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -50,6 +68,9 @@ impl fmt::Display for Value {
                 write!(f, "]")
             }
             Value::Closure(id) => write!(f, "<closure #{}>", id.0),
+            Value::Class(id) => write!(f, "<class #{}>", id.0),
+            Value::Instance(id) => write!(f, "<instance #{}>", id.0),
+            Value::Module(id) => write!(f, "<module #{}>", id.0),
         }
     }
 }

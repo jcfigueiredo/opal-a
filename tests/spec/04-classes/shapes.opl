@@ -1,0 +1,16 @@
+# expect: Area: 12.0
+module Shapes
+  class Rectangle
+    needs width: Float
+    needs height: Float
+
+    def area() -> Float
+      .width * .height
+    end
+  end
+end
+
+from Shapes import Rectangle
+
+r = Rectangle.new(width: 3.0, height: 4.0)
+print(f"Area: {r.area()}")

@@ -53,6 +53,11 @@ impl Environment {
             self.scopes.pop();
         }
     }
+
+    /// Get all bindings in the current (innermost) scope
+    pub fn current_scope_bindings(&self) -> HashMap<String, Value> {
+        self.scopes.last().cloned().unwrap_or_default()
+    }
 }
 
 impl Default for Environment {

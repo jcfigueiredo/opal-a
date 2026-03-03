@@ -386,10 +386,7 @@ impl<'src> Parser<'src> {
         self.expect_statement_end()?;
         let end = self.previous_span().end;
         Ok(Stmt {
-            kind: StmtKind::FromImport {
-                module_path,
-                names,
-            },
+            kind: StmtKind::FromImport { module_path, names },
             span: Span {
                 start: start.start,
                 end,
@@ -1288,7 +1285,8 @@ mod tests {
 
     #[test]
     fn parse_class_def() {
-        let prog = parse("class Circle\n  needs radius: Float\n\n  def area()\n    .radius\n  end\nend");
+        let prog =
+            parse("class Circle\n  needs radius: Float\n\n  def area()\n    .radius\n  end\nend");
         match &prog.statements[0].kind {
             StmtKind::ClassDef {
                 name,
@@ -1317,10 +1315,7 @@ mod tests {
     fn parse_from_import() {
         let prog = parse("from Shapes import Circle, Rectangle");
         match &prog.statements[0].kind {
-            StmtKind::FromImport {
-                module_path,
-                names,
-            } => {
+            StmtKind::FromImport { module_path, names } => {
                 assert_eq!(module_path, "Shapes");
                 assert_eq!(names, &["Circle", "Rectangle"]);
             }

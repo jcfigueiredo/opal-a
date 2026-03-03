@@ -1,7 +1,9 @@
 use std::io::Write;
 
+use std::collections::HashMap;
+
 use opal_parser::ast::*;
-use opal_runtime::{ClosureId, Environment, FunctionId, Value};
+use opal_runtime::{ClassId, ClosureId, Environment, FunctionId, InstanceId, ModuleId, Value};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -32,11 +34,40 @@ struct StoredClosure {
     body: Vec<Stmt>,
 }
 
+/// A stored class definition
+#[derive(Clone)]
+struct StoredClass {
+    #[allow(dead_code)]
+    name: String,
+    needs: Vec<(String, Option<String>)>,
+    methods: Vec<StoredFunction>,
+}
+
+/// A stored instance
+#[derive(Clone)]
+struct StoredInstance {
+    class_id: ClassId,
+    fields: HashMap<String, Value>,
+}
+
+/// A stored module
+#[derive(Clone)]
+struct StoredModule {
+    #[allow(dead_code)]
+    name: String,
+    bindings: HashMap<String, Value>,
+}
+
 pub struct Interpreter<W: Write> {
     env: Environment,
     writer: W,
     functions: Vec<StoredFunction>,
     closures: Vec<StoredClosure>,
+    classes: Vec<StoredClass>,
+    instances: Vec<StoredInstance>,
+    modules: Vec<StoredModule>,
+    /// Current `self` instance for method calls
+    current_self: Option<InstanceId>,
 }
 
 impl Interpreter<std::io::Stdout> {
@@ -46,6 +77,10 @@ impl Interpreter<std::io::Stdout> {
             writer: std::io::stdout(),
             functions: Vec::new(),
             closures: Vec::new(),
+            classes: Vec::new(),
+            instances: Vec::new(),
+            modules: Vec::new(),
+            current_self: None,
         }
     }
 }
@@ -57,14 +92,33 @@ impl<W: Write> Interpreter<W> {
             writer,
             functions: Vec::new(),
             closures: Vec::new(),
+            classes: Vec::new(),
+            instances: Vec::new(),
+            modules: Vec::new(),
+            current_self: None,
         }
     }
 
     pub fn run(&mut self, program: &Program) -> Result<(), EvalError> {
+        self.register_stdlib_modules();
         for stmt in &program.statements {
             self.eval_stmt(stmt)?;
         }
         Ok(())
+    }
+
+    fn register_stdlib_modules(&mut self) {
+        // Math module — handled as a special builtin module
+        let mut math_bindings = HashMap::new();
+        // Store pi as a float value — Math.pi() will be handled specially
+        math_bindings.insert("pi".into(), Value::Float(std::f64::consts::PI));
+
+        let math_module_id = ModuleId(self.modules.len());
+        self.modules.push(StoredModule {
+            name: "Math".into(),
+            bindings: math_bindings,
+        });
+        self.env.set("Math".into(), Value::Module(math_module_id));
     }
 
     fn eval_stmt(&mut self, stmt: &Stmt) -> Result<(), EvalError> {
@@ -123,6 +177,85 @@ impl<W: Write> Interpreter<W> {
                 }
                 self.eval_block(body)?;
             },
+            StmtKind::ClassDef {
+                name,
+                needs,
+                methods,
+            } => {
+                let mut stored_methods = Vec::new();
+                for method_stmt in methods {
+                    if let StmtKind::FuncDef {
+                        name: mname,
+                        params,
+                        body,
+                        ..
+                    } = &method_stmt.kind
+                    {
+                        stored_methods.push(StoredFunction {
+                            name: mname.clone(),
+                            params: params.iter().map(|p| p.name.clone()).collect(),
+                            body: body.clone(),
+                        });
+                    }
+                }
+                let class_id = ClassId(self.classes.len());
+                self.classes.push(StoredClass {
+                    name: name.clone(),
+                    needs: needs
+                        .iter()
+                        .map(|n| (n.name.clone(), n.type_annotation.clone()))
+                        .collect(),
+                    methods: stored_methods,
+                });
+                self.env.set(name.clone(), Value::Class(class_id));
+            }
+            StmtKind::ModuleDef { name, body } => {
+                // Evaluate body in a new scope, capture bindings
+                self.env.push_scope();
+                for stmt in body {
+                    self.eval_stmt(stmt)?;
+                }
+                // Collect all bindings from the module scope
+                let bindings = self.env.current_scope_bindings();
+                self.env.pop_scope();
+
+                let module_id = ModuleId(self.modules.len());
+                self.modules.push(StoredModule {
+                    name: name.clone(),
+                    bindings,
+                });
+                self.env.set(name.clone(), Value::Module(module_id));
+            }
+            StmtKind::FromImport { module_path, names } => {
+                let module_val = self
+                    .env
+                    .get(module_path)
+                    .cloned()
+                    .ok_or_else(|| EvalError::UndefinedVariable(module_path.clone()))?;
+                let module_id = match module_val {
+                    Value::Module(id) => id,
+                    _ => {
+                        return Err(EvalError::TypeError(format!(
+                            "'{}' is not a module",
+                            module_path
+                        )));
+                    }
+                };
+                let module = self.modules[module_id.0].clone();
+                for name in names {
+                    if let Some(val) = module.bindings.get(name) {
+                        self.env.set(name.clone(), val.clone());
+                    } else {
+                        return Err(EvalError::UndefinedVariable(format!(
+                            "{}.{}",
+                            module_path, name
+                        )));
+                    }
+                }
+            }
+            StmtKind::NeedsDecl(_) => {
+                // Handled during class definition parsing, not at runtime
+            }
         }
         Ok(())
     }
@@ -215,6 +348,18 @@ impl<W: Write> Interpreter<W> {
 
             ExprKind::Grouped(inner) => self.eval_expr(inner),
 
+            ExprKind::InstanceVar(field) => {
+                let instance_id = self
+                    .current_self
+                    .ok_or_else(|| EvalError::RuntimeError("no self in scope".into()))?;
+                let instance = &self.instances[instance_id.0];
+                instance
+                    .fields
+                    .get(field)
+                    .cloned()
+                    .ok_or_else(|| EvalError::UndefinedVariable(format!(".{}", field)))
+            }
+
             ExprKind::MemberAccess { .. } => Err(EvalError::TypeError(
                 "bare member access not supported — use method call syntax".into(),
             )),
@@ -225,11 +370,11 @@ impl<W: Write> Interpreter<W> {
         // Method call: expr.method(args)
         if let ExprKind::MemberAccess { object, field } = &function.kind {
             let obj = self.eval_expr(object)?;
-            let mut arg_values = Vec::new();
+            let mut eval_args = Vec::new();
             for arg in args {
-                arg_values.push(self.eval_expr(&arg.value)?);
+                eval_args.push((arg.name.clone(), self.eval_expr(&arg.value)?));
             }
-            return self.call_method(obj, field, arg_values);
+            return self.call_method(obj, field, eval_args);
         }
 
         // Regular function call: name(args)
@@ -272,8 +417,10 @@ impl<W: Write> Interpreter<W> {
         &mut self,
         obj: Value,
         method: &str,
-        args: Vec<Value>,
+        named_args: Vec<(Option<String>, Value)>,
     ) -> Result<Value, EvalError> {
+        // Extract positional values for most methods
+        let args: Vec<Value> = named_args.iter().map(|(_, v)| v.clone()).collect();
         match (&obj, method) {
             // List methods
             (Value::List(items), "length") => Ok(Value::Integer(items.len() as i64)),
@@ -367,6 +514,106 @@ impl<W: Write> Interpreter<W> {
             }
             // String methods
             (Value::String(s), "length") => Ok(Value::Integer(s.len() as i64)),
+
+            // Module method calls (e.g., Math.pi())
+            (Value::Module(module_id), _) => {
+                let module = self.modules[module_id.0].clone();
+                if let Some(val) = module.bindings.get(method) {
+                    return match val {
+                        Value::Function(fn_id) => self.call_function(*fn_id, method, args),
+                        // For non-function values like Math.pi(), return the value directly
+                        other => Ok(other.clone()),
+                    };
+                }
+                return Err(EvalError::UndefinedVariable(format!(
+                    "{}.{}",
+                    module.name, method
+                )));
+            }
+
+            // Class methods
+            (Value::Class(class_id), "new") => {
+                let class = self.classes[class_id.0].clone();
+                let mut fields = HashMap::new();
+
+                // Match named args to needs declarations
+                for (need_name, _) in &class.needs {
+                    // Try named arg first
+                    let value = named_args
+                        .iter()
+                        .find(|(name, _)| name.as_deref() == Some(need_name.as_str()))
+                        .map(|(_, v)| v.clone());
+                    if let Some(val) = value {
+                        fields.insert(need_name.clone(), val);
+                    } else {
+                        // Try positional
+                        let idx = class
+                            .needs
+                            .iter()
+                            .position(|(n, _)| n == need_name)
+                            .unwrap();
+                        if idx < args.len() {
+                            fields.insert(need_name.clone(), args[idx].clone());
+                        } else {
+                            return Err(EvalError::TypeError(format!(
+                                "missing required field '{}' in .new()",
+                                need_name
+                            )));
+                        }
+                    }
+                }
+
+                let instance_id = InstanceId(self.instances.len());
+                self.instances.push(StoredInstance {
+                    class_id: *class_id,
+                    fields,
+                });
+                Ok(Value::Instance(instance_id))
+            }
+
+            // Instance methods — dispatch to class
+            (Value::Instance(instance_id), _) => {
+                let instance = self.instances[instance_id.0].clone();
+                let class = self.classes[instance.class_id.0].clone();
+
+                // Find method in class
+                let method_fn = class.methods.iter().find(|m| m.name == method);
+                if let Some(func) = method_fn {
+                    let func = func.clone();
+                    if args.len() != func.params.len() {
+                        return Err(EvalError::TypeError(format!(
+                            "{}() expected {} arguments, got {}",
+                            method,
+                            func.params.len(),
+                            args.len()
+                        )));
+                    }
+
+                    // Set self and push scope
+                    let prev_self = self.current_self;
+                    self.current_self = Some(*instance_id);
+                    self.env.push_scope();
+                    for (param_name, arg_val) in func.params.iter().zip(args) {
+                        self.env.set(String::clone(param_name), arg_val);
+                    }
+
+                    let result = self.eval_block(&func.body);
+                    self.env.pop_scope();
+                    self.current_self = prev_self;
+
+                    match result {
+                        Ok(val) => Ok(val),
+                        Err(EvalError::Return(val)) => Ok(val),
+                        Err(e) => Err(e),
+                    }
+                } else {
+                    Err(EvalError::TypeError(format!(
+                        "no method '{}' on instance of class",
+                        method
+                    )))
+                }
+            }
+
             _ => Err(EvalError::TypeError(format!(
                 "no method '{}' on {:?}",
                 method, obj
@@ -522,6 +769,9 @@ fn eval_binary_op(op: BinOp, left: Value, right: Value) -> Result<Value, EvalErr
         }
         (BinOp::Mod, Value::Integer(a), Value::Integer(b)) => Ok(Value::Integer(a % b)),
         (BinOp::Pow, Value::Integer(a), Value::Integer(b)) => Ok(Value::Integer(a.pow(*b as u32))),
+        (BinOp::Pow, Value::Float(a), Value::Float(b)) => Ok(Value::Float(a.powf(*b))),
+        (BinOp::Pow, Value::Float(a), Value::Integer(b)) => Ok(Value::Float(a.powi(*b as i32))),
+        (BinOp::Pow, Value::Integer(a), Value::Float(b)) => Ok(Value::Float((*a as f64).powf(*b))),
 
         // Float arithmetic
         (BinOp::Add, Value::Float(a), Value::Float(b)) => Ok(Value::Float(a + b)),
@@ -758,5 +1008,75 @@ print(f"Sum of even squares: {total}")
     fn closure_as_variable() {
         let output = run("f = |x| x + 1\nprint(f(10))").unwrap();
         assert_eq!(output, "11");
+    }
+
+    // === Slice 4: Class tests ===
+
+    #[test]
+    fn simple_class() {
+        let output = run(
+            "class Point\n  needs x: Int\n  needs y: Int\n\n  def sum()\n    .x + .y\n  end\nend\np = Point.new(x: 3, y: 4)\nprint(p.sum())",
+        )
+        .unwrap();
+        assert_eq!(output, "7");
+    }
+
+    #[test]
+    fn class_new_positional() {
+        let output =
+            run("class Pair\n  needs a: Int\n  needs b: Int\nend\np = Pair.new(10, 20)\nprint(p)")
+                .unwrap();
+        assert!(output.contains("instance"));
+    }
+
+    #[test]
+    fn module_and_import() {
+        let output = run(
+            "module Shapes\n  class Circle\n    needs radius: Float\n\n    def area()\n      .radius * .radius\n    end\n  end\nend\nfrom Shapes import Circle\nc = Circle.new(radius: 5.0)\nprint(c.area())",
+        )
+        .unwrap();
+        assert_eq!(output, "25.0");
+    }
+
+    #[test]
+    fn math_pi() {
+        let output = run("print(Math.pi())").unwrap();
+        assert!(output.starts_with("3.14159"));
+    }
+
+    #[test]
+    fn shapes_target_program() {
+        let output = run(r#"
+module Shapes
+  class Circle
+    needs radius: Float
+
+    def area() -> Float
+      Math.pi() * .radius ** 2
+    end
+  end
+
+  class Rectangle
+    needs width: Float
+    needs height: Float
+
+    def area() -> Float
+      .width * .height
+    end
+  end
+end
+
+from Shapes import Circle, Rectangle
+
+shapes = [Circle.new(radius: 5.0), Rectangle.new(width: 3.0, height: 4.0)]
+for shape in shapes
+  print(f"Area: {shape.area()}")
+end
+"#)
+        .unwrap();
+        let lines: Vec<&str> = output.lines().collect();
+        assert_eq!(lines.len(), 2);
+        assert!(lines[0].starts_with("Area: 78.53"));
+        assert_eq!(lines[1], "Area: 12.0");
     }
 }
