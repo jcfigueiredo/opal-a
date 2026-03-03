@@ -20,6 +20,7 @@ Opal ships with a standard library organized into modules:
 | `Option` | `Option[T]` enum — `Some(value)` or `None` for explicit nullable handling; used by `Iterator[T]` |
 | `Result` | `Result[T, E]` enum — `Ok(value)` or `Err(error)` for error handling |
 | `Settings` | Base for `settings model` definitions — env/config/file loading with source priority |
+| `Platform` | Infrastructure services: topology definition with `define`, `ServiceProvider[C]` protocol, auto-DI registration, environment handling (dev/prod/test), health checks, lifecycle events (`ServiceDown`, `ConnectionLost`, `ServiceRecovered`) |
 | `Reflect` | Runtime introspection: `annotations()`, `field_annotations()`, `typeof()`, `methods()` |
 
 ## Usage Examples

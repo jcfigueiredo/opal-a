@@ -622,6 +622,25 @@ The specification pattern enables composable business rules via `Specification` 
 
 ---
 
+### Platform Integration
+
+Infrastructure services (Redis, Postgres, S3, Docker) are imported as modules and declared via `needs` like any dependency. The `Platform` stdlib module handles provisioning in dev, connecting in production, and lifecycle management — built entirely on existing primitives.
+
+```opal
+from Platform import define
+from OpalRedis import RedisProvider
+from OpalPostgres import PostgresProvider
+
+infrastructure = define do |services|
+  services.add(:cache, RedisProvider.new(port: 6379))
+  services.add(:db, PostgresProvider.new(host: "localhost", port: 5432))
+end
+```
+
+> See [Platform Integration](docs/06-patterns/platform-integration.md) for topology files, DI auto-registration, environment handling, infrastructure events, and the Storage provider example.
+
+---
+
 ## 10. Metaprogramming
 
 Opal's metaprogramming is Julia-inspired: `quote...end` captures code as `Expr` AST nodes, `$` interpolates values, `macro...end` defines hygienic macros invoked with `@name`. Annotations (`@[key: val]`) attach queryable metadata to declarations. Subdomains are macro packages that extend the language for specific problem domains.
@@ -665,6 +684,7 @@ end
 | `Option` | `Option[T]` enum -- `Some(value)` or `None` for explicit nullable handling; used by `Iterator[T]` |
 | `Result` | `Result[T, E]` enum -- `Ok(value)` or `Err(error)` for error handling |
 | `Settings` | Base for `settings model` definitions -- env/config/file loading with source priority |
+| `Platform` | Infrastructure services: topology definition, service providers, auto-DI registration, environment handling, health checks, lifecycle events |
 | `Reflect` | Runtime introspection: `annotations()`, `field_annotations()`, `typeof()`, `methods()` |
 
 > See [Standard Library](docs/08-stdlib/stdlib.md) for usage examples and module details.

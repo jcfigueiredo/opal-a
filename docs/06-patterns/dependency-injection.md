@@ -395,6 +395,74 @@ order_service.place_order(new_order)
 
 ---
 
+## Platform Auto-Registration
+
+For applications using infrastructure services (Redis, Postgres, S3, etc.), the `Platform` runtime automatically provisions services and registers them in the DI container — no manual wiring needed.
+
+### How It Works
+
+1. Define infrastructure in a topology file (`infra.opl`):
+
+```opal
+from Platform import define
+from OpalRedis import RedisProvider
+from OpalPostgres import PostgresProvider
+
+infrastructure = define do |services|
+  services.add(:cache, RedisProvider.new(port: 6379))
+  services.add(:db, PostgresProvider.new(
+    host: "localhost",
+    port: 5432,
+    pool_size: 5
+  ))
+end
+```
+
+2. Reference in `opal.toml`:
+
+```toml
+[infrastructure]
+file = "infra.opl"
+```
+
+3. The runtime:
+   - Loads `infra.opl` and evaluates the `Platform.define` block
+   - Calls `provider.provision()` (dev) or `provider.connect()` (production)
+   - Registers each client in the global `Container`
+   - Injects clients via `needs` — just like manually registered dependencies
+
+### Application Code — Zero Changes
+
+```opal
+class UserService
+  needs cache: Redis
+  needs db: Postgres
+
+  def find_user(id: Int32) -> User
+    .cache.get(f"user:{id}") or do
+      user = .db.query("SELECT * FROM users WHERE id = $1", id)
+      .cache.set(f"user:{id}", user)
+      user
+    end
+  end
+end
+
+# No explicit wiring — Platform registered Redis and Postgres clients
+service = UserService.new()
+```
+
+### Environment Modes
+
+| Mode | Behavior |
+|---|---|
+| Dev (default) | Auto-provision services via Docker, tear down on exit |
+| Production | Connect to existing services via config/env vars |
+| Test | Provision isolated ephemeral services with random ports |
+
+> See [Platform Integration](platform-integration.md) for topology syntax, `ServiceProvider[C]` protocol, config priority, and infrastructure events.
+
+---
+
 ## Design Rationale
 
 ### Why `needs` as a Keyword

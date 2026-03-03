@@ -29,6 +29,7 @@ These rules are enforced across all examples and specifications. Violating them 
 - **`###` for multiline comments** (not `/* */` or `""" """`)
 - **`@name` for macros, `@[...]` for annotations**: `@memoize` invokes a macro, `@[deprecated]` attaches metadata
 - **Symbol sets via type aliases**: `type Status = :ok | :error | :pending` for typed symbols
+- **Platform integration via `Platform` stdlib**: Infrastructure services declared in topology files, auto-registered into DI via `ServiceProvider[C]` protocol. `needs cache: Redis` just works.
 
 ## Design Process
 
@@ -48,7 +49,7 @@ When updating Opal.md, always check that changes are consistent across: BNF gram
 | `docs/03-functions-and-types/` | Functions, type system, classes, modules, visibility, protocols, dispatch, iterators, enums, models/settings, FFI |
 | `docs/04-error-handling/` | Exceptions, Result types, preconditions, null objects |
 | `docs/05-concurrency/` | Actors, parallel, async/futures, supervisors |
-| `docs/06-patterns/` | Dependency injection, events, specifications |
+| `docs/06-patterns/` | Dependency injection, events, specifications, platform integration |
 | `docs/07-metaprogramming/` | Quoting, macros, annotations, AST, subdomains |
 | `docs/08-stdlib/` | Standard library reference |
 | `docs/09-tooling/` | Testing, runner, formatter, linter, package manager |

@@ -217,7 +217,36 @@ opal_db = "0.5"
 
 ---
 
-## 6. Design Rationale
+## 6. Infrastructure Modules
+
+Infrastructure providers (Redis, Postgres, S3, etc.) are regular Opal packages that ship a `ServiceProvider[C]` implementation. They are imported like any other module:
+
+```opal
+from OpalRedis import RedisProvider
+from OpalPostgres import PostgresProvider
+from OpalStorage import LocalStorageProvider, S3StorageProvider
+```
+
+These providers are used in topology files — regular `.opl` modules that declare infrastructure via `Platform.define`:
+
+```opal
+from Platform import define
+from OpalRedis import RedisProvider
+
+infrastructure = define do |services|
+  services.add(:cache, RedisProvider.new(port: 6379))
+end
+
+export infrastructure
+```
+
+The `Platform` module reads the topology file (specified in `opal.toml`), provisions or connects services based on the environment, and auto-registers clients in the DI container. Application code imports clients and protocols like any other type — no special import syntax needed.
+
+> See [Platform Integration](../06-patterns/platform-integration.md) for the full topology file spec, `ServiceProvider[C]` protocol, and environment handling.
+
+---
+
+## 7. Design Rationale
 
 ### Why Absolute-Only Imports?
 
@@ -244,6 +273,7 @@ Pure file-based mapping (one module per file, no nesting) is too rigid for large
 | Re-exports | `export names from Module` for clean public APIs |
 | Circular deps | Compile-time error -- extract shared code to break cycles |
 | Packages | Directory with `opal.toml` + `src/`, root module matches package name |
+| Infrastructure | Regular packages with `ServiceProvider[C]`, used in topology files |
 
 ### New Keywords
 

@@ -500,6 +500,10 @@ Opal's `needs` keyword makes dependency injection natural. Since services alread
 | `opal pkg add` | Add a dependency |
 | `opal pkg install` | Install all dependencies |
 | `opal pkg remove` | Remove a dependency |
+| `opal infra status` | Show infrastructure service status (running, stopped, error) |
+| `opal infra up` | Provision infrastructure services without running the app |
+| `opal infra down` | Tear down all infrastructure services |
+| `opal infra health` | Run health checks on all infrastructure services |
 
 ---
 
