@@ -1,0 +1,318 @@
+use logos::{Logos, FilterResult};
+
+/// Callback to lex multiline comments: `### ... ###`
+fn lex_multiline_comment(lex: &mut logos::Lexer<Token>) -> FilterResult<(), ()> {
+    let remainder = lex.remainder();
+    match remainder.find("###") {
+        Some(end) => {
+            lex.bump(end + 3); // consume up to and including closing ###
+            FilterResult::Skip
+        }
+        None => FilterResult::Error(()),
+    }
+}
+
+/// Callback to lex triple-double-quoted strings: `""" ... """`
+fn lex_triple_double_string(lex: &mut logos::Lexer<Token>) -> Result<(), ()> {
+    let remainder = lex.remainder();
+    match remainder.find(r#"""""#) {
+        Some(end) => {
+            lex.bump(end + 3);
+            Ok(())
+        }
+        None => Err(()),
+    }
+}
+
+/// Callback to lex triple-single-quoted strings: `''' ... '''`
+fn lex_triple_single_string(lex: &mut logos::Lexer<Token>) -> Result<(), ()> {
+    let remainder = lex.remainder();
+    match remainder.find("'''") {
+        Some(end) => {
+            lex.bump(end + 3);
+            Ok(())
+        }
+        None => Err(()),
+    }
+}
+
+/// Byte offset span in source code
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Span {
+    pub start: usize,
+    pub end: usize,
+}
+
+/// A token with its span
+#[derive(Debug, Clone, PartialEq)]
+pub struct SpannedToken {
+    pub token: Token,
+    pub span: Span,
+}
+
+#[derive(Logos, Debug, Clone, PartialEq)]
+#[logos(skip r"[ \t\r]+")]
+pub enum Token {
+    // === Newlines (significant in Opal) ===
+    #[regex(r"\n")]
+    Newline,
+
+    // === Comments ===
+    #[regex(r"#[^\n]*")]
+    Comment,
+
+    #[token("###", lex_multiline_comment)]
+    #[allow(dead_code)]
+    MultilineComment,
+
+    // === Keywords ===
+    #[token("let")]
+    Let,
+    #[token("def")]
+    Def,
+    #[token("end")]
+    End,
+    #[token("if")]
+    If,
+    #[token("elsif")]
+    Elsif,
+    #[token("else")]
+    Else,
+    #[token("then")]
+    Then,
+    #[token("while")]
+    While,
+    #[token("for")]
+    For,
+    #[token("in")]
+    In,
+    #[token("do")]
+    Do,
+    #[token("match")]
+    Match,
+    #[token("case")]
+    Case,
+    #[token("class")]
+    Class,
+    #[token("module")]
+    Module,
+    #[token("import")]
+    Import,
+    #[token("from")]
+    From,
+    #[token("export")]
+    Export,
+    #[token("as")]
+    As,
+    #[token("return")]
+    Return,
+    #[token("try")]
+    Try,
+    #[token("catch")]
+    Catch,
+    #[token("ensure")]
+    Ensure,
+    #[token("raise")]
+    Raise,
+    #[token("actor")]
+    Actor,
+    #[token("receive")]
+    Receive,
+    #[token("supervisor")]
+    Supervisor,
+    #[token("parallel")]
+    Parallel,
+    #[token("async")]
+    Async,
+    #[token("await")]
+    Await,
+    #[token("needs")]
+    Needs,
+    #[token("event")]
+    Event,
+    #[token("emit")]
+    Emit,
+    #[token("on")]
+    On,
+    #[token("macro")]
+    Macro,
+    #[token("ast")]
+    Ast,
+    #[token("type")]
+    Type,
+    #[token("enum")]
+    Enum,
+    #[token("model")]
+    Model,
+    #[token("settings")]
+    Settings,
+    #[token("protocol")]
+    Protocol,
+    #[token("implements")]
+    Implements,
+    #[token("private")]
+    Private,
+    #[token("public")]
+    Public,
+    #[token("requires")]
+    Requires,
+    #[token("extern")]
+    Extern,
+    #[token("with")]
+    With,
+    #[token("where")]
+    Where,
+    #[token("defaults")]
+    Defaults,
+    #[token("self")]
+    SelfKw,
+    #[token("receives")]
+    Receives,
+    #[token("reply")]
+    Reply,
+    #[token("send")]
+    Send,
+
+    // === Boolean & null literals ===
+    #[token("true")]
+    True,
+    #[token("false")]
+    False,
+    #[token("null")]
+    Null,
+
+    // === Logical operators (keywords) ===
+    #[token("and")]
+    And,
+    #[token("or")]
+    Or,
+    #[token("not")]
+    Not,
+    #[token("is")]
+    Is,
+
+    // === Number literals ===
+    #[regex(r"[0-9][0-9_]*\.[0-9][0-9_]*", |lex| lex.slice().replace('_', "").parse::<f64>().ok())]
+    Float(f64),
+
+    #[regex(r"[0-9][0-9_]*", priority = 2, callback = |lex| lex.slice().replace('_', "").parse::<i64>().ok())]
+    Integer(i64),
+
+    // === String literals ===
+    // Triple-quoted strings (use callbacks since logos doesn't support non-greedy)
+    #[token(r#"""""#, lex_triple_double_string)]
+    TripleDoubleString,
+
+    #[token("'''", lex_triple_single_string)]
+    TripleSingleString,
+
+    // Regular strings
+    #[regex(r#""([^"\\]|\\.)*""#)]
+    DoubleString,
+
+    #[regex(r"'([^'\\]|\\.)*'")]
+    SingleString,
+
+    // === F-strings ===
+    // Note: f-string parsing is complex (nested expressions inside {}).
+    // The lexer emits the raw token; the parser handles interpolation.
+    #[regex(r#"f"([^"\\]|\\.)*""#)]
+    FString,
+
+    #[regex(r"f'([^'\\]|\\.)*'")]
+    FSingleString,
+
+    // === R-strings ===
+    #[regex(r#"r"[^"]*""#)]
+    RString,
+
+    #[regex(r"r'[^']*'")]
+    RSingleString,
+
+    // === T-strings ===
+    #[regex(r#"t"([^"\\]|\\.)*""#)]
+    TString,
+
+    #[regex(r"t'([^'\\]|\\.)*'")]
+    TSingleString,
+
+    // === Symbols ===
+    #[regex(r":[a-zA-Z_][a-zA-Z0-9_]*")]
+    Symbol,
+
+    // === Identifiers (must come after keywords) ===
+    #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*[?!]?")]
+    Identifier,
+
+    // === Operators ===
+    #[token("**")]
+    DoubleStar,
+    #[token("+")]
+    Plus,
+    #[token("-")]
+    Minus,
+    #[token("*")]
+    Star,
+    #[token("/")]
+    Slash,
+    #[token("%")]
+    Percent,
+    #[token("==")]
+    EqEq,
+    #[token("!=")]
+    BangEq,
+    #[token("<=")]
+    LtEq,
+    #[token(">=")]
+    GtEq,
+    #[token("<")]
+    Lt,
+    #[token(">")]
+    Gt,
+    #[token("|>")]
+    Pipe,
+    #[token("->")]
+    Arrow,
+    #[token("...")]
+    DotDotDot,
+    #[token("..")]
+    DotDot,
+    #[token("?.")]
+    QuestionDot,
+    #[token("??")]
+    QuestionQuestion,
+
+    // === Delimiters ===
+    #[token("(")]
+    LParen,
+    #[token(")")]
+    RParen,
+    #[token("[")]
+    LBracket,
+    #[token("]")]
+    RBracket,
+    #[token("{")]
+    LBrace,
+    #[token("}")]
+    RBrace,
+    #[token(",")]
+    Comma,
+    #[token(":")]
+    Colon,
+    #[token(".")]
+    Dot,
+    #[token("=")]
+    Eq,
+    #[token("!")]
+    Bang,
+    #[token("|")]
+    Bar,
+    #[token("@")]
+    At,
+    #[token("$")]
+    Dollar,
+
+    // === Annotations ===
+    #[token("@[")]
+    AtBracket,
+}
