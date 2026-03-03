@@ -1,5 +1,7 @@
 use std::fmt;
 
+use crate::function::FunctionId;
+
 /// A runtime value in the Opal interpreter
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -13,6 +15,8 @@ pub enum Value {
     Bool(bool),
     /// Null
     Null,
+    /// User-defined function (ID into the interpreter's function table)
+    Function(FunctionId),
 }
 
 impl fmt::Display for Value {
@@ -29,6 +33,7 @@ impl fmt::Display for Value {
             Value::String(s) => write!(f, "{}", s),
             Value::Bool(b) => write!(f, "{}", b),
             Value::Null => write!(f, "null"),
+            Value::Function(id) => write!(f, "<function #{}>", id.0),
         }
     }
 }
