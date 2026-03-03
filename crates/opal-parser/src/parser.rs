@@ -66,6 +66,16 @@ impl<'src> Parser<'src> {
             return self.parse_return_statement(start);
         }
 
+        // For loop
+        if self.check(&Token::For) {
+            return self.parse_for_loop(start);
+        }
+
+        // While loop
+        if self.check(&Token::While) {
+            return self.parse_while_loop(start);
+        }
+
         // Try to parse an expression — could be expression statement or assignment
         let expr = self.parse_expression(0)?;
 
@@ -212,6 +222,44 @@ impl<'src> Parser<'src> {
         })
     }
 
+    fn parse_for_loop(&mut self, start: Span) -> Result<Stmt, ParseError> {
+        self.advance(); // consume 'for'
+        let var = self.expect_identifier()?;
+        self.expect_token(&Token::In, "in")?;
+        let iterable = self.parse_expression(0)?;
+        self.expect_newline()?;
+        let body = self.parse_block()?;
+        self.expect_token(&Token::End, "end")?;
+        let end = self.previous_span().end;
+        Ok(Stmt {
+            kind: StmtKind::For {
+                var,
+                iterable,
+                body,
+            },
+            span: Span {
+                start: start.start,
+                end,
+            },
+        })
+    }
+
+    fn parse_while_loop(&mut self, start: Span) -> Result<Stmt, ParseError> {
+        self.advance(); // consume 'while'
+        let condition = self.parse_expression(0)?;
+        self.expect_newline()?;
+        let body = self.parse_block()?;
+        self.expect_token(&Token::End, "end")?;
+        let end = self.previous_span().end;
+        Ok(Stmt {
+            kind: StmtKind::While { condition, body },
+            span: Span {
+                start: start.start,
+                end,
+            },
+        })
+    }
+
     // --- Expressions (Pratt parser) ---
 
     pub fn parse_expression(&mut self, min_precedence: u8) -> Result<Expr, ParseError> {
@@ -286,8 +334,18 @@ impl<'src> Parser<'src> {
             if self.check(&Token::LParen) {
                 // Function call: expr(args)
                 self.advance();
-                let args = self.parse_args()?;
+                let mut args = self.parse_args()?;
                 self.expect_token(&Token::RParen, ")")?;
+
+                // Trailing block: expr(args) do |params| ... end
+                if self.check(&Token::Do) {
+                    let closure = self.parse_block_closure()?;
+                    args.push(Arg {
+                        name: None,
+                        value: closure,
+                    });
+                }
+
                 let span = Span {
                     start: expr.span.start,
                     end: self.previous_span().end,
@@ -394,6 +452,33 @@ impl<'src> Parser<'src> {
                     },
                 })
             }
+            // List literal: [expr, expr, ...]
+            Some(Token::LBracket) => {
+                self.advance();
+                let mut elements = Vec::new();
+                if !self.check(&Token::RBracket) {
+                    loop {
+                        elements.push(self.parse_expression(0)?);
+                        if !self.check(&Token::Comma) {
+                            break;
+                        }
+                        self.advance();
+                    }
+                }
+                self.expect_token(&Token::RBracket, "]")?;
+                let end = self.previous_span().end;
+                Ok(Expr {
+                    kind: ExprKind::List(elements),
+                    span: Span {
+                        start: span.start,
+                        end,
+                    },
+                })
+            }
+            // Inline closure: |params| expr
+            Some(Token::Bar) => self.parse_inline_closure(),
+            // Block closure: do |params| ... end
+            Some(Token::Do) => self.parse_block_closure(),
             Some(tok) => Err(ParseError::UnexpectedToken {
                 found: tok.clone(),
                 expected: "expression".into(),
@@ -493,6 +578,74 @@ impl<'src> Parser<'src> {
         }
 
         Ok(stmts)
+    }
+
+    /// Parse inline closure: `|params| expr`
+    fn parse_inline_closure(&mut self) -> Result<Expr, ParseError> {
+        let start = self.current_span();
+        self.advance(); // consume '|'
+        let mut params = Vec::new();
+        if !self.check(&Token::Bar) {
+            loop {
+                params.push(self.expect_identifier()?);
+                if !self.check(&Token::Comma) {
+                    break;
+                }
+                self.advance();
+            }
+        }
+        self.expect_token(&Token::Bar, "|")?;
+        let body_expr = self.parse_expression(0)?;
+        let end = body_expr.span.end;
+        let body = vec![Stmt {
+            span: body_expr.span,
+            kind: StmtKind::Expr(body_expr),
+        }];
+        Ok(Expr {
+            kind: ExprKind::Closure { params, body },
+            span: Span {
+                start: start.start,
+                end,
+            },
+        })
+    }
+
+    /// Parse block closure: `do |params| ... end` or `do ... end`
+    fn parse_block_closure(&mut self) -> Result<Expr, ParseError> {
+        let start = self.current_span();
+        self.advance(); // consume 'do'
+
+        // Optional params: |params|
+        let params = if self.check(&Token::Bar) {
+            self.advance();
+            let mut p = Vec::new();
+            if !self.check(&Token::Bar) {
+                loop {
+                    p.push(self.expect_identifier()?);
+                    if !self.check(&Token::Comma) {
+                        break;
+                    }
+                    self.advance();
+                }
+            }
+            self.expect_token(&Token::Bar, "|")?;
+            p
+        } else {
+            Vec::new()
+        };
+
+        self.skip_newlines();
+        let body = self.parse_block()?;
+        self.expect_token(&Token::End, "end")?;
+        let end = self.previous_span().end;
+
+        Ok(Expr {
+            kind: ExprKind::Closure { params, body },
+            span: Span {
+                start: start.start,
+                end,
+            },
+        })
     }
 
     fn parse_args(&mut self) -> Result<Vec<Arg>, ParseError> {
@@ -933,5 +1086,56 @@ mod tests {
             }
             _ => panic!("expected function definition"),
         }
+    }
+
+    #[test]
+    fn parse_list_literal() {
+        let prog = parse("[1, 2, 3]");
+        match &prog.statements[0].kind {
+            StmtKind::Expr(expr) => match &expr.kind {
+                ExprKind::List(elements) => assert_eq!(elements.len(), 3),
+                _ => panic!("expected list"),
+            },
+            _ => panic!("expected expression"),
+        }
+    }
+
+    #[test]
+    fn parse_empty_list() {
+        let prog = parse("[]");
+        match &prog.statements[0].kind {
+            StmtKind::Expr(expr) => match &expr.kind {
+                ExprKind::List(elements) => assert_eq!(elements.len(), 0),
+                _ => panic!("expected list"),
+            },
+            _ => panic!("expected expression"),
+        }
+    }
+
+    #[test]
+    fn parse_inline_closure() {
+        let prog = parse("numbers.filter(|n| n > 0)");
+        assert_eq!(prog.statements.len(), 1);
+    }
+
+    #[test]
+    fn parse_block_closure_trailing() {
+        let prog = parse("list.reduce(0) do |acc, n|\n  acc + n\nend");
+        assert_eq!(prog.statements.len(), 1);
+    }
+
+    #[test]
+    fn parse_for_loop() {
+        let prog = parse("for x in items\n  print(x)\nend");
+        assert!(matches!(prog.statements[0].kind, StmtKind::For { .. }));
+    }
+
+    #[test]
+    fn parse_while_loop() {
+        let prog = parse("while x > 0\n  x = x - 1\nend");
+        assert!(matches!(
+            prog.statements[0].kind,
+            StmtKind::While { .. }
+        ));
     }
 }
