@@ -232,6 +232,7 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
 <type_params>   ::= <type_param> ("," <type_param>)*
 <type_param>    ::= IDENTIFIER ("implements" TYPE ("," TYPE)*)?
 <type_args>     ::= <type_expr> ("," <type_expr>)*
+<type_list>     ::= <type_expr> ("," <type_expr>)*
 <where_clause>  ::= "where" <constraint> ("," <constraint>)*
 <constraint>    ::= IDENTIFIER "implements" TYPE ("," TYPE)*
 
