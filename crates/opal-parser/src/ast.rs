@@ -21,6 +21,15 @@ pub enum StmtKind {
     Assign { name: String, value: Expr },
     /// Let binding: `let name = expr`
     Let { name: String, value: Expr },
+    /// Function definition: `def name(params) -> ReturnType ... end`
+    FuncDef {
+        name: String,
+        params: Vec<Param>,
+        return_type: Option<String>,
+        body: Vec<Stmt>,
+    },
+    /// Return statement: `return expr`
+    Return(Option<Expr>),
 }
 
 /// An expression
@@ -79,6 +88,14 @@ pub enum FStringPart {
 pub struct Arg {
     pub name: Option<String>,
     pub value: Expr,
+}
+
+/// A function parameter
+#[derive(Debug, Clone)]
+pub struct Param {
+    pub name: String,
+    pub type_annotation: Option<String>,
+    pub default: Option<Expr>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
