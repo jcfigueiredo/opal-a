@@ -30,6 +30,14 @@ pub enum StmtKind {
     },
     /// Return statement: `return expr`
     Return(Option<Expr>),
+    /// For loop: `for x in expr ... end`
+    For {
+        var: String,
+        iterable: Expr,
+        body: Vec<Stmt>,
+    },
+    /// While loop: `while expr ... end`
+    While { condition: Expr, body: Vec<Stmt> },
 }
 
 /// An expression
@@ -76,6 +84,10 @@ pub enum ExprKind {
     },
     /// Grouped expression: `(expr)`
     Grouped(Box<Expr>),
+    /// List literal: `[1, 2, 3]`
+    List(Vec<Expr>),
+    /// Closure: `|params| expr` or `do |params| ... end`
+    Closure { params: Vec<String>, body: Vec<Stmt> },
 }
 
 #[derive(Debug, Clone)]
