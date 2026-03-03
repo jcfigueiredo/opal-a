@@ -56,6 +56,16 @@ impl<'src> Parser<'src> {
             return self.parse_let_statement(start);
         }
 
+        // Function definition
+        if self.check(&Token::Def) {
+            return self.parse_function_def();
+        }
+
+        // Return statement
+        if self.check(&Token::Return) {
+            return self.parse_return_statement(start);
+        }
+
         // Try to parse an expression — could be expression statement or assignment
         let expr = self.parse_expression(0)?;
 
@@ -104,6 +114,102 @@ impl<'src> Parser<'src> {
         Ok(Stmt {
             kind: StmtKind::Let { name, value },
             span,
+        })
+    }
+
+    fn parse_function_def(&mut self) -> Result<Stmt, ParseError> {
+        let start = self.current_span();
+        self.advance(); // consume 'def'
+
+        let name = self.expect_identifier()?;
+        self.expect_token(&Token::LParen, "(")?;
+        let params = self.parse_params()?;
+        self.expect_token(&Token::RParen, ")")?;
+
+        // Optional return type: -> Type
+        let return_type = if self.check(&Token::Arrow) {
+            self.advance();
+            Some(self.expect_identifier()?)
+        } else {
+            None
+        };
+
+        self.expect_newline()?;
+        let body = self.parse_block()?;
+        self.expect_token(&Token::End, "end")?;
+        let end = self.previous_span().end;
+
+        Ok(Stmt {
+            kind: StmtKind::FuncDef {
+                name,
+                params,
+                return_type,
+                body,
+            },
+            span: Span {
+                start: start.start,
+                end,
+            },
+        })
+    }
+
+    fn parse_params(&mut self) -> Result<Vec<Param>, ParseError> {
+        let mut params = Vec::new();
+
+        if self.check(&Token::RParen) {
+            return Ok(params);
+        }
+
+        loop {
+            let name = self.expect_identifier()?;
+
+            // Optional type annotation: : Type
+            let type_annotation = if self.check(&Token::Colon) {
+                self.advance();
+                Some(self.expect_identifier()?)
+            } else {
+                None
+            };
+
+            // Optional default value: = expr
+            let default = if self.check(&Token::Eq) {
+                self.advance();
+                Some(self.parse_expression(0)?)
+            } else {
+                None
+            };
+
+            params.push(Param {
+                name,
+                type_annotation,
+                default,
+            });
+
+            if !self.check(&Token::Comma) {
+                break;
+            }
+            self.advance(); // consume comma
+        }
+
+        Ok(params)
+    }
+
+    fn parse_return_statement(&mut self, start: Span) -> Result<Stmt, ParseError> {
+        self.advance(); // consume 'return'
+        let value =
+            if self.is_at_end() || self.check(&Token::Newline) || self.check(&Token::End) {
+                None
+            } else {
+                Some(self.parse_expression(0)?)
+            };
+        self.expect_statement_end()?;
+        let end = value.as_ref().map_or(start.end, |e| e.span.end);
+        Ok(Stmt {
+            kind: StmtKind::Return(value),
+            span: Span {
+                start: start.start,
+                end,
+            },
         })
     }
 
@@ -780,5 +886,53 @@ mod tests {
     fn parse_multiple_statements() {
         let prog = parse("name = \"Opal\"\nprint(name)");
         assert_eq!(prog.statements.len(), 2);
+    }
+
+    #[test]
+    fn parse_function_def() {
+        let prog = parse("def add(a: Int, b: Int) -> Int\n  a + b\nend");
+        assert_eq!(prog.statements.len(), 1);
+        match &prog.statements[0].kind {
+            StmtKind::FuncDef {
+                name,
+                params,
+                return_type,
+                ..
+            } => {
+                assert_eq!(name, "add");
+                assert_eq!(params.len(), 2);
+                assert_eq!(params[0].name, "a");
+                assert_eq!(params[0].type_annotation.as_deref(), Some("Int"));
+                assert_eq!(return_type.as_deref(), Some("Int"));
+            }
+            _ => panic!("expected function definition"),
+        }
+    }
+
+    #[test]
+    fn parse_function_no_types() {
+        let prog = parse("def greet(name)\n  print(name)\nend");
+        match &prog.statements[0].kind {
+            StmtKind::FuncDef {
+                params,
+                return_type,
+                ..
+            } => {
+                assert_eq!(params[0].type_annotation, None);
+                assert_eq!(*return_type, None);
+            }
+            _ => panic!("expected function definition"),
+        }
+    }
+
+    #[test]
+    fn parse_return_statement() {
+        let prog = parse("def foo()\n  return 42\nend");
+        match &prog.statements[0].kind {
+            StmtKind::FuncDef { body, .. } => {
+                assert!(matches!(body[0].kind, StmtKind::Return(Some(_))));
+            }
+            _ => panic!("expected function definition"),
+        }
     }
 }
