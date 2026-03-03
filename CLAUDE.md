@@ -20,6 +20,10 @@ These rules are enforced across all examples and specifications. Violating them 
 - **`with` keyword is ONLY for DSL config blocks** (nginx-style). Object creation uses `.new()` with named args. String interpolation uses f-strings.
 - **`defaults` keyword** (not `with`) for null object variant creation
 - **`:` for type annotations**: `name: String`
+- **`[T]` for generics**: `List[T]`, `Dict[K, V]`, `Option[T]`
+- **`from X import Y` for selective imports**: `from Math import sqrt, PI`
+- **`Fn(Type) -> Type` for function types**: `Fn(Int32) -> String`, not pipe-delimited syntax
+- **Two closure forms only**: `|params| expr` for inline, `do |params| ... end` for multi-line. No `fn` keyword form.
 - **`.` prefix for instance variables**: `.name`, `.age`
 - **`()` for tuples, `{}` for dicts**: Empty tuple `()`, empty dict `{:}`
 - **`###` for multiline comments** (not `/* */` or `""" """`)
