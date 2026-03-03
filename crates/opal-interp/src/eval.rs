@@ -1,7 +1,7 @@
 use std::io::Write;
 
 use opal_parser::ast::*;
-use opal_runtime::{Environment, Value};
+use opal_runtime::{Environment, FunctionId, Value};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -12,11 +12,22 @@ pub enum EvalError {
     TypeError(String),
     #[error("RuntimeError: {0}")]
     RuntimeError(String),
+    #[error("return")]
+    Return(Value),
+}
+
+/// A stored user-defined function
+#[derive(Clone)]
+struct StoredFunction {
+    name: String,
+    params: Vec<String>,
+    body: Vec<Stmt>,
 }
 
 pub struct Interpreter<W: Write> {
     env: Environment,
     writer: W,
+    functions: Vec<StoredFunction>,
 }
 
 impl Interpreter<std::io::Stdout> {
@@ -24,6 +35,7 @@ impl Interpreter<std::io::Stdout> {
         Self {
             env: Environment::new(),
             writer: std::io::stdout(),
+            functions: Vec::new(),
         }
     }
 }
@@ -33,6 +45,7 @@ impl<W: Write> Interpreter<W> {
         Self {
             env: Environment::new(),
             writer,
+            functions: Vec::new(),
         }
     }
 
@@ -55,6 +68,24 @@ impl<W: Write> Interpreter<W> {
             StmtKind::Let { name, value } => {
                 let val = self.eval_expr(value)?;
                 self.env.set(name.clone(), val);
+            }
+            StmtKind::FuncDef {
+                name, params, body, ..
+            } => {
+                let id = FunctionId(self.functions.len());
+                self.functions.push(StoredFunction {
+                    name: name.clone(),
+                    params: params.iter().map(|p| p.name.clone()).collect(),
+                    body: body.clone(),
+                });
+                self.env.set(name.clone(), Value::Function(id));
+            }
+            StmtKind::Return(expr) => {
+                let val = match expr {
+                    Some(e) => self.eval_expr(e)?,
+                    None => Value::Null,
+                };
+                return Err(EvalError::Return(val));
             }
         }
         Ok(())
@@ -93,7 +124,7 @@ impl<W: Write> Interpreter<W> {
                     ExprKind::Identifier(name) => name.clone(),
                     _ => {
                         return Err(EvalError::TypeError(
-                            "only named function calls supported in Slice 1".into(),
+                            "only named function calls supported".into(),
                         ));
                     }
                 };
@@ -112,6 +143,13 @@ impl<W: Write> Interpreter<W> {
                         Ok(opal_stdlib::BuiltinResult::Void) => Ok(Value::Null),
                         Err(e) => Err(EvalError::RuntimeError(e)),
                     };
+                }
+
+                // Try user-defined functions
+                if let Some(value) = self.env.get(&func_name).cloned() {
+                    if let Value::Function(id) = value {
+                        return self.call_function(id, &func_name, arg_values);
+                    }
                 }
 
                 Err(EvalError::UndefinedVariable(func_name))
@@ -155,8 +193,39 @@ impl<W: Write> Interpreter<W> {
             ExprKind::Grouped(inner) => self.eval_expr(inner),
 
             ExprKind::MemberAccess { .. } => Err(EvalError::TypeError(
-                "member access not yet supported in Slice 1".into(),
+                "member access not yet supported".into(),
             )),
+        }
+    }
+
+    fn call_function(
+        &mut self,
+        id: FunctionId,
+        name: &str,
+        arg_values: Vec<Value>,
+    ) -> Result<Value, EvalError> {
+        let stored = self.functions[id.0].clone();
+        if arg_values.len() != stored.params.len() {
+            return Err(EvalError::TypeError(format!(
+                "{}() expected {} arguments, got {}",
+                name,
+                stored.params.len(),
+                arg_values.len()
+            )));
+        }
+
+        self.env.push_scope();
+        for (param_name, arg_val) in stored.params.iter().zip(arg_values) {
+            self.env.set(String::clone(param_name), arg_val);
+        }
+
+        let result = self.eval_block(&stored.body);
+        self.env.pop_scope();
+
+        match result {
+            Ok(val) => Ok(val),
+            Err(EvalError::Return(val)) => Ok(val),
+            Err(e) => Err(e),
         }
     }
 
@@ -350,5 +419,61 @@ print(f"Hello, {name}!")
     fn let_binding() {
         let output = run("let x = 42\nprint(x)").unwrap();
         assert_eq!(output, "42");
+    }
+
+    // === Slice 2: Function tests ===
+
+    #[test]
+    fn simple_function() {
+        let output = run("def add(a, b)\n  return a + b\nend\nprint(add(2, 3))").unwrap();
+        assert_eq!(output, "5");
+    }
+
+    #[test]
+    fn factorial() {
+        let output = run(
+            "def factorial(n: Int) -> Int\n  if n <= 1 then 1 else n * factorial(n - 1) end\nend\nprint(factorial(10))",
+        )
+        .unwrap();
+        assert_eq!(output, "3628800");
+    }
+
+    #[test]
+    fn fibonacci() {
+        let output = run(
+            "def fib(n)\n  if n <= 1 then n else fib(n - 1) + fib(n - 2) end\nend\nprint(fib(10))",
+        )
+        .unwrap();
+        assert_eq!(output, "55");
+    }
+
+    #[test]
+    fn function_implicit_return() {
+        let output = run("def double(x)\n  x * 2\nend\nprint(double(21))").unwrap();
+        assert_eq!(output, "42");
+    }
+
+    #[test]
+    fn function_no_args() {
+        let output =
+            run("def greeting()\n  return \"hello\"\nend\nprint(greeting())").unwrap();
+        assert_eq!(output, "hello");
+    }
+
+    #[test]
+    fn function_wrong_arg_count() {
+        let result = run("def foo(a, b)\n  a + b\nend\nfoo(1)");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("expected 2 arguments"));
+    }
+
+    #[test]
+    fn nested_function_calls() {
+        let output = run(
+            "def square(x)\n  x * x\nend\ndef sum_of_squares(a, b)\n  square(a) + square(b)\nend\nprint(sum_of_squares(3, 4))",
+        )
+        .unwrap();
+        assert_eq!(output, "25");
     }
 }
