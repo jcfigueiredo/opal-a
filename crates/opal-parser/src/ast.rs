@@ -38,6 +38,21 @@ pub enum StmtKind {
     },
     /// While loop: `while expr ... end`
     While { condition: Expr, body: Vec<Stmt> },
+    /// Class definition
+    ClassDef {
+        name: String,
+        needs: Vec<NeedsDecl>,
+        methods: Vec<Stmt>,
+    },
+    /// Module definition
+    ModuleDef { name: String, body: Vec<Stmt> },
+    /// Import: `from X import Y, Z`
+    FromImport {
+        module_path: String,
+        names: Vec<String>,
+    },
+    /// Needs declaration (inside class)
+    NeedsDecl(NeedsDecl),
 }
 
 /// An expression
@@ -91,6 +106,15 @@ pub enum ExprKind {
         params: Vec<String>,
         body: Vec<Stmt>,
     },
+    /// Instance variable access: `.field`
+    InstanceVar(String),
+}
+
+/// A `needs` declaration in a class
+#[derive(Debug, Clone)]
+pub struct NeedsDecl {
+    pub name: String,
+    pub type_annotation: Option<String>,
 }
 
 #[derive(Debug, Clone)]
