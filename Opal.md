@@ -258,12 +258,13 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
 
 <import_stmt>   ::= "import" <module_path>
                    | "import" <module_path> "as" IDENTIFIER
-                   | "import" <module_path> ".{" <import_list> "}"
+                   | "from" <module_path> "import" <import_list>
+                   | "from" <module_path> "import" "(" <import_list> ")"
 <import_list>   ::= <import_item> ("," <import_item>)*
 <import_item>   ::= IDENTIFIER
                    | IDENTIFIER "as" IDENTIFIER
 <module_path>   ::= IDENTIFIER ("." IDENTIFIER)*
-<export_stmt>   ::= "export" <module_path> ".{" <import_list> "}"
+<export_stmt>   ::= "export" <import_list> "from" <module_path>
 
 <is_expr>       ::= <expression> "is" TYPE
 <propagate_expr>::= <expression> "!"
@@ -458,7 +459,7 @@ end
 Each `.opl` file implicitly defines a module (PascalCase). Directories create hierarchies. Imports are absolute, with selective import and aliasing. Re-exports via `export`.
 
 ```opal
-import Math.{abs, max}
+from Math import abs, max
 import Math.Vector as Vec
 ```
 

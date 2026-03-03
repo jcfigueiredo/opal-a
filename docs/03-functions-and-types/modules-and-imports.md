@@ -82,15 +82,25 @@ Five forms, all using absolute paths from the project root:
 ```opal
 import Math                          # whole module -- access as Math.abs(), Math.PI
 import Math.Vector                   # nested module -- access as Math.Vector.dot()
-import Math.{abs, max}               # selective -- abs() and max() available directly
+from Math import abs, max            # selective -- abs() and max() available directly
 import Math.Vector as Vec            # aliased -- access as Vec.dot()
-import Math.{abs, max as maximum}    # selective + alias -- abs() and maximum()
+from Math import abs, max as maximum # selective + alias -- abs() and maximum()
+```
+
+Multi-line selective imports use parentheses:
+
+```opal
+from Math import (
+  sin, cos, tan,
+  sqrt, abs, max,
+  PI, E
+)
 ```
 
 ### What "import" Does
 
 - `import Module` loads the module and makes its public symbols accessible via `Module.name`.
-- `import Module.{name}` brings `name` directly into the current scope (no prefix needed).
+- `from Module import name` brings `name` directly into the current scope (no prefix needed).
 - `as` renames for the current scope only.
 - All paths are absolute from the project root -- no relative imports.
 
@@ -99,11 +109,11 @@ import Math.{abs, max as maximum}    # selective + alias -- abs() and maximum()
 If two selective imports bring the same name into scope, it's a compile-time error. Fix by using aliased import.
 
 ```opal
-import Math.{max}
-import Stats.{max}       # COMPILE ERROR -- 'max' already imported
+from Math import max
+from Stats import max        # COMPILE ERROR -- 'max' already imported
 
-import Math.{max as math_max}
-import Stats.{max as stats_max}  # ok
+from Math import max as math_max
+from Stats import max as stats_max  # ok
 ```
 
 ---
@@ -119,9 +129,9 @@ import OpalWeb.Middleware
 import OpalWeb.Response
 
 # Re-export specific symbols
-export Router.{get, post, put, delete}
-export Middleware.{use}
-export Response.{json, html, redirect}
+export get, post, put, delete from Router
+export use from Middleware
+export json, html, redirect from Response
 ```
 
 ```opal
@@ -133,7 +143,7 @@ OpalWeb.json({status: "ok"})  # works -- re-exported from Response
 
 ### Rules
 
-- `export Module.{names}` re-exports specific symbols from an imported module.
+- `export names from Module` re-exports specific symbols from an imported module.
 - Re-exported symbols appear as if defined in the exporting module.
 - Only public symbols can be re-exported.
 - By default, all top-level `def`, `class`, `module`, `enum`, `model`, `protocol` in a file are public. Use `private` to hide.
@@ -231,7 +241,7 @@ Pure file-based mapping (one module per file, no nesting) is too rigid for large
 | Import forms | Whole, selective, aliased, selective+alias |
 | Paths | Absolute only -- no relative imports |
 | Collisions | Compile-time error on duplicate names in scope |
-| Re-exports | `export Module.{names}` for clean public APIs |
+| Re-exports | `export names from Module` for clean public APIs |
 | Circular deps | Compile-time error -- extract shared code to break cycles |
 | Packages | Directory with `opal.toml` + `src/`, root module matches package name |
 
@@ -240,5 +250,6 @@ Pure file-based mapping (one module per file, no nesting) is too rigid for large
 | Keyword | Purpose |
 |---|---|
 | `import` | Load a module and bring symbols into scope |
+| `from` (in import) | Selective import: `from Module import name` |
 | `as` (in import) | Alias an imported module or symbol |
 | `export` | Re-export symbols from an imported module |

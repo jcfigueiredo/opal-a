@@ -602,7 +602,7 @@ end
 ```opal
 # Import a subdomain
 import OpalWeb          # all macros available
-import OpalWeb.{get, post}  # selective import
+from OpalWeb import get, post  # selective import
 
 # Macros from different subdomains don't conflict
 import OpalWeb
