@@ -54,4 +54,4 @@ When updating Opal.md, always check that changes are consistent across: BNF gram
 | `docs/08-stdlib/` | Standard library reference |
 | `docs/09-tooling/` | Testing, runner, formatter, linter, package manager |
 | `docs/10-examples/` | Pretotyping / comparison examples |
-| `docs/appendix/` | Links, references, ideas |
+| `docs/appendix/` | Links, references, ideas, self-hosting examples |

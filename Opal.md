@@ -726,4 +726,4 @@ Opal aims to make simple web applications as concise as possible, comparing favo
 
 Links, references, tutorials, and implementation ideas for building the Opal runtime.
 
-> See [Appendix](docs/appendix/appendix.md) for all reference materials.
+> See [Appendix](docs/appendix/appendix.md) for reference materials and [Self-Hosting: Opal in Opal](docs/appendix/self-hosting.md) for how language sugar is implemented as macros.

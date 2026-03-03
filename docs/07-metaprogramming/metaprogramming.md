@@ -469,6 +469,8 @@ These are essentially code transformations and could theoretically be implemente
 
 Whether they stay as keywords or become macros is an implementation decision. The key insight is that the macro system is *expressive enough* to define them.
 
+> See [Self-Hosting: Opal in Opal](../appendix/self-hosting.md) for complete macro implementations of all 6 features — sugar, expansion, and macro source code.
+
 ---
 
 ## Domain Extension Guidelines
