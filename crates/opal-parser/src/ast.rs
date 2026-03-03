@@ -53,6 +53,19 @@ pub enum StmtKind {
     },
     /// Needs declaration (inside class)
     NeedsDecl(NeedsDecl),
+    /// Requires precondition: `requires expr, "message"`
+    Requires {
+        condition: Expr,
+        message: Option<Expr>,
+    },
+    /// Try/catch/ensure
+    TryCatch {
+        body: Vec<Stmt>,
+        catches: Vec<CatchClause>,
+        ensure: Option<Vec<Stmt>>,
+    },
+    /// Raise an error: `raise expr`
+    Raise(Expr),
 }
 
 /// An expression
@@ -108,6 +121,39 @@ pub enum ExprKind {
     },
     /// Instance variable access: `.field`
     InstanceVar(String),
+    /// Match expression
+    Match {
+        subject: Box<Expr>,
+        cases: Vec<MatchCase>,
+    },
+}
+
+/// A case in a match expression
+#[derive(Debug, Clone)]
+pub struct MatchCase {
+    pub pattern: Pattern,
+    pub body: Vec<Stmt>,
+}
+
+/// A pattern for matching
+#[derive(Debug, Clone)]
+pub enum Pattern {
+    /// Binds a variable: `x`
+    Identifier(String),
+    /// Matches a literal value
+    Literal(Expr),
+    /// Constructor pattern: `Ok(x)`, `Error(msg)`, `Some(v)`
+    Constructor(String, Vec<Pattern>),
+    /// Wildcard: `_`
+    Wildcard,
+}
+
+/// A catch clause in try/catch
+#[derive(Debug, Clone)]
+pub struct CatchClause {
+    pub error_type: Option<String>,
+    pub var_name: Option<String>,
+    pub body: Vec<Stmt>,
 }
 
 /// A `needs` declaration in a class
