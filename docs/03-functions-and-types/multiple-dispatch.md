@@ -13,16 +13,16 @@ Functions can have multiple definitions that dispatch based on argument types, a
 ```opal
 class Renderer
   # Dispatch by type
-  def render(shape::Circle)
+  def render(shape: Circle)
     draw_circle(shape.center, shape.radius)
   end
 
-  def render(shape::Rectangle)
+  def render(shape: Rectangle)
     draw_rect(shape.origin, shape.width, shape.height)
   end
 
   # Dispatch by arity
-  def render(shape::Circle, color::Color)
+  def render(shape: Circle, color: Color)
     set_color(color)
     draw_circle(shape.center, shape.radius)
   end
@@ -36,11 +36,11 @@ end
 A `requires` clause narrows the valid inputs for a particular overload. When the precondition fails, dispatch falls through to the next matching definition.
 
 ```opal
-def process(value::Int32)
+def process(value: Int32)
   print("generic integer")
 end
 
-def process(value::Int32)
+def process(value: Int32)
   requires value > 0
   print("positive integer")
 end

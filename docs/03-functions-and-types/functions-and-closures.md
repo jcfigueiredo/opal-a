@@ -19,7 +19,7 @@ def greet(name)
 end
 
 # With type annotations
-def add(a::Int32, b::Int32) -> Int32
+def add(a: Int32, b: Int32) -> Int32
   a + b
 end
 
@@ -94,10 +94,10 @@ Closures can be typed using the `|ParamTypes| -> ReturnType` syntax:
 
 ```opal
 # Closure type annotation
-transform::|Int32| -> Int32 = |x| x * 2
+transform: |Int32| -> Int32 = |x| x * 2
 
 # As a function parameter type
-def apply(fn::|Int32| -> Int32, value::Int32) -> Int32
+def apply(fn: |Int32| -> Int32, value: Int32) -> Int32
   fn(value)
 end
 

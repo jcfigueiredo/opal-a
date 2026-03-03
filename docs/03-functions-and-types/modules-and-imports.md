@@ -27,7 +27,7 @@ src/
 
 PI = 3.14159
 
-def abs(x::Number)
+def abs(x: Number)
   if x < 0 then -x else x end
 end
 
@@ -36,7 +36,7 @@ def max(a, b)
 end
 
 module Trig           # Math.Trig (nested)
-  def sin(x::Float64) -> Float64
+  def sin(x: Float64) -> Float64
     # ...
   end
 end
@@ -53,7 +53,7 @@ Modules can contain classes:
 # Implicitly the Geometry module
 
 class Circle
-  def init(radius::Float32)
+  def init(radius: Float32)
     .radius = radius
   end
 

@@ -62,7 +62,7 @@ c.send(:reset)         # => :ok
 actor Cache
   receives :get, :set, :delete
 
-  def init(ttl::Int32)
+  def init(ttl: Int32)
     .store = {:}
     .ttl = ttl
   end

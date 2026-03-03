@@ -189,17 +189,17 @@ end
 # On classes
 @[serializable, version: 3]
 class User
-  needs name::String
-  needs email::String
+  needs name: String
+  needs email: String
 end
 
 # On fields
 class Config
   @[env: "DATABASE_URL"]
-  needs db_url::String
+  needs db_url: String
 
   @[env: "PORT", default: 8080]
-  needs port::Int32
+  needs port: Int32
 end
 
 # Multiple annotations stack
@@ -237,7 +237,7 @@ Macros can read annotations at parse time -- annotations provide data, macros pr
 
 ```opal
 @[json_field, name: "user_name"]
-needs name::String
+needs name: String
 
 # Macro reads field annotations during code generation
 macro json_serializable(class_def)
@@ -296,9 +296,9 @@ ast.args[1]    # => :x
 ### Transforming AST
 
 ```opal
-def double_literals(expr::Expr)
+def double_literals(expr: Expr)
   match expr
-    case n::Int32
+    case n: Int32
       n * 2
     case Expr(head, args)
       Expr.new(head, args.map(|a| double_literals(a))...)
@@ -344,7 +344,7 @@ macro json_serializable(class_def)
   end
 
   from_json = quote
-    def self.from_json(data::String)
+    def self.from_json(data: String)
       parsed = JSON.parse(data)
       self.new($(generate_from_json(fields)...))
     end
@@ -355,9 +355,9 @@ end
 
 @json_serializable
 class User
-  needs name::String
-  needs email::String
-  needs age::Int32
+  needs name: String
+  needs email: String
+  needs age: Int32
 end
 
 user = User.new(name: "claudio", email: "c@opal.dev", age: 15)
@@ -437,7 +437,7 @@ macro memoize(fn_def)
 end
 
 @memoize
-def fibonacci(n::Int32) -> Int32
+def fibonacci(n: Int32) -> Int32
   if n <= 1 then n else fibonacci(n - 1) + fibonacci(n - 2) end
 end
 ```
@@ -454,7 +454,7 @@ These are fundamental to the language and must be parsed natively:
 
 - `def`, `class`, `module`, `actor`, `if`, `for`, `while`, `match`, `try`
 - `quote`, `macro`, `$` (metaprogramming primitives)
-- `=`, `.`, `::`, operators
+- `=`, `.`, `:`, operators
 
 ### What Could Be Macros
 
@@ -585,7 +585,7 @@ Macros should work with preconditions, pattern matching, DI, and events -- not b
 ```opal
 # Good — composes with preconditions
 @memoize
-def sqrt(x::Float64) -> Float64
+def sqrt(x: Float64) -> Float64
   requires x >= 0
   x ** 0.5
 end
@@ -593,7 +593,7 @@ end
 # Good — composes with needs
 @json_serializable
 class User
-  needs name::String  # needs still works inside macro-processed class
+  needs name: String  # needs still works inside macro-processed class
 end
 ```
 

@@ -48,7 +48,7 @@ au = 149.700e9               # scientific notation -> Float64
 5 % 2        # => 1
 
 # Overflow is a runtime error (safe by default)
-x::Int32 = 2_147_483_647
+x: Int32 = 2_147_483_647
 x + 1        # raises OverflowError
 
 # Explicit wrapping arithmetic when needed
@@ -288,7 +288,7 @@ type HttpMethod = :get | :post | :put | :delete | :patch
 type LogLevel = :debug | :info | :warn | :error
 
 # Use as a type annotation
-def handle(status::Status)
+def handle(status: Status)
   match status
     case :ok      then print("success")
     case :error   then print("failure")
@@ -300,7 +300,7 @@ handle(:ok)       # works
 handle(:unknown)  # TYPE ERROR: :unknown is not in Status
 
 # Inline symbol constraint (no named type needed)
-def log(level:: :debug | :info | :warn | :error, message::String)
+def log(level: :debug | :info | :warn | :error, message: String)
   print(f"[{level}] {message}")
 end
 ```
@@ -319,7 +319,7 @@ type Direction = :north | :south | :east | :west
 
 # Enum — data-carrying variants
 enum Shape
-  Circle(radius::Float64)
-  Rect(width::Float64, height::Float64)
+  Circle(radius: Float64)
+  Rect(width: Float64, height: Float64)
 end
 ```

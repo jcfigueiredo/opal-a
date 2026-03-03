@@ -14,10 +14,10 @@ A `model` is a dedicated construct for validated, immutable data.
 
 ```opal
 model User
-  needs name::String where |v| v.length > 0
-  needs email::String where valid_email?
-  needs age::Int32 where |v| v >= 0
-  needs role::String = "member"
+  needs name: String where |v| v.length > 0
+  needs email: String where valid_email?
+  needs age: Int32 where |v| v >= 0
+  needs role: String = "member"
 end
 
 # Construction — validates all fields
@@ -69,18 +69,18 @@ end
 
 model User
   # Named validator — value passed automatically
-  needs email::String where valid_email?
+  needs email: String where valid_email?
 
   # Inline closure
-  needs age::Int32 where |v| v >= 0
+  needs age: Int32 where |v| v >= 0
 
   # Named validator with partial application
-  needs username::String where min_length?(3)
+  needs username: String where min_length?(3)
 
   # Multiple constraints (comma-separated, all must pass)
-  needs password::String where is_required?, |v| v.length >= 8
+  needs password: String where is_required?, |v| v.length >= 8
 
-  needs role::String = "member"
+  needs role: String = "member"
 end
 ```
 
@@ -88,9 +88,9 @@ end
 
 ```opal
 model Order
-  needs quantity::Int32 where |v| v > 0
-  needs price::Float64 where |v| v > 0.0
-  needs discount::Float64 = 0.0
+  needs quantity: Int32 where |v| v > 0
+  needs price: Float64 where |v| v > 0.0
+  needs discount: Float64 = 0.0
 
   validate do
     if .discount > .price
@@ -127,17 +127,17 @@ Models automatically get `to_dict`/`from_dict` and `to_json`/`from_json`. Nested
 
 ```opal
 model Address
-  needs street::String
-  needs city::String
-  needs zip::String where |v| /^\d{5}$/.match?(v)
+  needs street: String
+  needs city: String
+  needs zip: String where |v| /^\d{5}$/.match?(v)
 end
 
 model User
-  needs name::String where |v| v.length > 0
-  needs email::String where valid_email?
-  needs age::Int32 where |v| v >= 0
-  needs address::Address
-  needs tags::List[String] = []
+  needs name: String where |v| v.length > 0
+  needs email: String where valid_email?
+  needs age: Int32 where |v| v >= 0
+  needs address: Address
+  needs tags: List[String] = []
 end
 
 # Serialize
@@ -187,25 +187,25 @@ The `settings model` modifier adds configuration loading from environment variab
 ```opal
 # Nested groups are regular models
 model DatabaseSettings
-  needs host::String = "localhost"
-  needs port::Int32 = 5432
-  needs name::String = "opal_dev"
-  needs pool_size::Int32 = 5 where |v| v > 0
+  needs host: String = "localhost"
+  needs port: Int32 = 5432
+  needs name: String = "opal_dev"
+  needs pool_size: Int32 = 5 where |v| v > 0
 end
 
 model CacheSettings
-  needs host::String = "localhost"
-  needs port::Int32 = 6379
-  needs ttl::Int32 = 3600 where |v| v > 0
+  needs host: String = "localhost"
+  needs port: Int32 = 6379
+  needs ttl: Int32 = 3600 where |v| v > 0
 end
 
 # Only the root is a settings model
 settings model AppSettings
-  needs debug::Bool = false
-  needs secret_key::String
-  needs log_level::String = "info" where |v| v in ["debug", "info", "warn", "error"]
-  needs db::DatabaseSettings         # group
-  needs cache::CacheSettings         # group
+  needs debug: Bool = false
+  needs secret_key: String
+  needs log_level: String = "info" where |v| v in ["debug", "info", "warn", "error"]
+  needs db: DatabaseSettings         # group
+  needs cache: CacheSettings         # group
 end
 ```
 

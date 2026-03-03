@@ -12,7 +12,7 @@ Opal's type system is **gradual** -- unannotated code is fully dynamic, annotate
 
 ### Annotation Syntax
 
-- `::Type` annotates parameters, variables, and return types.
+- `: Type` annotates parameters, variables, and return types.
 - No annotation = dynamic, no checking.
 - `as` performs explicit casting.
 - `?` suffix = nullable (`T?` is sugar for `T | Null`).
@@ -28,7 +28,7 @@ def add(a, b)
 end
 
 # Annotated -- type-checked at boundaries
-def add(a::Int32, b::Int32) -> Int32
+def add(a: Int32, b: Int32) -> Int32
   x = a + b   # x is NOT checked (internal)
   x            # checked against -> Int32 on return
 end
@@ -37,14 +37,14 @@ add(1, 2)      # checked: args are Int32
 add(1, "hi")   # TYPE ERROR at call site
 
 # Annotated assignment -- checked
-name::String = "claudio"
-age::Int32 = 15
+name: String = "claudio"
+age: Int32 = 15
 
 # Explicit casting with `as`
 x = 3.14 as Int32   # => 3
 
 # Optional types (nullable)
-def find(id::Int32) -> Person?
+def find(id: Int32) -> Person?
   # may return null -- Person? is sugar for Person | Null
 end
 ```
@@ -84,9 +84,9 @@ Type parameters are declared explicitly on classes, protocols, and type aliases.
 
 ```opal
 class Stack[T]
-  needs items::List[T]
+  needs items: List[T]
 
-  def push(item::T)
+  def push(item: T)
     .items.append(item)
   end
 
@@ -113,7 +113,7 @@ s = Stack[Int32].new(items: [])
 The type parameter is inferred from annotated arguments -- no separate declaration needed:
 
 ```opal
-def first(items::List[T]) -> T?
+def first(items: List[T]) -> T?
   items[0]
 end
 
@@ -139,9 +139,9 @@ Constraints restrict what types can fill a type parameter. Simple constraints go
 ```opal
 # Single constraint on one parameter
 class SortedList[T implements Comparable]
-  needs items::List[T]
+  needs items: List[T]
 
-  def insert(item::T)
+  def insert(item: T)
     # compare_to guaranteed available
   end
 end
@@ -154,7 +154,7 @@ end
 class Cache[K, V]
     where K implements Hashable,
           V implements Printable
-  needs store::Dict[K, V]
+  needs store: Dict[K, V]
 end
 ```
 
@@ -162,13 +162,13 @@ end
 
 ```opal
 # Where clause on functions
-def max(a::T, b::T) -> T
+def max(a: T, b: T) -> T
     where T implements Comparable
   if a > b then a else b end
 end
 
 # Inline on functions for simple cases
-def sort(items::List[T implements Comparable]) -> List[T]
+def sort(items: List[T implements Comparable]) -> List[T]
   # ...
 end
 ```
@@ -189,30 +189,30 @@ A value can be one of several types, expressed with `|`. The nullable `?` suffix
 
 ```opal
 # Union return type
-def parse(input::String) -> Int32 | Float64 | Error
+def parse(input: String) -> Int32 | Float64 | Error
   # can return any of these
 end
 
 # Pattern match to narrow
 match parse("42")
-  case n::Int32
+  case n: Int32
     print(f"integer: {n}")
-  case f::Float64
+  case f: Float64
     print(f"float: {f}")
-  case e::Error
+  case e: Error
     print(f"error: {e.message}")
 end
 
 # Nullable is sugar
-def find(id::Int32) -> Person?
+def find(id: Int32) -> Person?
   # identical to -> Person | Null
 end
 
 # Union in variable annotations
-result::String | Int32 = get_value()
+result: String | Int32 = get_value()
 
 # Union in parameters
-def display(value::String | Int32 | Float64)
+def display(value: String | Int32 | Float64)
   print(f"{value}")
 end
 ```
@@ -222,7 +222,7 @@ end
 - `A | B` is a union -- the value is one of the listed types.
 - `T?` is exactly `T | Null`.
 - Unions are checked at boundaries like all other type annotations.
-- Pattern matching with `case x::Type` narrows a union to a specific type.
+- Pattern matching with `case x: Type` narrows a union to a specific type.
 - Unions are unordered -- `Int32 | String` is the same type as `String | Int32`.
 
 ---
@@ -244,11 +244,11 @@ type Pair[A, B] = (A, B)
 type Handler = |Request, Response| -> Null
 
 # Usage
-def find_user(id::UserID) -> Result[User]
+def find_user(id: UserID) -> Result[User]
   # returns User | Error
 end
 
-def register(handler::Handler)
+def register(handler: Handler)
   handler(req, res)
 end
 ```
@@ -285,7 +285,7 @@ class Coin
   end
 end
 
-def render(shape::Drawable)
+def render(shape: Drawable)
   shape.draw()
 end
 
@@ -338,7 +338,7 @@ if value is String
 end
 
 # `is` with unions
-def handle(result::Int32 | String | Error)
+def handle(result: Int32 | String | Error)
   if result is Error
     print(f"failed: {result.message}")
   else
@@ -366,15 +366,15 @@ end
 ### Generics + Multiple Dispatch
 
 ```opal
-def serialize(value::Int32) -> String
+def serialize(value: Int32) -> String
   f"{value}"
 end
 
-def serialize(value::String) -> String
+def serialize(value: String) -> String
   f"\"{value}\""
 end
 
-def serialize(value::List[T]) -> String
+def serialize(value: List[T]) -> String
   items = value.map(|v| serialize(v)).join(", ")
   f"[{items}]"
 end
@@ -387,17 +387,17 @@ serialize([1, 2, 3])    # dispatches to List[T] variant, T = Int32
 
 ```opal
 protocol Collection[T]
-  def add(item::T)
-  def contains?(item::T) -> Bool
+  def add(item: T)
+  def contains?(item: T) -> Bool
   def size() -> Int32
 end
 
 class Set[T implements Hashable] implements Collection[T]
-  def add(item::T)
+  def add(item: T)
     # ...
   end
 
-  def contains?(item::T) -> Bool
+  def contains?(item: T) -> Bool
     # ...
   end
 
@@ -412,7 +412,7 @@ end
 ```opal
 type SortedPair[T implements Comparable] = (T, T)
 
-def make_sorted_pair(a::T, b::T) -> SortedPair[T]
+def make_sorted_pair(a: T, b: T) -> SortedPair[T]
     where T implements Comparable
   if a <= b then (a, b) else (b, a) end
 end
@@ -423,7 +423,7 @@ end
 ```opal
 type Result[T] = T | Error
 
-def divide(a::Float64, b::Float64) -> Result[Float64]
+def divide(a: Float64, b: Float64) -> Result[Float64]
   if b == 0.0
     fail Error.new(message: "division by zero")
   end
@@ -431,9 +431,9 @@ def divide(a::Float64, b::Float64) -> Result[Float64]
 end
 
 match divide(10.0, 3.0)
-  case value::Float64
+  case value: Float64
     print(f"result: {value}")
-  case e::Error
+  case e: Error
     print(f"error: {e.message}")
 end
 ```

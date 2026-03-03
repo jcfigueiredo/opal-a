@@ -13,16 +13,16 @@ Opal provides first-class dependency injection through the `needs` keyword and a
 ```opal
 protocol Database
   def save(record) -> Bool
-  def find(id::Int32) -> Record?
+  def find(id: Int32) -> Record?
 end
 
 protocol Mailer
-  def send_confirmation(order::Order)
+  def send_confirmation(order: Order)
 end
 
 class OrderService
-  needs db::Database
-  needs mailer::Mailer
+  needs db: Database
+  needs mailer: Mailer
 
   def place_order(order)
     .db.save(order)
@@ -47,7 +47,7 @@ test_service = OrderService.new(
 
 ```opal
 module Billing
-  needs payments::PaymentGateway
+  needs payments: PaymentGateway
 
   def charge(order)
     .payments.charge(order.total)
@@ -60,7 +60,7 @@ end
 ```opal
 actor PaymentProcessor
   receives :charge
-  needs gateway::PaymentGateway
+  needs gateway: PaymentGateway
 
   receive
     case :charge(order)
@@ -72,8 +72,8 @@ end
 
 ### Rules
 
-- `needs name::Protocol` declares a required dependency.
-- `needs name::Protocol = default_expr` declares an optional dependency with a default.
+- `needs name: Protocol` declares a required dependency.
+- `needs name: Protocol = default_expr` declares an optional dependency with a default.
 - Dependencies are checked at construction -- missing a required `needs` is a runtime error.
 - `needs` dependencies are accessible as `.name` (same as instance variables).
 - `needs` works on classes, modules, and actors.
@@ -128,9 +128,9 @@ Events are declared as named, immutable data structures. They are emitted with `
 ### Declaring Events
 
 ```opal
-event OrderPlaced(order::Order, placed_at::Time)
-event OrderShipped(order::Order, tracking::String)
-event PaymentFailed(order::Order, reason::String)
+event OrderPlaced(order: Order, placed_at: Time)
+event OrderShipped(order: Order, tracking: String)
+event PaymentFailed(order: Order, reason: String)
 ```
 
 Events are immutable data -- handlers cannot modify the event.
@@ -139,7 +139,7 @@ Events are immutable data -- handlers cannot modify the event.
 
 ```opal
 class OrderService
-  needs db::Database
+  needs db: Database
 
   def place_order(order)
     .db.save(order)
@@ -152,7 +152,7 @@ end
 
 ```opal
 module NotificationHandler
-  needs mailer::Mailer
+  needs mailer: Mailer
 
   on OrderPlaced do |e|
     .mailer.send_confirmation(e.order)
@@ -168,7 +168,7 @@ module NotificationHandler
 end
 
 module InventoryHandler
-  needs warehouse::WarehouseService
+  needs warehouse: WarehouseService
 
   on OrderPlaced do |e|
     .warehouse.reserve(e.order.items)
@@ -181,7 +181,7 @@ end
 ```opal
 # With pattern matching
 module AnalyticsHandler
-  needs tracker::Analytics
+  needs tracker: Analytics
 
   on OrderPlaced do |e|
     match e.order.total
@@ -279,7 +279,7 @@ end
 actor OrderProcessor
   receives :process
 
-  needs db::Database
+  needs db: Database
 
   receive
     case :process(order)
@@ -311,13 +311,13 @@ import Container
 import Time
 
 # --- Domain Events ---
-event OrderPlaced(order::Order, placed_at::Time)
-event PaymentFailed(order::Order, reason::String)
+event OrderPlaced(order: Order, placed_at: Time)
+event PaymentFailed(order: Order, reason: String)
 
 # --- Domain Service (with DI) ---
 class OrderService
-  needs db::Database
-  needs validator::OrderValidator
+  needs db: Database
+  needs validator: OrderValidator
 
   def place_order(order)
     .validator.validate!(order)
@@ -328,7 +328,7 @@ end
 
 # --- Event Handlers (with DI) ---
 module NotificationHandler
-  needs mailer::Mailer
+  needs mailer: Mailer
 
   on OrderPlaced do |e|
     .mailer.send_confirmation(e.order)
@@ -340,7 +340,7 @@ module NotificationHandler
 end
 
 module InventoryHandler
-  needs warehouse::WarehouseService
+  needs warehouse: WarehouseService
 
   on OrderPlaced do |e|
     .warehouse.reserve(e.order.items)
@@ -350,7 +350,7 @@ end
 # --- Actor for stateful concurrent work ---
 actor PaymentProcessor
   receives :charge
-  needs gateway::PaymentGateway
+  needs gateway: PaymentGateway
 
   receive
     case :charge(order)

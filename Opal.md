@@ -144,7 +144,7 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
 <function_def>  ::= <annotation>* "def" IDENTIFIER "(" <params> ")" ("->" <type_expr>)? NEWLINE <block> "end"
 <params>        ::= <param> ("," <param>)*
 <param>         ::= IDENTIFIER
-                   | IDENTIFIER "::" TYPE
+                   | IDENTIFIER ":" TYPE
                    | IDENTIFIER "=" <expression>
 
 <conditional>   ::= "if" <expression> NEWLINE <block>
@@ -172,7 +172,7 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
 <pattern>       ::= <literal>
                    | IDENTIFIER
                    | "_"
-                   | IDENTIFIER "::" TYPE
+                   | IDENTIFIER ":" TYPE
                    | <tuple_pattern>
                    | <list_pattern>
                    | <dict_pattern>
@@ -212,7 +212,7 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
 <async_expr>    ::= "async" <expression>
 <await_expr>    ::= "await" <expression>
 
-<needs_decl>    ::= <annotation>* "needs" IDENTIFIER "::" TYPE ("=" <expression>)?
+<needs_decl>    ::= <annotation>* "needs" IDENTIFIER ":" TYPE ("=" <expression>)?
 <event_def>     ::= "event" IDENTIFIER "(" <params> ")"
 <emit_expr>     ::= "emit" <expression> ("await")?
 <on_handler>    ::= "on" TYPE "do" "|" IDENTIFIER "|" NEWLINE <block> "end"
@@ -248,7 +248,7 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
                      (<needs_decl> | <where_field> | <validate_block> | <function_def>)* "end"
 <settings_def>  ::= "settings" "model" IDENTIFIER ("[" <type_params> "]")? NEWLINE
                      (<needs_decl> | <where_field> | <validate_block> | <function_def>)* "end"
-<where_field>   ::= "needs" IDENTIFIER "::" TYPE ("=" <expression>)?
+<where_field>   ::= "needs" IDENTIFIER ":" TYPE ("=" <expression>)?
                      "where" <field_constraint> ("," <field_constraint>)*
 <field_constraint> ::= <lambda> | IDENTIFIER ("(" <args> ")")?
 <validate_block>::= "validate" "do" NEWLINE <block> "end"
@@ -413,7 +413,7 @@ end
 Functions defined with `def` are first-class values with optional type annotations and default arguments. Closures use `|params| body`, `do...end`, or `fn(params) ... end` syntax. Closures capture by reference.
 
 ```opal
-def greet(name::String) -> String
+def greet(name: String) -> String
   f"Hello, {name}!"
 end
 
@@ -425,10 +425,10 @@ numbers.each do |x| print(x) end
 
 ### Type System
 
-Gradual typing: unannotated code is dynamic, `::` annotations are checked at boundaries. Supports generics, constraints, union types, type aliases, and runtime introspection with `is` and `typeof`.
+Gradual typing: unannotated code is dynamic, `:` annotations are checked at boundaries. Supports generics, constraints, union types, type aliases, and runtime introspection with `is` and `typeof`.
 
 ```opal
-def add(a::Int32, b::Int32) -> Int32
+def add(a: Int32, b: Int32) -> Int32
   a + b
 end
 
@@ -443,7 +443,7 @@ Classes use `needs` for dependency injection and `def init()` for initialization
 
 ```opal
 class Dog < Animal
-  needs breed::String
+  needs breed: String
 
   def speak()
     print(f"Woof! I'm a {.breed}")
@@ -490,8 +490,8 @@ end
 Functions can have multiple definitions that dispatch based on argument types, arity, and precondition guards. Ambiguity is a compile-time error.
 
 ```opal
-def render(shape::Circle)  then draw_circle(shape)
-def render(shape::Rectangle) then draw_rect(shape)
+def render(shape: Circle)  then draw_circle(shape)
+def render(shape: Rectangle) then draw_rect(shape)
 ```
 
 > See [Multiple Dispatch](docs/03-functions-and-types/multiple-dispatch.md) for resolution order and dispatch with preconditions.
@@ -508,8 +508,8 @@ Two protocols: `Iterable` (provides `iter()`) and `Iterator[T]` (provides `next(
 
 ```opal
 enum Shape
-  Circle(radius::Float64)
-  Rectangle(width::Float64, height::Float64)
+  Circle(radius: Float64)
+  Rectangle(width: Float64, height: Float64)
 end
 ```
 
@@ -521,9 +521,9 @@ end
 
 ```opal
 model User
-  needs name::String where |v| v.length > 0
-  needs email::String where valid_email?
-  needs age::Int32 where |v| v >= 0
+  needs name: String where |v| v.length > 0
+  needs email: String where valid_email?
+  needs age: Int32 where |v| v >= 0
 end
 ```
 
@@ -544,7 +544,7 @@ Placeholder `extern` syntax for calling functions from external shared libraries
 Two-track model: **exceptions** (`fail`/`try`/`catch`/`ensure`) for unexpected errors, **Result types** (`Result[T, E]`) for expected errors. The `!` operator propagates `Err` from the enclosing function. `Result.from do...end` bridges exceptions into Result values.
 
 ```opal
-def process(path::String) -> Result[Config, Error]
+def process(path: String) -> Result[Config, Error]
   content = read_file(path)!
   config = parse_json(content)!
   Result.Ok(config)
@@ -558,7 +558,7 @@ end
 `requires` validates conditions at function entry. Reusable validators (functions returning `Bool`) work in both `requires` and model `where` clauses.
 
 ```opal
-def sqrt(value::Float64) -> Float64
+def sqrt(value: Float64) -> Float64
   requires value >= 0, "sqrt requires non-negative input"
   value ** 0.5
 end
@@ -603,8 +603,8 @@ Opal's concurrency model has four layers: **actors** for stateful concurrent ent
 
 ```opal
 class OrderService
-  needs db::Database
-  needs mailer::Mailer
+  needs db: Database
+  needs mailer: Mailer
 
   def place_order(order)
     .db.save(order)

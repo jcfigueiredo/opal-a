@@ -31,7 +31,7 @@ Exceptions are the `fail` / `try` / `catch` / `ensure` mechanism. Errors are cla
 ### Raising and Catching
 
 ```opal
-def read_config(path::String) -> Dict
+def read_config(path: String) -> Dict
   if not File.exists?(path)
     fail FileNotFound.new(path: path)
   end
@@ -69,15 +69,15 @@ end
 
 ```opal
 enum Result[T, E]
-  Ok(value::T)
-  Err(error::E)
+  Ok(value: T)
+  Err(error: E)
 end
 ```
 
 ### Basic Usage
 
 ```opal
-def parse_int(s::String) -> Result[Int32, String]
+def parse_int(s: String) -> Result[Int32, String]
   # ...
 end
 
@@ -95,7 +95,7 @@ The `!` postfix operator unwraps `Ok` or propagates `Err` — the enclosing func
 
 ```opal
 # Without ! — nested matching
-def process(path::String) -> Result[Config, Error]
+def process(path: String) -> Result[Config, Error]
   match read_file(path)
     case Result.Ok(content)
       match parse_json(content)
@@ -110,7 +110,7 @@ def process(path::String) -> Result[Config, Error]
 end
 
 # With ! — linear and clean
-def process(path::String) -> Result[Config, Error]
+def process(path: String) -> Result[Config, Error]
   content = read_file(path)!
   config = parse_json(content)!
   Result.Ok(config)
@@ -175,7 +175,7 @@ config = parse_config(data).unwrap("config parsing failed")
 
 ```opal
 # Library returns Result
-def parse_config(data::String) -> Result[Config, ValidationError]
+def parse_config(data: String) -> Result[Config, ValidationError]
   # ...
 end
 
@@ -213,7 +213,7 @@ Errors are classes that inherit from `Error`. Define domain-specific errors by s
 
 ```opal
 class Error
-  needs message::String
+  needs message: String
 
   def stack_trace() -> List[String]
     # provided by runtime
@@ -225,7 +225,7 @@ end
 
 ```opal
 class FileNotFound < Error
-  needs path::String
+  needs path: String
 
   def init(path)
     .path = path
@@ -234,8 +234,8 @@ class FileNotFound < Error
 end
 
 class NetworkError < Error
-  needs url::String
-  needs status::Int32
+  needs url: String
+  needs status: Int32
 
   def init(url, status)
     .url = url
@@ -245,8 +245,8 @@ class NetworkError < Error
 end
 
 class ValidationError < Error
-  needs field::String
-  needs reason::String
+  needs field: String
+  needs reason: String
 
   def init(field, reason)
     .field = field
@@ -275,7 +275,7 @@ end
 ### Raising and Catching Custom Errors
 
 ```opal
-def read_config(path::String) -> Dict
+def read_config(path: String) -> Dict
   if not File.exists?(path)
     fail FileNotFound.new(path: path)
   end

@@ -10,21 +10,21 @@ The specification pattern allows composable business rules. Each specification i
 import Spec.Specification
 
 class Person
-  needs name::String
-  needs age::Int32
-  needs place_of_birth::String
+  needs name: String
+  needs age: Int32
+  needs place_of_birth: String
 end
 
 class OverAgeSpec < Specification
-  def is_satisfied_by(person::Person) -> Bool
+  def is_satisfied_by(person: Person) -> Bool
     person.age >= 21
   end
 end
 
 class BornAtSpec < Specification
-  needs born_at::String
+  needs born_at: String
 
-  def is_satisfied_by(person::Person) -> Bool
+  def is_satisfied_by(person: Person) -> Bool
     person.place_of_birth == .born_at
   end
 end

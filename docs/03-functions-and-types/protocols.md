@@ -86,9 +86,9 @@ Only defining the required method is enough -- the implementor gets all defaults
 
 ```opal
 class Temperature implements Comparable
-  needs degrees::Float64
+  needs degrees: Float64
 
-  def compare_to(other::Temperature) -> Int32
+  def compare_to(other: Temperature) -> Int32
     (.degrees - other.degrees) as Int32
   end
 end
@@ -117,7 +117,7 @@ protocol Hashable
 end
 
 class Temperature implements Printable, Comparable, Hashable
-  def init(degrees::Float32)
+  def init(degrees: Float32)
     .degrees = degrees
   end
 
@@ -125,7 +125,7 @@ class Temperature implements Printable, Comparable, Hashable
     f"{.degrees}°"
   end
 
-  def compare_to(other::Temperature) -> Int32
+  def compare_to(other: Temperature) -> Int32
     (.degrees - other.degrees) as Int32
   end
 
@@ -165,7 +165,7 @@ class Coin
   end
 end
 
-def render(shape::Drawable)
+def render(shape: Drawable)
   shape.draw()
 end
 
@@ -203,17 +203,17 @@ Protocols support type parameters like classes:
 
 ```opal
 protocol Collection[T]
-  def add(item::T)
-  def contains?(item::T) -> Bool
+  def add(item: T)
+  def contains?(item: T) -> Bool
   def size() -> Int32
 end
 
 class Set[T implements Hashable] implements Collection[T]
-  def add(item::T)
+  def add(item: T)
     # ...
   end
 
-  def contains?(item::T) -> Bool
+  def contains?(item: T) -> Bool
     # ...
   end
 

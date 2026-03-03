@@ -31,9 +31,9 @@ end
 
 ```opal
 enum Shape
-  Circle(radius::Float64)
-  Rectangle(width::Float64, height::Float64)
-  Triangle(base::Float64, height::Float64)
+  Circle(radius: Float64)
+  Rectangle(width: Float64, height: Float64)
+  Triangle(base: Float64, height: Float64)
 end
 ```
 
@@ -41,9 +41,9 @@ end
 
 ```opal
 enum Response
-  Success(body::String, headers::Dict[String, String])
-  NotFound(path::String)
-  ServerError(reason::String, code::Int32)
+  Success(body: String, headers: Dict[String, String])
+  NotFound(path: String)
+  ServerError(reason: String, code: Int32)
   Unauthorized
 end
 ```
@@ -151,9 +151,9 @@ Enums can have methods and implement protocols. Methods operate on `self` and ty
 
 ```opal
 enum Shape implements Printable, Comparable
-  Circle(radius::Float64)
-  Rectangle(width::Float64, height::Float64)
-  Triangle(base::Float64, height::Float64)
+  Circle(radius: Float64)
+  Rectangle(width: Float64, height: Float64)
+  Triangle(base: Float64, height: Float64)
 
   def area() -> Float64
     match self
@@ -177,7 +177,7 @@ enum Shape implements Printable, Comparable
     end
   end
 
-  def compare_to(other::Shape) -> Int32
+  def compare_to(other: Shape) -> Int32
     (.area() - other.area()) as Int32
   end
 end
@@ -203,13 +203,13 @@ Enums support type parameters, enabling foundational stdlib types like `Option[T
 
 ```opal
 enum Option[T]
-  Some(value::T)
+  Some(value: T)
   None
 end
 
 enum Result[T, E]
-  Ok(value::T)
-  Err(error::E)
+  Ok(value: T)
+  Err(error: E)
 end
 ```
 
@@ -221,7 +221,7 @@ opt = Option.Some(value: 42)       # Option[Int32]
 opt = Option[String].None           # explicit when ambiguous
 
 # Result in practice
-def parse_int(s::String) -> Result[Int32, String]
+def parse_int(s: String) -> Result[Int32, String]
   # ...
 end
 
@@ -237,7 +237,7 @@ end
 
 ```opal
 enum SortedPair[T implements Comparable]
-  Pair(first::T, second::T)
+  Pair(first: T, second: T)
   Empty
 end
 ```
@@ -258,7 +258,7 @@ end
 type ApiResponse = Response | Timeout | RateLimited
 
 # Enum variants as function parameter types
-def log_error(e::Response.ServerError | Response.NotFound)
+def log_error(e: Response.ServerError | Response.NotFound)
   print(f"error: {e}")
 end
 ```
@@ -274,9 +274,9 @@ total_area = shapes.map(|s| s.area()).reduce(0.0, |acc, a| acc + a)
 
 ```opal
 class Renderer
-  needs default_color::Color
+  needs default_color: Color
 
-  def render(shape::Shape)
+  def render(shape: Shape)
     match shape
       case Shape.Circle(r)
         draw_circle(r, .default_color)
@@ -294,13 +294,13 @@ end
 ```opal
 enum OrderStatus
   Pending
-  Confirmed(at::Time)
-  Shipped(tracking::String)
-  Delivered(at::Time)
-  Cancelled(reason::String)
+  Confirmed(at: Time)
+  Shipped(tracking: String)
+  Delivered(at: Time)
+  Cancelled(reason: String)
 end
 
-event OrderStatusChanged(order::Order, from::OrderStatus, to::OrderStatus)
+event OrderStatusChanged(order: Order, from: OrderStatus, to: OrderStatus)
 ```
 
 ### Enums with Type Aliases

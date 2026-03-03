@@ -29,7 +29,7 @@ class Account
     .balance * 0.05
   end
 
-  protected def transfer_to(other::Account, amount)
+  protected def transfer_to(other: Account, amount)
     .balance -= amount
     other.deposit(amount)
   end
@@ -50,7 +50,7 @@ Default visibility is `public`. Mark methods `private` (accessible only within t
 # file: src/math.opl
 
 # Public (default) -- importable
-def abs(x::Number)
+def abs(x: Number)
   if x < 0 then -x else x end
 end
 

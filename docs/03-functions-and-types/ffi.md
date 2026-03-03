@@ -13,9 +13,9 @@ Opal provides a placeholder `extern` syntax for calling functions from external 
 ```opal
 # Declare external functions from a C library
 extern "libmath.so"
-  def sin(x::Float64) -> Float64
-  def cos(x::Float64) -> Float64
-  def sqrt(x::Float64) -> Float64
+  def sin(x: Float64) -> Float64
+  def cos(x: Float64) -> Float64
+  def sqrt(x: Float64) -> Float64
 end
 
 # Use them like normal Opal functions

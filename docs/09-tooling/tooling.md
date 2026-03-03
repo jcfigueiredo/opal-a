@@ -191,7 +191,7 @@ class FakeDB implements Database
     true
   end
 
-  def find(id::Int32) -> Record?
+  def find(id: Int32) -> Record?
     null
   end
 end
@@ -241,7 +241,7 @@ Use the `@[test_only]` annotation to mark helpers that should only be available 
 ```opal
 # Mark helpers as test-only -- they won't be available in production code
 @[test_only]
-def create_test_user(name::String) -> User
+def create_test_user(name: String) -> User
   User.new(name: name, email: f"{name}@test.com", age: 25)
 end
 ```

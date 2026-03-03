@@ -11,7 +11,7 @@
 ## 1. Function Preconditions (`requires`)
 
 ```opal
-def sqrt(value::Float64) -> Float64
+def sqrt(value: Float64) -> Float64
   requires value >= 0, "sqrt requires non-negative input"
   value ** 0.5
 end
@@ -20,7 +20,7 @@ sqrt(4.0)   # => 2.0
 sqrt(-1.0)  # raises PreconditionError: "sqrt requires non-negative input"
 
 # Multiple preconditions
-def transfer(from::Account, to::Account, amount::Float64)
+def transfer(from: Account, to: Account, amount: Float64)
   requires amount > 0, "amount must be positive"
   requires from.balance >= amount, "insufficient funds"
   from.withdraw(amount)
@@ -44,16 +44,16 @@ def valid_email?(value) -> Bool
 end
 
 # In function preconditions
-def sqrt(value::Float64) -> Float64
+def sqrt(value: Float64) -> Float64
   requires positive?(value)
   value ** 0.5
 end
 
 # Same validators in model fields
 model Account
-  needs email::String where valid_email?
-  needs age::Int32 where |v| v >= 0
-  needs deposit::Float64 where positive?
+  needs email: String where valid_email?
+  needs age: Int32 where |v| v >= 0
+  needs deposit: Float64 where positive?
 end
 ```
 

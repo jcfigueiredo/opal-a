@@ -87,15 +87,15 @@ Operators are methods. The method form (inside a class) is sugar for the standal
 
 ```opal
 class Vector
-  needs x::Float64
-  needs y::Float64
+  needs x: Float64
+  needs y: Float64
 
   # Arithmetic
-  def +(other::Vector) -> Vector
+  def +(other: Vector) -> Vector
     Vector.new(x: .x + other.x, y: .y + other.y)
   end
 
-  def -(other::Vector) -> Vector
+  def -(other: Vector) -> Vector
     Vector.new(x: .x - other.x, y: .y - other.y)
   end
 
@@ -104,16 +104,16 @@ class Vector
   end
 
   # Indexing
-  def [](index::Int32) -> Float64
+  def [](index: Int32) -> Float64
     if index == 0 then .x else .y end
   end
 
-  def []=(index::Int32, value::Float64)
+  def []=(index: Int32, value: Float64)
     if index == 0 then .x = value else .y = value end
   end
 
   # Comparison
-  def ==(other::Vector) -> Bool
+  def ==(other: Vector) -> Bool
     .x == other.x and .y == other.y
   end
 
@@ -128,16 +128,16 @@ end
 
 ```opal
 # Cross-type operators — neither class needs to know about the other
-def *(scalar::Float64, v::Vector) -> Vector
+def *(scalar: Float64, v: Vector) -> Vector
   Vector.new(x: scalar * v.x, y: scalar * v.y)
 end
 
-def *(v::Vector, scalar::Float64) -> Vector
+def *(v: Vector, scalar: Float64) -> Vector
   scalar * v
 end
 
 # Third-party extension — add operators to types you don't own
-def +(v::Vector, m::Matrix) -> Matrix
+def +(v: Vector, m: Matrix) -> Matrix
   # ...
 end
 ```
@@ -215,8 +215,8 @@ Operator overloading is one of five self-hosting foundations that enable Opal's 
 
 ### Why Operators Are Methods
 
-- Method form `def +(other::T)` inside a class is sugar for `def +(self::Self, other::T)`.
-- Standalone form `def +(a::A, b::B)` dispatches on all argument types.
+- Method form `def +(other: T)` inside a class is sugar for `def +(self: Self, other: T)`.
+- Standalone form `def +(a: A, b: B)` dispatches on all argument types.
 - Same multiple dispatch resolution as regular functions (exact type > precondition > arity > ambiguity error).
 - `to_string()` is called automatically by f-strings and `print`.
 - `to_bool()` is called automatically by conditionals.

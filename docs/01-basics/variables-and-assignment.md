@@ -41,7 +41,7 @@ let (x, y) = get_point()
 x = 0                  # COMPILE ERROR
 
 # let with type annotation
-let pi::Float64 = 3.14159
+let pi: Float64 = 3.14159
 ```
 
 **Rules:**

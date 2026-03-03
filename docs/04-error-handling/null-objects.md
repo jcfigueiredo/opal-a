@@ -14,8 +14,8 @@ Define a subclass that provides default values and overridden behavior.
 
 ```opal
 class Person
-  needs name::String
-  needs age::Int32
+  needs name: String
+  needs age: Int32
 
   def greet()
     print(f"Hi, I'm {.name}")

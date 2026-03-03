@@ -90,8 +90,8 @@ For classes that are pure data or DI containers, `needs` is all you need:
 
 ```opal
 class Point
-  needs x::Float64
-  needs y::Float64
+  needs x: Float64
+  needs y: Float64
 end
 
 p = Point.new(x: 1.0, y: 2.0)
@@ -104,8 +104,8 @@ When you need setup logic beyond field assignment, add `init`. The `needs` field
 
 ```opal
 class OrderService
-  needs db::Database
-  needs mailer::Mailer
+  needs db: Database
+  needs mailer: Mailer
 
   def init(retry_count = 3)
     # .db and .mailer already available
@@ -128,7 +128,7 @@ For classes with complex construction logic or no declarative fields:
 
 ```opal
 class Parser
-  def init(source::String)
+  def init(source: String)
     .source = source
     .position = 0
     .tokens = []
@@ -155,8 +155,8 @@ Opal uses **single inheritance** only. For multiple behaviors, use protocols.
 
 ```opal
 class Animal
-  needs name::String
-  needs sound::String
+  needs name: String
+  needs sound: String
 
   def speak()
     print(f"{.name} says {.sound}")
@@ -164,7 +164,7 @@ class Animal
 end
 
 class Dog < Animal
-  needs breed::String
+  needs breed: String
 
   def speak()
     super()  # calls Animal.speak
@@ -184,12 +184,12 @@ A subclass inherits all parent `needs`. The subclass constructor requires both p
 
 ```opal
 class Animal
-  needs name::String
-  needs sound::String
+  needs name: String
+  needs sound: String
 end
 
 class Dog < Animal
-  needs breed::String
+  needs breed: String
 end
 
 # Must provide ALL needs (parent + own)
@@ -233,7 +233,7 @@ class Base
 end
 
 class Child < Base
-  needs value::Int32
+  needs value: Int32
 
   def init()
     super()           # calls Base.init -- .created_at set
@@ -260,7 +260,7 @@ protocol Shape
 end
 
 class Circle implements Shape
-  needs radius::Float64
+  needs radius: Float64
 
   def area() -> Float64
     Math.PI * .radius ** 2
@@ -280,13 +280,13 @@ For multiple behaviors, combine single inheritance with protocols:
 
 ```opal
 class Dog < Animal implements Trainable, Printable
-  needs breed::String
+  needs breed: String
 
   def to_string() -> String
     f"{.name} the {.breed}"
   end
 
-  def learn(command::String)
+  def learn(command: String)
     print(f"{.name} learned {command}!")
   end
 end

@@ -30,7 +30,7 @@ Any class can become iterable by implementing the protocol pair. Here, `FileLine
 
 ```opal
 class FileLines implements Iterable
-  needs path::String
+  needs path: String
 
   def iter()
     FileLinesIterator.new(file: File.open(.path))
@@ -38,7 +38,7 @@ class FileLines implements Iterable
 end
 
 class FileLinesIterator implements Iterator[String]
-  needs file::File
+  needs file: File
 
   def next() -> Option[String]
     line = .file.read_line()
@@ -69,7 +69,7 @@ Because `Iterator.next()` returns `Option[T]`, iterators can be infinite -- they
 
 ```opal
 class Counter implements Iterable
-  needs start::Int32
+  needs start: Int32
 
   def iter()
     CounterIterator.new(current: .start)
@@ -77,7 +77,7 @@ class Counter implements Iterable
 end
 
 class CounterIterator implements Iterator[Int32]
-  needs current::Int32
+  needs current: Int32
 
   def next() -> Option[Int32]
     value = .current

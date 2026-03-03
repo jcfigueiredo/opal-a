@@ -33,9 +33,9 @@ end
 
 ```opal
 match response
-  case s::String
+  case s: String
     print(s)
-  case n::Int32
+  case n: Int32
     print(f"code: {n}")
   case (status, body)
     print(f"{status}: {body}")
@@ -174,7 +174,7 @@ end
 | Range | `case 1..10` | Value in range |
 | Variable | `case x` | Anything, binds to `x` |
 | Wildcard | `case _` | Anything, no binding |
-| Type | `case s::String` | Value of type, binds |
+| Type | `case s: String` | Value of type, binds |
 | Tuple | `case (x, y)` | Tuple destructure |
 | List | `case []`, `case [h \| t]` | List destructure |
 | Dict | `case {key: v}` | Dict destructure |
@@ -193,7 +193,7 @@ When matching on a symbol set type, the compiler checks for exhaustiveness:
 ```opal
 type Color = :red | :green | :blue
 
-def describe(c::Color) -> String
+def describe(c: Color) -> String
   match c
     case :red   then "warm"
     case :green then "cool"
