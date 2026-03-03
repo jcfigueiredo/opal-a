@@ -136,8 +136,6 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
                    | "do" <expression> "end"
                    | "do" NEWLINE <block> "end"
                    | "do" "|" <params> "|" NEWLINE <block> "end"
-                   | "fn" "(" <params> ")" <expression> "end"
-                   | "fn" "(" <params> ")" NEWLINE <block> "end"
 
 <with_expr>     ::= <expression> "with" <dict>
 
@@ -411,7 +409,7 @@ end
 
 ### Functions & Closures
 
-Functions defined with `def` are first-class values with optional type annotations and default arguments. Closures use `|params| body`, `do...end`, or `fn(params) ... end` syntax. Closures capture by reference.
+Functions defined with `def` are first-class values with optional type annotations and default arguments. Closures use `|params| body` or `do...end` syntax. Closures capture by reference.
 
 ```opal
 def greet(name: String) -> String
@@ -422,7 +420,7 @@ double = |x| x * 2
 numbers.each do |x| print(x) end
 ```
 
-> See [Functions & Closures](docs/03-functions-and-types/functions-and-closures.md) for capture semantics, trailing blocks, closure types, and `fn` syntax.
+> See [Functions & Closures](docs/03-functions-and-types/functions-and-closures.md) for capture semantics, trailing blocks, and closure types.
 
 ### Type System
 

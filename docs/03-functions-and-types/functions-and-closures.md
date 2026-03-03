@@ -4,7 +4,7 @@
 
 ## Overview
 
-Functions are defined with `def` and are first-class values in Opal. Closures capture their enclosing scope by reference and come in three syntactic forms: `|params| expr` for inline use, `fn(params) ... end` for stored function values, and `do ... end` for no-arg closures and trailing blocks.
+Functions are defined with `def` and are first-class values in Opal. Closures capture their enclosing scope by reference and come in two syntactic forms: `|params| expr` for inline use, and `do ... end` / `do |params| ... end` for multi-line closures, stored function values, and trailing blocks.
 
 ---
 
@@ -140,29 +140,30 @@ end
 
 ---
 
-## 6. Named Closures with `fn`
-
-The `fn` keyword creates a function value. Use it when assigning closures to variables or passing complex multi-line functions.
+## 6. When to Use Which
 
 ```opal
-# fn for stored function values
-double = fn(x) x * 2 end
-greet = fn(name) f"Hello, {name}" end
+# Inline / short closures -- use pipes
+double = |x| x * 2
+greet = |name| f"Hello, {name}"
+numbers.map(|x| x * 2)
+numbers.filter(|x| x > 0)
 
-# Multi-line
-handler = fn(request, response)
+# Multi-line closures, stored function values -- use do...end
+handler = do |request, response|
   user = authenticate(request)
   data = process(request.body)
   response.json(data)
 end
 
-# |params| remains preferred for inline/short closures
-numbers.map(|x| x * 2)
-numbers.filter(|x| x > 0)
+# No-arg closures -- use do...end
+setup = do
+  load_config()
+  init_db()
+end
 ```
 
 **When to use which:**
 - `|params| expr` -- inline closures passed directly to functions.
-- `fn(params) ... end` -- closures stored in variables or with multi-line bodies.
-- `do ... end` -- no-arg closures or trailing blocks.
-- All create the same type of value -- the choice is stylistic.
+- `do |params| ... end` / `do ... end` -- multi-line closures, stored function values, trailing blocks.
+- Both create the same type of value -- the choice is stylistic.
