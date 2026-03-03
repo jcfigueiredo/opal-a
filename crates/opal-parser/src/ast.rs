@@ -47,10 +47,7 @@ pub enum ExprKind {
     /// Variable reference: `name`
     Identifier(String),
     /// Function call: `print("hello")` or `name.method(args)`
-    Call {
-        function: Box<Expr>,
-        args: Vec<Arg>,
-    },
+    Call { function: Box<Expr>, args: Vec<Arg> },
     /// Binary operation: `a + b`
     BinaryOp {
         left: Box<Expr>,
@@ -58,15 +55,9 @@ pub enum ExprKind {
         right: Box<Expr>,
     },
     /// Unary operation: `-x`, `not x`
-    UnaryOp {
-        op: UnOp,
-        operand: Box<Expr>,
-    },
+    UnaryOp { op: UnOp, operand: Box<Expr> },
     /// Member access: `obj.field`
-    MemberAccess {
-        object: Box<Expr>,
-        field: String,
-    },
+    MemberAccess { object: Box<Expr>, field: String },
     /// If expression: `if cond then expr else expr end`
     If {
         condition: Box<Expr>,

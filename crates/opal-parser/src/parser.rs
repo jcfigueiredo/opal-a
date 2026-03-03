@@ -118,11 +118,7 @@ impl<'src> Parser<'src> {
                 break;
             }
             self.advance(); // consume operator
-            let next_prec = if assoc == Assoc::Left {
-                prec + 1
-            } else {
-                prec
-            };
+            let next_prec = if assoc == Assoc::Left { prec + 1 } else { prec };
             let right = self.parse_expression(next_prec)?;
             let span = Span {
                 start: left.span.start,
@@ -403,9 +399,7 @@ impl<'src> Parser<'src> {
 
         loop {
             // Check for named argument: `name: expr`
-            if self.peek_is_identifier()
-                && self.peek_ahead(1).is_some_and(|t| *t == Token::Colon)
-            {
+            if self.peek_is_identifier() && self.peek_ahead(1).is_some_and(|t| *t == Token::Colon) {
                 let name = self.extract_text(&self.current_span());
                 self.advance(); // identifier
                 self.advance(); // colon
@@ -560,9 +554,8 @@ impl<'src> Parser<'src> {
     }
 
     fn check(&self, expected: &Token) -> bool {
-        self.peek().is_some_and(|t| {
-            std::mem::discriminant(t) == std::mem::discriminant(expected)
-        })
+        self.peek()
+            .is_some_and(|t| std::mem::discriminant(t) == std::mem::discriminant(expected))
     }
 
     fn advance(&mut self) {

@@ -1,4 +1,4 @@
-use logos::{Logos, FilterResult};
+use logos::{FilterResult, Logos};
 
 /// Callback to lex multiline comments: `### ... ###`
 fn lex_multiline_comment(lex: &mut logos::Lexer<Token>) -> FilterResult<(), ()> {

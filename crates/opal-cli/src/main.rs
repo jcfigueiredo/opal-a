@@ -41,8 +41,27 @@ fn main() {
 
     match cli.command {
         Commands::Run { file } => {
-            eprintln!("opal run: not yet implemented (file: {})", file.display());
-            process::exit(1);
+            let source = match std::fs::read_to_string(&file) {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("Error reading {}: {}", file.display(), e);
+                    process::exit(1);
+                }
+            };
+
+            let program = match opal_parser::parse(&source) {
+                Ok(p) => p,
+                Err(e) => {
+                    eprintln!("ParseError: {}", e);
+                    process::exit(1);
+                }
+            };
+
+            let mut interpreter = opal_interp::Interpreter::new();
+            if let Err(e) = interpreter.run(&program) {
+                eprintln!("{}", e);
+                process::exit(1);
+            }
         }
         Commands::Repl => {
             eprintln!("opal repl: not yet implemented");

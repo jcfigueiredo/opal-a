@@ -47,7 +47,7 @@ mod tests {
     #[test]
     fn display_values() {
         assert_eq!(Value::Integer(42).to_string(), "42");
-        assert_eq!(Value::Float(3.14).to_string(), "3.14");
+        assert_eq!(Value::Float(1.23).to_string(), "1.23");
         assert_eq!(Value::String("hello".into()).to_string(), "hello");
         assert_eq!(Value::Bool(true).to_string(), "true");
         assert_eq!(Value::Null.to_string(), "null");

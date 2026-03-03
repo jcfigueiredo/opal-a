@@ -94,7 +94,7 @@ impl<W: Write> Interpreter<W> {
                     _ => {
                         return Err(EvalError::TypeError(
                             "only named function calls supported in Slice 1".into(),
-                        ))
+                        ));
                     }
                 };
 
@@ -197,9 +197,7 @@ fn eval_binary_op(op: BinOp, left: Value, right: Value) -> Result<Value, EvalErr
             }
         }
         (BinOp::Mod, Value::Integer(a), Value::Integer(b)) => Ok(Value::Integer(a % b)),
-        (BinOp::Pow, Value::Integer(a), Value::Integer(b)) => {
-            Ok(Value::Integer(a.pow(*b as u32)))
-        }
+        (BinOp::Pow, Value::Integer(a), Value::Integer(b)) => Ok(Value::Integer(a.pow(*b as u32))),
 
         // Float arithmetic
         (BinOp::Add, Value::Float(a), Value::Float(b)) => Ok(Value::Float(a + b)),
@@ -298,24 +296,20 @@ mod tests {
 
     #[test]
     fn variable_and_print() {
-        let output = run(
-            r#"
+        let output = run(r#"
 name = "Opal"
 print(name)
-"#,
-        )
+"#)
         .unwrap();
         assert_eq!(output, "Opal");
     }
 
     #[test]
     fn fstring() {
-        let output = run(
-            r#"
+        let output = run(r#"
 name = "Opal"
 print(f"Hello, {name}!")
-"#,
-        )
+"#)
         .unwrap();
         assert_eq!(output, "Hello, Opal!");
     }

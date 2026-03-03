@@ -1,0 +1,3 @@
+# expect: Hello, Opal!
+name = "Opal"
+print(f"Hello, {name}!")
