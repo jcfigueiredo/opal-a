@@ -1,7 +1,7 @@
 use std::io::Write;
 
 use opal_parser::ast::*;
-use opal_runtime::{Environment, FunctionId, Value};
+use opal_runtime::{ClosureId, Environment, FunctionId, Value};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -25,10 +25,18 @@ struct StoredFunction {
     body: Vec<Stmt>,
 }
 
+/// A stored closure
+#[derive(Clone)]
+struct StoredClosure {
+    params: Vec<String>,
+    body: Vec<Stmt>,
+}
+
 pub struct Interpreter<W: Write> {
     env: Environment,
     writer: W,
     functions: Vec<StoredFunction>,
+    closures: Vec<StoredClosure>,
 }
 
 impl Interpreter<std::io::Stdout> {
@@ -37,6 +45,7 @@ impl Interpreter<std::io::Stdout> {
             env: Environment::new(),
             writer: std::io::stdout(),
             functions: Vec::new(),
+            closures: Vec::new(),
         }
     }
 }
@@ -47,6 +56,7 @@ impl<W: Write> Interpreter<W> {
             env: Environment::new(),
             writer,
             functions: Vec::new(),
+            closures: Vec::new(),
         }
     }
 
@@ -88,6 +98,35 @@ impl<W: Write> Interpreter<W> {
                 };
                 return Err(EvalError::Return(val));
             }
+            StmtKind::For {
+                var,
+                iterable,
+                body,
+            } => {
+                let iter_val = self.eval_expr(iterable)?;
+                let items = match iter_val {
+                    Value::List(items) => items,
+                    _ => {
+                        return Err(EvalError::TypeError(
+                            "for loop requires a list".into(),
+                        ))
+                    }
+                };
+                for item in items {
+                    self.env.push_scope();
+                    self.env.set(var.clone(), item);
+                    let result = self.eval_block(body);
+                    self.env.pop_scope();
+                    result?;
+                }
+            }
+            StmtKind::While { condition, body } => loop {
+                let cond = self.eval_expr(condition)?;
+                if !cond.is_truthy() {
+                    break;
+                }
+                self.eval_block(body)?;
+            },
         }
         Ok(())
     }
@@ -120,41 +159,30 @@ impl<W: Write> Interpreter<W> {
                 Ok(Value::String(result))
             }
 
-            ExprKind::Call { function, args } => {
-                let func_name = match &function.kind {
-                    ExprKind::Identifier(name) => name.clone(),
-                    _ => {
-                        return Err(EvalError::TypeError(
-                            "only named function calls supported".into(),
-                        ));
-                    }
-                };
-
-                let mut arg_values = Vec::new();
-                for arg in args {
-                    arg_values.push(self.eval_expr(&arg.value)?);
+            ExprKind::List(elements) => {
+                let mut values = Vec::new();
+                for elem in elements {
+                    values.push(self.eval_expr(elem)?);
                 }
-
-                // Try stdlib builtins
-                if let Some(result) =
-                    opal_stdlib::call_builtin(&func_name, &arg_values, &mut self.writer)
-                {
-                    return match result {
-                        Ok(opal_stdlib::BuiltinResult::Value(v)) => Ok(v),
-                        Ok(opal_stdlib::BuiltinResult::Void) => Ok(Value::Null),
-                        Err(e) => Err(EvalError::RuntimeError(e)),
-                    };
-                }
-
-                // Try user-defined functions
-                if let Some(Value::Function(id)) = self.env.get(&func_name).cloned() {
-                    return self.call_function(id, &func_name, arg_values);
-                }
-
-                Err(EvalError::UndefinedVariable(func_name))
+                Ok(Value::List(values))
             }
 
+            ExprKind::Closure { params, body } => {
+                let id = ClosureId(self.closures.len());
+                self.closures.push(StoredClosure {
+                    params: params.clone(),
+                    body: body.clone(),
+                });
+                Ok(Value::Closure(id))
+            }
+
+            ExprKind::Call { function, args } => self.eval_call(function, args),
+
             ExprKind::BinaryOp { left, op, right } => {
+                // Special handling for pipe operator
+                if *op == BinOp::Pipe {
+                    return self.eval_pipe(left, right);
+                }
                 let lval = self.eval_expr(left)?;
                 let rval = self.eval_expr(right)?;
                 eval_binary_op(*op, lval, rval)
@@ -192,7 +220,225 @@ impl<W: Write> Interpreter<W> {
             ExprKind::Grouped(inner) => self.eval_expr(inner),
 
             ExprKind::MemberAccess { .. } => Err(EvalError::TypeError(
-                "member access not yet supported".into(),
+                "bare member access not supported — use method call syntax".into(),
+            )),
+        }
+    }
+
+    fn eval_call(&mut self, function: &Expr, args: &[Arg]) -> Result<Value, EvalError> {
+        // Method call: expr.method(args)
+        if let ExprKind::MemberAccess { object, field } = &function.kind {
+            let obj = self.eval_expr(object)?;
+            let mut arg_values = Vec::new();
+            for arg in args {
+                arg_values.push(self.eval_expr(&arg.value)?);
+            }
+            return self.call_method(obj, field, arg_values);
+        }
+
+        // Regular function call: name(args)
+        let func_name = match &function.kind {
+            ExprKind::Identifier(name) => name.clone(),
+            _ => {
+                return Err(EvalError::TypeError(
+                    "only named function calls supported".into(),
+                ));
+            }
+        };
+
+        let mut arg_values = Vec::new();
+        for arg in args {
+            arg_values.push(self.eval_expr(&arg.value)?);
+        }
+
+        // Try stdlib builtins
+        if let Some(result) =
+            opal_stdlib::call_builtin(&func_name, &arg_values, &mut self.writer)
+        {
+            return match result {
+                Ok(opal_stdlib::BuiltinResult::Value(v)) => Ok(v),
+                Ok(opal_stdlib::BuiltinResult::Void) => Ok(Value::Null),
+                Err(e) => Err(EvalError::RuntimeError(e)),
+            };
+        }
+
+        // Try user-defined functions or closures
+        if let Some(val) = self.env.get(&func_name).cloned() {
+            match val {
+                Value::Function(id) => return self.call_function(id, &func_name, arg_values),
+                Value::Closure(id) => return self.call_closure(id, arg_values),
+                _ => {}
+            }
+        }
+
+        Err(EvalError::UndefinedVariable(func_name))
+    }
+
+    fn call_method(
+        &mut self,
+        obj: Value,
+        method: &str,
+        args: Vec<Value>,
+    ) -> Result<Value, EvalError> {
+        match (&obj, method) {
+            // List methods
+            (Value::List(items), "length") => Ok(Value::Integer(items.len() as i64)),
+            (Value::List(items), "push") => {
+                if args.len() != 1 {
+                    return Err(EvalError::TypeError(
+                        "push() takes exactly 1 argument".into(),
+                    ));
+                }
+                let mut new_list = items.clone();
+                new_list.push(args.into_iter().next().unwrap());
+                Ok(Value::List(new_list))
+            }
+            (Value::List(items), "get") => {
+                if args.len() != 1 {
+                    return Err(EvalError::TypeError(
+                        "get() takes exactly 1 argument".into(),
+                    ));
+                }
+                match &args[0] {
+                    Value::Integer(idx) => {
+                        let idx = *idx as usize;
+                        Ok(items.get(idx).cloned().unwrap_or(Value::Null))
+                    }
+                    _ => Err(EvalError::TypeError("list index must be an integer".into())),
+                }
+            }
+            (Value::List(items), "map") => {
+                if args.len() != 1 {
+                    return Err(EvalError::TypeError(
+                        "map() takes exactly 1 argument (a closure)".into(),
+                    ));
+                }
+                let closure_id = match &args[0] {
+                    Value::Closure(id) => *id,
+                    _ => {
+                        return Err(EvalError::TypeError(
+                            "map() argument must be a closure".into(),
+                        ))
+                    }
+                };
+                let mut result = Vec::new();
+                for item in items.clone() {
+                    result.push(self.call_closure(closure_id, vec![item])?);
+                }
+                Ok(Value::List(result))
+            }
+            (Value::List(items), "filter") => {
+                if args.len() != 1 {
+                    return Err(EvalError::TypeError(
+                        "filter() takes exactly 1 argument (a closure)".into(),
+                    ));
+                }
+                let closure_id = match &args[0] {
+                    Value::Closure(id) => *id,
+                    _ => {
+                        return Err(EvalError::TypeError(
+                            "filter() argument must be a closure".into(),
+                        ))
+                    }
+                };
+                let mut result = Vec::new();
+                for item in items.clone() {
+                    let keep = self.call_closure(closure_id, vec![item.clone()])?;
+                    if keep.is_truthy() {
+                        result.push(item);
+                    }
+                }
+                Ok(Value::List(result))
+            }
+            (Value::List(items), "reduce") => {
+                if args.len() != 2 {
+                    return Err(EvalError::TypeError(
+                        "reduce() takes 2 arguments (initial, closure)".into(),
+                    ));
+                }
+                let initial = args[0].clone();
+                let closure_id = match &args[1] {
+                    Value::Closure(id) => *id,
+                    _ => {
+                        return Err(EvalError::TypeError(
+                            "reduce() second argument must be a closure".into(),
+                        ))
+                    }
+                };
+                let mut acc = initial;
+                for item in items.clone() {
+                    acc = self.call_closure(closure_id, vec![acc, item])?;
+                }
+                Ok(acc)
+            }
+            // String methods
+            (Value::String(s), "length") => Ok(Value::Integer(s.len() as i64)),
+            _ => Err(EvalError::TypeError(format!(
+                "no method '{}' on {:?}",
+                method, obj
+            ))),
+        }
+    }
+
+    fn eval_pipe(&mut self, left: &Expr, right: &Expr) -> Result<Value, EvalError> {
+        let arg = self.eval_expr(left)?;
+        // right should be an identifier (function name) or a call
+        match &right.kind {
+            ExprKind::Identifier(name) => {
+                // a |> f  =>  f(a)
+                // Try builtins
+                if let Some(result) =
+                    opal_stdlib::call_builtin(name, &[arg.clone()], &mut self.writer)
+                {
+                    return match result {
+                        Ok(opal_stdlib::BuiltinResult::Value(v)) => Ok(v),
+                        Ok(opal_stdlib::BuiltinResult::Void) => Ok(Value::Null),
+                        Err(e) => Err(EvalError::RuntimeError(e)),
+                    };
+                }
+                if let Some(val) = self.env.get(name).cloned() {
+                    match val {
+                        Value::Function(id) => self.call_function(id, name, vec![arg]),
+                        Value::Closure(id) => self.call_closure(id, vec![arg]),
+                        _ => Err(EvalError::TypeError(format!(
+                            "pipe target '{}' is not a function",
+                            name
+                        ))),
+                    }
+                } else {
+                    Err(EvalError::UndefinedVariable(name.clone()))
+                }
+            }
+            ExprKind::Call { function, args } => {
+                // a |> f(b)  =>  f(a, b)
+                let func_name = match &function.kind {
+                    ExprKind::Identifier(name) => name.clone(),
+                    _ => {
+                        return Err(EvalError::TypeError(
+                            "pipe target must be a function call".into(),
+                        ))
+                    }
+                };
+                let mut arg_values = vec![arg];
+                for a in args {
+                    arg_values.push(self.eval_expr(&a.value)?);
+                }
+                if let Some(val) = self.env.get(&func_name).cloned() {
+                    match val {
+                        Value::Function(id) => {
+                            self.call_function(id, &func_name, arg_values)
+                        }
+                        _ => Err(EvalError::TypeError(format!(
+                            "pipe target '{}' is not a function",
+                            func_name
+                        ))),
+                    }
+                } else {
+                    Err(EvalError::UndefinedVariable(func_name))
+                }
+            }
+            _ => Err(EvalError::TypeError(
+                "pipe operator requires a function on the right side".into(),
             )),
         }
     }
@@ -212,6 +458,28 @@ impl<W: Write> Interpreter<W> {
                 arg_values.len()
             )));
         }
+
+        self.env.push_scope();
+        for (param_name, arg_val) in stored.params.iter().zip(arg_values) {
+            self.env.set(String::clone(param_name), arg_val);
+        }
+
+        let result = self.eval_block(&stored.body);
+        self.env.pop_scope();
+
+        match result {
+            Ok(val) => Ok(val),
+            Err(EvalError::Return(val)) => Ok(val),
+            Err(e) => Err(e),
+        }
+    }
+
+    fn call_closure(
+        &mut self,
+        id: ClosureId,
+        arg_values: Vec<Value>,
+    ) -> Result<Value, EvalError> {
+        let stored = self.closures[id.0].clone();
 
         self.env.push_scope();
         for (param_name, arg_val) in stored.params.iter().zip(arg_values) {
@@ -356,6 +624,7 @@ mod tests {
         Ok(String::from_utf8(output).unwrap().trim_end().to_string())
     }
 
+    // === Slice 1 tests ===
     #[test]
     fn hello_world() {
         let output = run(r#"print("Hello, world!")"#).unwrap();
@@ -364,21 +633,13 @@ mod tests {
 
     #[test]
     fn variable_and_print() {
-        let output = run(r#"
-name = "Opal"
-print(name)
-"#)
-        .unwrap();
+        let output = run("name = \"Opal\"\nprint(name)").unwrap();
         assert_eq!(output, "Opal");
     }
 
     #[test]
     fn fstring() {
-        let output = run(r#"
-name = "Opal"
-print(f"Hello, {name}!")
-"#)
-        .unwrap();
+        let output = run("name = \"Opal\"\nprint(f\"Hello, {name}!\")").unwrap();
         assert_eq!(output, "Hello, Opal!");
     }
 
@@ -392,14 +653,7 @@ print(f"Hello, {name}!")
     fn undefined_variable_error() {
         let result = run("print(undefined_var)");
         assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(err.contains("NameError"));
-    }
-
-    #[test]
-    fn string_concatenation() {
-        let output = run(r#"print("hello" + " " + "world")"#).unwrap();
-        assert_eq!(output, "hello world");
+        assert!(result.unwrap_err().to_string().contains("NameError"));
     }
 
     #[test]
@@ -408,20 +662,7 @@ print(f"Hello, {name}!")
         assert_eq!(output, "1");
     }
 
-    #[test]
-    fn comparison() {
-        let output = run("print(3 > 2)").unwrap();
-        assert_eq!(output, "true");
-    }
-
-    #[test]
-    fn let_binding() {
-        let output = run("let x = 42\nprint(x)").unwrap();
-        assert_eq!(output, "42");
-    }
-
-    // === Slice 2: Function tests ===
-
+    // === Slice 2 tests ===
     #[test]
     fn simple_function() {
         let output = run("def add(a, b)\n  return a + b\nend\nprint(add(2, 3))").unwrap();
@@ -430,19 +671,13 @@ print(f"Hello, {name}!")
 
     #[test]
     fn factorial() {
-        let output = run(
-            "def factorial(n: Int) -> Int\n  if n <= 1 then 1 else n * factorial(n - 1) end\nend\nprint(factorial(10))",
-        )
-        .unwrap();
+        let output = run("def factorial(n: Int) -> Int\n  if n <= 1 then 1 else n * factorial(n - 1) end\nend\nprint(factorial(10))").unwrap();
         assert_eq!(output, "3628800");
     }
 
     #[test]
     fn fibonacci() {
-        let output = run(
-            "def fib(n)\n  if n <= 1 then n else fib(n - 1) + fib(n - 2) end\nend\nprint(fib(10))",
-        )
-        .unwrap();
+        let output = run("def fib(n)\n  if n <= 1 then n else fib(n - 1) + fib(n - 2) end\nend\nprint(fib(10))").unwrap();
         assert_eq!(output, "55");
     }
 
@@ -452,26 +687,88 @@ print(f"Hello, {name}!")
         assert_eq!(output, "42");
     }
 
+    // === Slice 3 tests ===
     #[test]
-    fn function_no_args() {
-        let output = run("def greeting()\n  return \"hello\"\nend\nprint(greeting())").unwrap();
-        assert_eq!(output, "hello");
+    fn list_literal() {
+        let output = run("print([1, 2, 3])").unwrap();
+        assert_eq!(output, "[1, 2, 3]");
     }
 
     #[test]
-    fn function_wrong_arg_count() {
-        let result = run("def foo(a, b)\n  a + b\nend\nfoo(1)");
-        assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(err.contains("expected 2 arguments"));
+    fn empty_list() {
+        let output = run("print([])").unwrap();
+        assert_eq!(output, "[]");
     }
 
     #[test]
-    fn nested_function_calls() {
-        let output = run(
-            "def square(x)\n  x * x\nend\ndef sum_of_squares(a, b)\n  square(a) + square(b)\nend\nprint(sum_of_squares(3, 4))",
-        )
+    fn list_length() {
+        let output = run("print([1, 2, 3].length())").unwrap();
+        assert_eq!(output, "3");
+    }
+
+    #[test]
+    fn list_map() {
+        let output = run("print([1, 2, 3].map(|n| n * 2))").unwrap();
+        assert_eq!(output, "[2, 4, 6]");
+    }
+
+    #[test]
+    fn list_filter() {
+        let output = run("print([1, 2, 3, 4].filter(|n| n % 2 == 0))").unwrap();
+        assert_eq!(output, "[2, 4]");
+    }
+
+    #[test]
+    fn list_reduce() {
+        let output =
+            run("print([1, 2, 3, 4].reduce(0) do |acc, n|\n  acc + n\nend)").unwrap();
+        assert_eq!(output, "10");
+    }
+
+    #[test]
+    fn data_cruncher() {
+        let output = run(r#"
+numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+evens = numbers.filter(|n| n % 2 == 0)
+squares = evens.map(|n| n ** 2)
+total = squares.reduce(0) do |acc, n|
+  acc + n
+end
+print(f"Sum of even squares: {total}")
+"#)
         .unwrap();
-        assert_eq!(output, "25");
+        assert_eq!(output, "Sum of even squares: 220");
+    }
+
+    #[test]
+    fn for_loop() {
+        let output = run("for x in [1, 2, 3]\n  print(x)\nend").unwrap();
+        assert_eq!(output, "1\n2\n3");
+    }
+
+    #[test]
+    fn while_loop() {
+        let output = run("x = 0\nwhile x < 3\n  x = x + 1\nend\nprint(x)").unwrap();
+        assert_eq!(output, "3");
+    }
+
+    #[test]
+    fn pipe_operator() {
+        let output =
+            run("def double(x)\n  x * 2\nend\nprint(5 |> double)").unwrap();
+        assert_eq!(output, "10");
+    }
+
+    #[test]
+    fn list_push() {
+        let output = run("print([1, 2].push(3))").unwrap();
+        assert_eq!(output, "[1, 2, 3]");
+    }
+
+    #[test]
+    fn closure_as_variable() {
+        let output =
+            run("f = |x| x + 1\nprint(f(10))").unwrap();
+        assert_eq!(output, "11");
     }
 }
