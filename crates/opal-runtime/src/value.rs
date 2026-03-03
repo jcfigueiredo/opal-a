@@ -28,6 +28,12 @@ pub enum Value {
     Instance(InstanceId),
     /// Module
     Module(ModuleId),
+    /// Result Ok variant
+    Ok(Box<Value>),
+    /// Result Error variant
+    Error(Box<Value>),
+    /// Option Some variant
+    Some(Box<Value>),
 }
 
 /// Opaque ID for a class
@@ -71,6 +77,9 @@ impl fmt::Display for Value {
             Value::Class(id) => write!(f, "<class #{}>", id.0),
             Value::Instance(id) => write!(f, "<instance #{}>", id.0),
             Value::Module(id) => write!(f, "<module #{}>", id.0),
+            Value::Ok(v) => write!(f, "Ok({})", v),
+            Value::Error(v) => write!(f, "Error({})", v),
+            Value::Some(v) => write!(f, "Some({})", v),
         }
     }
 }

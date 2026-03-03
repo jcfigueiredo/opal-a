@@ -16,6 +16,8 @@ pub enum EvalError {
     RuntimeError(String),
     #[error("return")]
     Return(Value),
+    #[error("{0}")]
+    Raise(Value),
 }
 
 /// A stored user-defined function
@@ -256,6 +258,58 @@ impl<W: Write> Interpreter<W> {
             StmtKind::NeedsDecl(_) => {
                 // Handled during class definition parsing, not at runtime
             }
+            StmtKind::Requires { condition, message } => {
+                let cond = self.eval_expr(condition)?;
+                if !cond.is_truthy() {
+                    let msg = match message {
+                        Some(m) => self.eval_expr(m)?,
+                        None => Value::String("requires condition failed".into()),
+                    };
+                    return Err(EvalError::Raise(msg));
+                }
+            }
+            StmtKind::TryCatch {
+                body,
+                catches,
+                ensure,
+            } => {
+                let result = self.eval_block(body);
+
+                match result {
+                    Err(EvalError::Raise(val)) => {
+                        // Use first matching catch (for now, all catches match)
+                        if let Some(catch) = catches.first() {
+                            self.env.push_scope();
+                            if let Some(var) = &catch.var_name {
+                                self.env.set(var.clone(), val.clone());
+                            }
+                            self.eval_block(&catch.body)?;
+                            self.env.pop_scope();
+                        } else {
+                            // Re-raise if no catch matched
+                            if let Some(ensure_body) = ensure {
+                                self.eval_block(ensure_body)?;
+                            }
+                            return Err(EvalError::Raise(val));
+                        }
+                    }
+                    Err(e) => {
+                        if let Some(ensure_body) = ensure {
+                            self.eval_block(ensure_body)?;
+                        }
+                        return Err(e);
+                    }
+                    Ok(_) => {}
+                }
+
+                if let Some(ensure_body) = ensure {
+                    self.eval_block(ensure_body)?;
+                }
+            }
+            StmtKind::Raise(expr) => {
+                let val = self.eval_expr(expr)?;
+                return Err(EvalError::Raise(val));
+            }
         }
         Ok(())
     }
@@ -363,6 +417,81 @@ impl<W: Write> Interpreter<W> {
             ExprKind::MemberAccess { .. } => Err(EvalError::TypeError(
                 "bare member access not supported — use method call syntax".into(),
             )),
+
+            ExprKind::Match { subject, cases } => {
+                let val = self.eval_expr(subject)?;
+                for case in cases {
+                    if let Some(bindings) = self.match_pattern(&case.pattern, &val) {
+                        self.env.push_scope();
+                        for (name, bound_val) in bindings {
+                            self.env.set(name, bound_val);
+                        }
+                        let result = self.eval_block(&case.body);
+                        self.env.pop_scope();
+                        return result;
+                    }
+                }
+                Ok(Value::Null) // no match
+            }
+        }
+    }
+
+    /// Try to match a value against a pattern. Returns bindings on success.
+    fn match_pattern(&self, pattern: &Pattern, value: &Value) -> Option<Vec<(String, Value)>> {
+        match pattern {
+            Pattern::Wildcard => Some(vec![]),
+            Pattern::Identifier(name) => Some(vec![(name.clone(), value.clone())]),
+            Pattern::Constructor(name, sub_patterns) => match (name.as_str(), value) {
+                ("Ok", Value::Ok(inner)) => {
+                    if sub_patterns.len() == 1 {
+                        self.match_pattern(&sub_patterns[0], inner)
+                    } else {
+                        None
+                    }
+                }
+                ("Error", Value::Error(inner)) => {
+                    if sub_patterns.len() == 1 {
+                        self.match_pattern(&sub_patterns[0], inner)
+                    } else {
+                        None
+                    }
+                }
+                ("Some", Value::Some(inner)) => {
+                    if sub_patterns.len() == 1 {
+                        self.match_pattern(&sub_patterns[0], inner)
+                    } else {
+                        None
+                    }
+                }
+                ("None", Value::Null) if sub_patterns.is_empty() => Some(vec![]),
+                _ => None,
+            },
+            Pattern::Literal(expr) => {
+                // Compare literal values
+                match &expr.kind {
+                    ExprKind::Integer(n) => match value {
+                        Value::Integer(v) if v == n => Some(vec![]),
+                        _ => None,
+                    },
+                    ExprKind::Float(n) => match value {
+                        Value::Float(v) if v == n => Some(vec![]),
+                        _ => None,
+                    },
+                    ExprKind::String(s) => match value {
+                        Value::String(v) if v == s => Some(vec![]),
+                        _ => None,
+                    },
+                    ExprKind::Bool(b) => match value {
+                        Value::Bool(v) if v == b => Some(vec![]),
+                        _ => None,
+                    },
+                    ExprKind::Null => match value {
+                        Value::Null => Some(vec![]),
+                        _ => None,
+                    },
+                    _ => None,
+                }
+            }
         }
     }
 
@@ -390,6 +519,24 @@ impl<W: Write> Interpreter<W> {
         let mut arg_values = Vec::new();
         for arg in args {
             arg_values.push(self.eval_expr(&arg.value)?);
+        }
+
+        // Builtin constructors: Ok(), Error(), Some()
+        match func_name.as_str() {
+            "Ok" if arg_values.len() == 1 => {
+                return Ok(Value::Ok(Box::new(arg_values.into_iter().next().unwrap())));
+            }
+            "Error" if arg_values.len() == 1 => {
+                return Ok(Value::Error(Box::new(
+                    arg_values.into_iter().next().unwrap(),
+                )));
+            }
+            "Some" if arg_values.len() == 1 => {
+                return Ok(Value::Some(Box::new(
+                    arg_values.into_iter().next().unwrap(),
+                )));
+            }
+            _ => {}
         }
 
         // Try stdlib builtins
@@ -1078,5 +1225,112 @@ end
         assert_eq!(lines.len(), 2);
         assert!(lines[0].starts_with("Area: 78.53"));
         assert_eq!(lines[1], "Area: 12.0");
+    }
+
+    // === Slice 5: Error handling tests ===
+
+    #[test]
+    fn result_ok() {
+        let output = run("print(Ok(42))").unwrap();
+        assert_eq!(output, "Ok(42)");
+    }
+
+    #[test]
+    fn result_error() {
+        let output = run("print(Error(\"oops\"))").unwrap();
+        assert_eq!(output, "Error(oops)");
+    }
+
+    #[test]
+    fn match_result() {
+        let output = run(r#"
+x = Ok(42)
+match x
+  case Ok(v)
+    print(f"Got: {v}")
+  case Error(e)
+    print(f"Err: {e}")
+end
+"#)
+        .unwrap();
+        assert_eq!(output, "Got: 42");
+    }
+
+    #[test]
+    fn match_error_case() {
+        let output = run(r#"
+x = Error("bad")
+match x
+  case Ok(v)
+    print(v)
+  case Error(e)
+    print(f"Error: {e}")
+end
+"#)
+        .unwrap();
+        assert_eq!(output, "Error: bad");
+    }
+
+    #[test]
+    fn requires_pass() {
+        let output = run(r#"
+def divide(a, b)
+  requires b != 0, "division by zero"
+  Ok(a / b)
+end
+match divide(10.0, 2.0)
+  case Ok(result)
+    print(f"Result: {result}")
+  case Error(msg)
+    print(f"Error: {msg}")
+end
+"#)
+        .unwrap();
+        assert_eq!(output, "Result: 5.0");
+    }
+
+    #[test]
+    fn requires_fail() {
+        let result = run(r#"
+def divide(a, b)
+  requires b != 0, "division by zero"
+  Ok(a / b)
+end
+divide(10.0, 0)
+"#);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("division by zero"));
+    }
+
+    #[test]
+    fn try_catch() {
+        let output = run(r#"
+try
+  raise "something went wrong"
+catch as e
+  print(f"Caught: {e}")
+end
+"#)
+        .unwrap();
+        assert_eq!(output, "Caught: something went wrong");
+    }
+
+    #[test]
+    fn error_handling_target_program() {
+        let output = run(r#"
+def divide(a: Float, b: Float) -> Result[Float, String]
+  requires b != 0.0, "division by zero"
+  Ok(a / b)
+end
+
+match divide(10.0, 3.0)
+  case Ok(result)
+    print(f"Result: {result}")
+  case Error(msg)
+    print(f"Error: {msg}")
+end
+"#)
+        .unwrap();
+        assert!(output.starts_with("Result: 3.33"));
     }
 }

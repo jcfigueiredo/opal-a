@@ -1,0 +1,6 @@
+# expect: Caught: oops
+try
+  raise "oops"
+catch as e
+  print(f"Caught: {e}")
+end

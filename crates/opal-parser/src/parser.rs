@@ -171,10 +171,24 @@ impl<'src> Parser<'src> {
         let params = self.parse_params()?;
         self.expect_token(&Token::RParen, ")")?;
 
-        // Optional return type: -> Type
+        // Optional return type: -> Type or -> Type[T, E]
         let return_type = if self.check(&Token::Arrow) {
             self.advance();
-            Some(self.expect_identifier()?)
+            let name = self.expect_identifier()?;
+            // Skip generic params like [Float, String] — not enforced yet
+            if self.check(&Token::LBracket) {
+                self.advance();
+                let mut depth = 1;
+                while depth > 0 && !self.is_at_end() {
+                    if self.check(&Token::LBracket) {
+                        depth += 1;
+                    } else if self.check(&Token::RBracket) {
+                        depth -= 1;
+                    }
+                    self.advance();
+                }
+            }
+            Some(name)
         } else {
             None
         };
@@ -419,9 +433,7 @@ impl<'src> Parser<'src> {
             None
         };
         self.expect_statement_end()?;
-        let end = message
-            .as_ref()
-            .map_or(condition.span.end, |m| m.span.end);
+        let end = message.as_ref().map_or(condition.span.end, |m| m.span.end);
         Ok(Stmt {
             kind: StmtKind::Requires { condition, message },
             span: Span {
@@ -1538,10 +1550,7 @@ mod tests {
     #[test]
     fn parse_requires() {
         let prog = parse("requires x > 0, \"must be positive\"");
-        assert!(matches!(
-            prog.statements[0].kind,
-            StmtKind::Requires { .. }
-        ));
+        assert!(matches!(prog.statements[0].kind, StmtKind::Requires { .. }));
     }
 
     #[test]
@@ -1553,9 +1562,6 @@ mod tests {
     #[test]
     fn parse_try_catch() {
         let prog = parse("try\n  print(1)\ncatch as e\n  print(e)\nend");
-        assert!(matches!(
-            prog.statements[0].kind,
-            StmtKind::TryCatch { .. }
-        ));
+        assert!(matches!(prog.statements[0].kind, StmtKind::TryCatch { .. }));
     }
 }
