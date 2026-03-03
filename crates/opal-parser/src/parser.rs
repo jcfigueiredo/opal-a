@@ -196,12 +196,11 @@ impl<'src> Parser<'src> {
 
     fn parse_return_statement(&mut self, start: Span) -> Result<Stmt, ParseError> {
         self.advance(); // consume 'return'
-        let value =
-            if self.is_at_end() || self.check(&Token::Newline) || self.check(&Token::End) {
-                None
-            } else {
-                Some(self.parse_expression(0)?)
-            };
+        let value = if self.is_at_end() || self.check(&Token::Newline) || self.check(&Token::End) {
+            None
+        } else {
+            Some(self.parse_expression(0)?)
+        };
         self.expect_statement_end()?;
         let end = value.as_ref().map_or(start.end, |e| e.span.end);
         Ok(Stmt {

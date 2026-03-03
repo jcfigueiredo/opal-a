@@ -1,0 +1,5 @@
+# expect: 3628800
+def factorial(n: Int) -> Int
+  if n <= 1 then 1 else n * factorial(n - 1) end
+end
+print(factorial(10))

@@ -19,6 +19,7 @@ pub enum EvalError {
 /// A stored user-defined function
 #[derive(Clone)]
 struct StoredFunction {
+    #[allow(dead_code)]
     name: String,
     params: Vec<String>,
     body: Vec<Stmt>,
@@ -146,10 +147,8 @@ impl<W: Write> Interpreter<W> {
                 }
 
                 // Try user-defined functions
-                if let Some(value) = self.env.get(&func_name).cloned() {
-                    if let Value::Function(id) = value {
-                        return self.call_function(id, &func_name, arg_values);
-                    }
+                if let Some(Value::Function(id)) = self.env.get(&func_name).cloned() {
+                    return self.call_function(id, &func_name, arg_values);
                 }
 
                 Err(EvalError::UndefinedVariable(func_name))
@@ -455,8 +454,7 @@ print(f"Hello, {name}!")
 
     #[test]
     fn function_no_args() {
-        let output =
-            run("def greeting()\n  return \"hello\"\nend\nprint(greeting())").unwrap();
+        let output = run("def greeting()\n  return \"hello\"\nend\nprint(greeting())").unwrap();
         assert_eq!(output, "hello");
     }
 
