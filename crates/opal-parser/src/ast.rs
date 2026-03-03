@@ -87,7 +87,10 @@ pub enum ExprKind {
     /// List literal: `[1, 2, 3]`
     List(Vec<Expr>),
     /// Closure: `|params| expr` or `do |params| ... end`
-    Closure { params: Vec<String>, body: Vec<Stmt> },
+    Closure {
+        params: Vec<String>,
+        body: Vec<Stmt>,
+    },
 }
 
 #[derive(Debug, Clone)]

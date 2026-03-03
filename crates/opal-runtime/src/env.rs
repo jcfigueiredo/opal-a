@@ -30,6 +30,20 @@ impl Environment {
         }
     }
 
+    /// Assign to an existing variable in any scope (walks up from innermost).
+    /// If not found, sets in current scope (like `set`).
+    pub fn assign(&mut self, name: String, value: Value) {
+        for scope in self.scopes.iter_mut().rev() {
+            if scope.contains_key(&name) {
+                scope.insert(name, value);
+                return;
+            }
+        }
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.insert(name, value);
+        }
+    }
+
     pub fn push_scope(&mut self) {
         self.scopes.push(HashMap::new());
     }

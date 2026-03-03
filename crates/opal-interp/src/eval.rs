@@ -74,7 +74,7 @@ impl<W: Write> Interpreter<W> {
             }
             StmtKind::Assign { name, value } => {
                 let val = self.eval_expr(value)?;
-                self.env.set(name.clone(), val);
+                self.env.assign(name.clone(), val);
             }
             StmtKind::Let { name, value } => {
                 let val = self.eval_expr(value)?;
@@ -106,11 +106,7 @@ impl<W: Write> Interpreter<W> {
                 let iter_val = self.eval_expr(iterable)?;
                 let items = match iter_val {
                     Value::List(items) => items,
-                    _ => {
-                        return Err(EvalError::TypeError(
-                            "for loop requires a list".into(),
-                        ))
-                    }
+                    _ => return Err(EvalError::TypeError("for loop requires a list".into())),
                 };
                 for item in items {
                     self.env.push_scope();
@@ -252,9 +248,7 @@ impl<W: Write> Interpreter<W> {
         }
 
         // Try stdlib builtins
-        if let Some(result) =
-            opal_stdlib::call_builtin(&func_name, &arg_values, &mut self.writer)
-        {
+        if let Some(result) = opal_stdlib::call_builtin(&func_name, &arg_values, &mut self.writer) {
             return match result {
                 Ok(opal_stdlib::BuiltinResult::Value(v)) => Ok(v),
                 Ok(opal_stdlib::BuiltinResult::Void) => Ok(Value::Null),
@@ -318,7 +312,7 @@ impl<W: Write> Interpreter<W> {
                     _ => {
                         return Err(EvalError::TypeError(
                             "map() argument must be a closure".into(),
-                        ))
+                        ));
                     }
                 };
                 let mut result = Vec::new();
@@ -338,7 +332,7 @@ impl<W: Write> Interpreter<W> {
                     _ => {
                         return Err(EvalError::TypeError(
                             "filter() argument must be a closure".into(),
-                        ))
+                        ));
                     }
                 };
                 let mut result = Vec::new();
@@ -362,7 +356,7 @@ impl<W: Write> Interpreter<W> {
                     _ => {
                         return Err(EvalError::TypeError(
                             "reduce() second argument must be a closure".into(),
-                        ))
+                        ));
                     }
                 };
                 let mut acc = initial;
@@ -416,7 +410,7 @@ impl<W: Write> Interpreter<W> {
                     _ => {
                         return Err(EvalError::TypeError(
                             "pipe target must be a function call".into(),
-                        ))
+                        ));
                     }
                 };
                 let mut arg_values = vec![arg];
@@ -425,9 +419,7 @@ impl<W: Write> Interpreter<W> {
                 }
                 if let Some(val) = self.env.get(&func_name).cloned() {
                     match val {
-                        Value::Function(id) => {
-                            self.call_function(id, &func_name, arg_values)
-                        }
+                        Value::Function(id) => self.call_function(id, &func_name, arg_values),
                         _ => Err(EvalError::TypeError(format!(
                             "pipe target '{}' is not a function",
                             func_name
@@ -474,11 +466,7 @@ impl<W: Write> Interpreter<W> {
         }
     }
 
-    fn call_closure(
-        &mut self,
-        id: ClosureId,
-        arg_values: Vec<Value>,
-    ) -> Result<Value, EvalError> {
+    fn call_closure(&mut self, id: ClosureId, arg_values: Vec<Value>) -> Result<Value, EvalError> {
         let stored = self.closures[id.0].clone();
 
         self.env.push_scope();
@@ -677,7 +665,10 @@ mod tests {
 
     #[test]
     fn fibonacci() {
-        let output = run("def fib(n)\n  if n <= 1 then n else fib(n - 1) + fib(n - 2) end\nend\nprint(fib(10))").unwrap();
+        let output = run(
+            "def fib(n)\n  if n <= 1 then n else fib(n - 1) + fib(n - 2) end\nend\nprint(fib(10))",
+        )
+        .unwrap();
         assert_eq!(output, "55");
     }
 
@@ -720,8 +711,7 @@ mod tests {
 
     #[test]
     fn list_reduce() {
-        let output =
-            run("print([1, 2, 3, 4].reduce(0) do |acc, n|\n  acc + n\nend)").unwrap();
+        let output = run("print([1, 2, 3, 4].reduce(0) do |acc, n|\n  acc + n\nend)").unwrap();
         assert_eq!(output, "10");
     }
 
@@ -754,8 +744,7 @@ print(f"Sum of even squares: {total}")
 
     #[test]
     fn pipe_operator() {
-        let output =
-            run("def double(x)\n  x * 2\nend\nprint(5 |> double)").unwrap();
+        let output = run("def double(x)\n  x * 2\nend\nprint(5 |> double)").unwrap();
         assert_eq!(output, "10");
     }
 
@@ -767,8 +756,7 @@ print(f"Sum of even squares: {total}")
 
     #[test]
     fn closure_as_variable() {
-        let output =
-            run("f = |x| x + 1\nprint(f(10))").unwrap();
+        let output = run("f = |x| x + 1\nprint(f(10))").unwrap();
         assert_eq!(output, "11");
     }
 }

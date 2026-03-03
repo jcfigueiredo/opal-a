@@ -1133,9 +1133,6 @@ mod tests {
     #[test]
     fn parse_while_loop() {
         let prog = parse("while x > 0\n  x = x - 1\nend");
-        assert!(matches!(
-            prog.statements[0].kind,
-            StmtKind::While { .. }
-        ));
+        assert!(matches!(prog.statements[0].kind, StmtKind::While { .. }));
     }
 }

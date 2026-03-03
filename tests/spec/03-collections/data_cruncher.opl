@@ -1,0 +1,8 @@
+# expect: Sum of even squares: 220
+numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+evens = numbers.filter(|n| n % 2 == 0)
+squares = evens.map(|n| n ** 2)
+total = squares.reduce(0) do |acc, n|
+  acc + n
+end
+print(f"Sum of even squares: {total}")
