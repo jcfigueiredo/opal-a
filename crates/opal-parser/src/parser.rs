@@ -91,6 +91,21 @@ impl<'src> Parser<'src> {
             return self.parse_from_import(start);
         }
 
+        // Requires precondition
+        if self.check(&Token::Requires) {
+            return self.parse_requires(start);
+        }
+
+        // Try/catch
+        if self.check(&Token::Try) {
+            return self.parse_try_catch(start);
+        }
+
+        // Raise
+        if self.check(&Token::Raise) {
+            return self.parse_raise(start);
+        }
+
         // Needs declaration (inside class body)
         if self.check(&Token::Needs) {
             return self.parse_needs_decl(start);
@@ -394,6 +409,173 @@ impl<'src> Parser<'src> {
         })
     }
 
+    fn parse_requires(&mut self, start: Span) -> Result<Stmt, ParseError> {
+        self.advance(); // consume 'requires'
+        let condition = self.parse_expression(0)?;
+        let message = if self.check(&Token::Comma) {
+            self.advance();
+            Some(self.parse_expression(0)?)
+        } else {
+            None
+        };
+        self.expect_statement_end()?;
+        let end = message
+            .as_ref()
+            .map_or(condition.span.end, |m| m.span.end);
+        Ok(Stmt {
+            kind: StmtKind::Requires { condition, message },
+            span: Span {
+                start: start.start,
+                end,
+            },
+        })
+    }
+
+    fn parse_try_catch(&mut self, start: Span) -> Result<Stmt, ParseError> {
+        self.advance(); // consume 'try'
+        self.expect_newline()?;
+        let body = self.parse_block()?;
+
+        let mut catches = Vec::new();
+        while self.check(&Token::Catch) {
+            self.advance();
+            // Optional: catch Type as var
+            let (error_type, var_name) = if self.check(&Token::Newline) || self.check(&Token::As) {
+                let var = if self.check(&Token::As) {
+                    self.advance();
+                    Some(self.expect_identifier()?)
+                } else {
+                    None
+                };
+                (None, var)
+            } else {
+                let etype = self.expect_identifier()?;
+                let var = if self.check(&Token::As) {
+                    self.advance();
+                    Some(self.expect_identifier()?)
+                } else {
+                    None
+                };
+                (Some(etype), var)
+            };
+            self.expect_newline()?;
+            let catch_body = self.parse_block()?;
+            catches.push(CatchClause {
+                error_type,
+                var_name,
+                body: catch_body,
+            });
+        }
+
+        let ensure = if self.check(&Token::Ensure) {
+            self.advance();
+            self.expect_newline()?;
+            Some(self.parse_block()?)
+        } else {
+            None
+        };
+
+        self.expect_token(&Token::End, "end")?;
+        let end = self.previous_span().end;
+        Ok(Stmt {
+            kind: StmtKind::TryCatch {
+                body,
+                catches,
+                ensure,
+            },
+            span: Span {
+                start: start.start,
+                end,
+            },
+        })
+    }
+
+    fn parse_raise(&mut self, start: Span) -> Result<Stmt, ParseError> {
+        self.advance(); // consume 'raise'
+        let expr = self.parse_expression(0)?;
+        self.expect_statement_end()?;
+        let end = expr.span.end;
+        Ok(Stmt {
+            kind: StmtKind::Raise(expr),
+            span: Span {
+                start: start.start,
+                end,
+            },
+        })
+    }
+
+    fn parse_match_expression(&mut self) -> Result<Expr, ParseError> {
+        let start = self.current_span();
+        self.advance(); // consume 'match'
+        let subject = self.parse_expression(0)?;
+        self.expect_newline()?;
+        self.skip_newlines();
+
+        let mut cases = Vec::new();
+        while self.check(&Token::Case) {
+            self.advance();
+            let pattern = self.parse_pattern()?;
+            self.expect_newline()?;
+            let body = self.parse_block()?;
+            cases.push(MatchCase { pattern, body });
+            self.skip_newlines();
+        }
+
+        self.expect_token(&Token::End, "end")?;
+        let end = self.previous_span().end;
+        Ok(Expr {
+            kind: ExprKind::Match {
+                subject: Box::new(subject),
+                cases,
+            },
+            span: Span {
+                start: start.start,
+                end,
+            },
+        })
+    }
+
+    fn parse_pattern(&mut self) -> Result<Pattern, ParseError> {
+        // Wildcard: _
+        if self.peek_is_identifier() {
+            let name = self.extract_text(&self.current_span());
+            if name == "_" {
+                self.advance();
+                return Ok(Pattern::Wildcard);
+            }
+        }
+
+        // Constructor or identifier
+        if self.peek_is_identifier() {
+            let name = self.extract_text(&self.current_span());
+            self.advance();
+
+            // Constructor: Name(patterns)
+            if self.check(&Token::LParen) {
+                self.advance();
+                let mut patterns = Vec::new();
+                if !self.check(&Token::RParen) {
+                    loop {
+                        patterns.push(self.parse_pattern()?);
+                        if !self.check(&Token::Comma) {
+                            break;
+                        }
+                        self.advance();
+                    }
+                }
+                self.expect_token(&Token::RParen, ")")?;
+                return Ok(Pattern::Constructor(name, patterns));
+            }
+
+            // Plain identifier — could be a binding or a literal-like name
+            return Ok(Pattern::Identifier(name));
+        }
+
+        // Literal patterns (integers, strings, bools, null)
+        let expr = self.parse_primary()?;
+        Ok(Pattern::Literal(expr))
+    }
+
     // --- Expressions (Pratt parser) ---
 
     pub fn parse_expression(&mut self, min_precedence: u8) -> Result<Expr, ParseError> {
@@ -573,6 +755,7 @@ impl<'src> Parser<'src> {
                 })
             }
             Some(Token::If) => self.parse_if_expression(),
+            Some(Token::Match) => self.parse_match_expression(),
             Some(Token::LParen) => {
                 self.advance();
                 let expr = self.parse_expression(0)?;
@@ -718,6 +901,9 @@ impl<'src> Parser<'src> {
         while !self.check(&Token::End)
             && !self.check(&Token::Else)
             && !self.check(&Token::Elsif)
+            && !self.check(&Token::Case)
+            && !self.check(&Token::Catch)
+            && !self.check(&Token::Ensure)
             && !self.is_at_end()
         {
             stmts.push(self.parse_statement()?);
@@ -1035,6 +1221,9 @@ impl<'src> Parser<'src> {
             || self.check(&Token::End)
             || self.check(&Token::Else)
             || self.check(&Token::Elsif)
+            || self.check(&Token::Case)
+            || self.check(&Token::Catch)
+            || self.check(&Token::Ensure)
         {
             if self.check(&Token::Newline) {
                 self.advance();
@@ -1338,5 +1527,35 @@ mod tests {
             },
             _ => panic!("expected func def"),
         }
+    }
+
+    #[test]
+    fn parse_match_expression() {
+        let prog = parse("match x\n  case Ok(v)\n    print(v)\n  case Error(e)\n    print(e)\nend");
+        assert_eq!(prog.statements.len(), 1);
+    }
+
+    #[test]
+    fn parse_requires() {
+        let prog = parse("requires x > 0, \"must be positive\"");
+        assert!(matches!(
+            prog.statements[0].kind,
+            StmtKind::Requires { .. }
+        ));
+    }
+
+    #[test]
+    fn parse_raise() {
+        let prog = parse("raise \"error\"");
+        assert!(matches!(prog.statements[0].kind, StmtKind::Raise(_)));
+    }
+
+    #[test]
+    fn parse_try_catch() {
+        let prog = parse("try\n  print(1)\ncatch as e\n  print(e)\nend");
+        assert!(matches!(
+            prog.statements[0].kind,
+            StmtKind::TryCatch { .. }
+        ));
     }
 }
