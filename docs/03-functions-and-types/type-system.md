@@ -241,7 +241,7 @@ type Result[T] = T | Error
 type Pair[A, B] = (A, B)
 
 # Function type alias
-type Handler = |Request, Response| -> Null
+type Handler = Fn(Request, Response) -> Null
 
 # Usage
 def find_user(id: UserID) -> Result[User]

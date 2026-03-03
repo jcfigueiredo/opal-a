@@ -90,14 +90,14 @@ show_x()  # => 20 (not 10)
 
 ## 4. Closure Types
 
-Closures can be typed using the `|ParamTypes| -> ReturnType` syntax:
+Closures can be typed using the `Fn(ParamTypes) -> ReturnType` syntax:
 
 ```opal
 # Closure type annotation
-transform: |Int32| -> Int32 = |x| x * 2
+transform: Fn(Int32) -> Int32 = |x| x * 2
 
 # As a function parameter type
-def apply(fn: |Int32| -> Int32, value: Int32) -> Int32
+def apply(fn: Fn(Int32) -> Int32, value: Int32) -> Int32
   fn(value)
 end
 
