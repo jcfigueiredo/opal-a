@@ -125,6 +125,11 @@ pub enum StmtKind {
     Break,
     /// Skip to next iteration of a loop
     Next,
+    /// Parallel assignment: `a, b = 1, 2`
+    ParallelAssign {
+        names: Vec<String>,
+        values: Vec<Expr>,
+    },
 }
 
 /// An expression

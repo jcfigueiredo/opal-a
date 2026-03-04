@@ -501,6 +501,17 @@ impl<W: Write> Interpreter<W> {
                     ));
                 }
             }
+            StmtKind::ParallelAssign { names, values } => {
+                // Evaluate all RHS values first (enables swapping)
+                let mut vals = Vec::new();
+                for value in values {
+                    vals.push(self.eval_expr(value)?);
+                }
+                // Then assign to names
+                for (name, val) in names.iter().zip(vals) {
+                    self.env.assign(name.clone(), val);
+                }
+            }
             StmtKind::Let { name, value } => {
                 let val = self.eval_expr(value)?;
                 self.env.set(name.clone(), val);
@@ -4297,5 +4308,15 @@ print("hi" is NumOrStr)"#).unwrap(), "true");
     #[test]
     fn suffix_if_break() {
         assert_eq!(run("sum = 0\nfor i in 1..100\n  break if i > 5\n  sum += i\nend\nprint(sum)").unwrap(), "15");
+    }
+
+    #[test]
+    fn parallel_assign() {
+        assert_eq!(run("a, b = 10, 20\nprint(f\"{a} {b}\")").unwrap(), "10 20");
+    }
+
+    #[test]
+    fn parallel_assign_swap() {
+        assert_eq!(run("x, y = 1, 2\nx, y = y, x\nprint(f\"{x} {y}\")").unwrap(), "2 1");
     }
 }

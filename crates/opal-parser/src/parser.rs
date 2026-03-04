@@ -238,6 +238,32 @@ impl<'src> Parser<'src> {
             }
         }
 
+        // Check for parallel assignment: `a, b = 1, 2`
+        if self.check(&Token::Comma) {
+            if let ExprKind::Identifier(first_name) = &expr.kind {
+                let mut names = vec![first_name.clone()];
+                while self.check(&Token::Comma) {
+                    self.advance(); // consume comma
+                    names.push(self.expect_identifier()?);
+                }
+                self.expect_token(&Token::Eq, "=")?;
+                let mut values = vec![self.parse_expression(0)?];
+                while self.check(&Token::Comma) {
+                    self.advance(); // consume comma
+                    values.push(self.parse_expression(0)?);
+                }
+                self.expect_statement_end()?;
+                let end = values.last().map_or(start.end, |v| v.span.end);
+                return Ok(Stmt {
+                    kind: StmtKind::ParallelAssign { names, values },
+                    span: Span {
+                        start: start.start,
+                        end,
+                    },
+                });
+            }
+        }
+
         if self.check(&Token::Eq) {
             // This is an assignment
             if let ExprKind::Identifier(name) = expr.kind {
