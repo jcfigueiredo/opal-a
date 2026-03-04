@@ -91,6 +91,11 @@ impl<'src> Parser<'src> {
             return self.parse_from_import(start);
         }
 
+        // Extern FFI block
+        if self.check(&Token::Extern) {
+            return self.parse_extern_def(start);
+        }
+
         // Requires precondition
         if self.check(&Token::Requires) {
             return self.parse_requires(start);
@@ -446,6 +451,85 @@ impl<'src> Parser<'src> {
         let end = self.previous_span().end;
         Ok(Stmt {
             kind: StmtKind::FromImport { module_path, names },
+            span: Span {
+                start: start.start,
+                end,
+            },
+        })
+    }
+
+    fn parse_extern_def(&mut self, start: Span) -> Result<Stmt, ParseError> {
+        self.advance(); // consume 'extern'
+
+        // Parse library name as a string literal
+        let lib_span = self.current_span();
+        let lib_name = match self.peek() {
+            Some(Token::DoubleString | Token::SingleString) => {
+                let name = self.extract_string_content(&lib_span);
+                self.advance();
+                name
+            }
+            _ => {
+                return Err(ParseError::UnexpectedToken {
+                    found: self.peek().cloned().unwrap_or(Token::Newline),
+                    expected: "string literal for extern library name".into(),
+                    span: lib_span,
+                });
+            }
+        };
+
+        self.expect_newline()?;
+        self.skip_newlines();
+
+        let mut declarations = Vec::new();
+
+        while !self.check(&Token::End) && !self.is_at_end() {
+            // Each declaration is: def name(params) -> ReturnType
+            self.expect_token(&Token::Def, "def")?;
+            let name = self.expect_identifier()?;
+            self.expect_token(&Token::LParen, "(")?;
+            let params = self.parse_params()?;
+            self.expect_token(&Token::RParen, ")")?;
+
+            // Optional return type: -> Type or -> Type[T, E]
+            let return_type = if self.check(&Token::Arrow) {
+                self.advance();
+                let type_name = self.expect_identifier()?;
+                // Skip generic params like [Float, String]
+                if self.check(&Token::LBracket) {
+                    self.advance();
+                    let mut depth = 1;
+                    while depth > 0 && !self.is_at_end() {
+                        if self.check(&Token::LBracket) {
+                            depth += 1;
+                        } else if self.check(&Token::RBracket) {
+                            depth -= 1;
+                        }
+                        self.advance();
+                    }
+                }
+                Some(type_name)
+            } else {
+                None
+            };
+
+            declarations.push(ExternDecl {
+                name,
+                params,
+                return_type,
+            });
+
+            self.skip_newlines();
+        }
+
+        self.expect_token(&Token::End, "end")?;
+        let end = self.previous_span().end;
+
+        Ok(Stmt {
+            kind: StmtKind::ExternDef {
+                lib_name,
+                declarations,
+            },
             span: Span {
                 start: start.start,
                 end,
@@ -1847,5 +1931,18 @@ mod tests {
     fn parse_try_catch() {
         let prog = parse("try\n  print(1)\ncatch as e\n  print(e)\nend");
         assert!(matches!(prog.statements[0].kind, StmtKind::TryCatch { .. }));
+    }
+
+    #[test]
+    fn parse_extern_def() {
+        let prog = parse("extern \"http\"\n  def listen(port: Int) -> Null\n  def serve(app: App) -> Null\nend");
+        match &prog.statements[0].kind {
+            StmtKind::ExternDef { lib_name, declarations } => {
+                assert_eq!(lib_name, "http");
+                assert_eq!(declarations.len(), 2);
+                assert_eq!(declarations[0].name, "listen");
+            }
+            _ => panic!("expected extern def"),
+        }
     }
 }
