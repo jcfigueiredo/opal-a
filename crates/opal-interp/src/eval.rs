@@ -2343,6 +2343,21 @@ impl<W: Write> Interpreter<W> {
                 let chars: Vec<Value> = s.chars().map(|c| Value::String(c.to_string())).collect();
                 Ok(Value::List(chars))
             }
+            (Value::String(s), "to_int") => {
+                match s.trim().parse::<i64>() {
+                    Ok(n) => Ok(Value::Integer(n)),
+                    Err(_) => Ok(Value::Null),
+                }
+            }
+            (Value::String(s), "to_float") => {
+                match s.trim().parse::<f64>() {
+                    Ok(n) => Ok(Value::Float(n)),
+                    Err(_) => Ok(Value::Null),
+                }
+            }
+            (Value::String(s), "reverse") => {
+                Ok(Value::String(s.chars().rev().collect()))
+            }
 
             // Dict methods
             (Value::Dict(entries), "length") => Ok(Value::Integer(entries.len() as i64)),
@@ -2391,6 +2406,34 @@ impl<W: Write> Interpreter<W> {
                     new_entries.push((key, value));
                 }
                 Ok(Value::Dict(new_entries))
+            }
+            (Value::Dict(entries), "has_key") => {
+                if args.len() != 1 {
+                    return Err(EvalError::TypeError("has_key() takes exactly 1 argument".into()));
+                }
+                let key = match &args[0] {
+                    Value::String(s) => s.clone(),
+                    _ => return Err(EvalError::TypeError("has_key() argument must be a string".into())),
+                };
+                Ok(Value::Bool(entries.iter().any(|(k, _)| k == &key)))
+            }
+            (Value::Dict(entries), "merge") => {
+                if args.len() != 1 {
+                    return Err(EvalError::TypeError("merge() takes exactly 1 argument".into()));
+                }
+                let other = match &args[0] {
+                    Value::Dict(d) => d.clone(),
+                    _ => return Err(EvalError::TypeError("merge() argument must be a dict".into())),
+                };
+                let mut merged = entries.clone();
+                for (key, value) in other {
+                    if let Some(entry) = merged.iter_mut().find(|(k, _)| k == &key) {
+                        entry.1 = value;
+                    } else {
+                        merged.push((key, value));
+                    }
+                }
+                Ok(Value::Dict(merged))
             }
 
             // Range methods
@@ -3360,6 +3403,14 @@ fn eval_binary_op(op: BinOp, left: Value, right: Value) -> Result<Value, EvalErr
         // String concatenation
         (BinOp::Add, Value::String(a), Value::String(b)) => {
             Ok(Value::String(format!("{}{}", a, b)))
+        }
+
+        // String repeat
+        (BinOp::Mul, Value::String(s), Value::Integer(n)) => {
+            Ok(Value::String(s.repeat(*n as usize)))
+        }
+        (BinOp::Mul, Value::Integer(n), Value::String(s)) => {
+            Ok(Value::String(s.repeat(*n as usize)))
         }
 
         // Comparison
