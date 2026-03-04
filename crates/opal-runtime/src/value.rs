@@ -46,6 +46,8 @@ pub enum Value {
     NativeObject(NativeObjectId),
     /// Native function from an extern block (ID into interpreter's native_functions table)
     NativeFunction(NativeFunctionId),
+    /// Macro (ID into interpreter's macro table)
+    Macro(MacroId),
     /// Dict: ordered key-value pairs
     Dict(Vec<(String, Value)>),
     /// Range: start..end (exclusive) or start...end (inclusive)
@@ -88,6 +90,10 @@ pub struct NativeObjectId(pub usize);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NativeFunctionId(pub usize);
 
+/// Opaque ID for a macro definition
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MacroId(pub usize);
+
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -126,6 +132,7 @@ impl fmt::Display for Value {
             Value::Ast(id) => write!(f, "<ast #{}>", id.0),
             Value::NativeObject(id) => write!(f, "<native #{}>", id.0),
             Value::NativeFunction(id) => write!(f, "<native fn #{}>", id.0),
+            Value::Macro(id) => write!(f, "<macro #{}>", id.0),
             Value::Dict(entries) => {
                 write!(f, "{{")?;
                 for (i, (key, value)) in entries.iter().enumerate() {

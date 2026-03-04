@@ -1,4 +1,4 @@
-import Rules.{Validator, check, check_range, check_one_of}
+import Rules.{Validator, guard, check, check_range, check_one_of}
 
 class Registration
   needs name: String

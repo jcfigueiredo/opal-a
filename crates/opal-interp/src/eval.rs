@@ -4,8 +4,8 @@ use std::collections::HashMap;
 
 use opal_parser::ast::*;
 use opal_runtime::{
-    ActorDefId, ActorId, AstId, ClassId, ClosureId, Environment, FunctionId, InstanceId, ModuleId,
-    NativeFunctionId, NativeObjectId, Value,
+    ActorDefId, ActorId, AstId, ClassId, ClosureId, Environment, FunctionId, InstanceId, MacroId,
+    ModuleId, NativeFunctionId, NativeObjectId, Value,
 };
 use thiserror::Error;
 
@@ -109,7 +109,7 @@ pub struct Interpreter<W: Write> {
     current_actor: Option<ActorId>,
     /// True when loading a file-based module (functions should capture env)
     loading_module: bool,
-    macros: HashMap<String, StoredMacro>,
+    macros: Vec<StoredMacro>,
     ast_nodes: Vec<Vec<Stmt>>,
     /// Registry of FFI plugins
     plugin_registry: opal_stdlib::PluginRegistry,
@@ -136,7 +136,7 @@ impl Interpreter<std::io::Stdout> {
             current_self: None,
             current_actor: None,
             loading_module: false,
-            macros: HashMap::new(),
+            macros: Vec::new(),
             ast_nodes: Vec::new(),
             plugin_registry: opal_stdlib::PluginRegistry::new(),
             native_objects: Vec::new(),
@@ -167,7 +167,7 @@ impl<W: Write> Interpreter<W> {
             current_self: None,
             current_actor: None,
             loading_module: false,
-            macros: HashMap::new(),
+            macros: Vec::new(),
             ast_nodes: Vec::new(),
             plugin_registry: opal_stdlib::PluginRegistry::new(),
             native_objects: Vec::new(),
@@ -567,20 +567,21 @@ impl<W: Write> Interpreter<W> {
                 }
             }
             StmtKind::MacroDef { name, params, body } => {
-                self.macros.insert(
-                    name.clone(),
-                    StoredMacro {
-                        params: params.clone(),
-                        body: body.clone(),
-                    },
-                );
+                let macro_id = MacroId(self.macros.len());
+                self.macros.push(StoredMacro {
+                    params: params.clone(),
+                    body: body.clone(),
+                });
+                self.env.set(name.clone(), Value::Macro(macro_id));
             }
             StmtKind::MacroInvoke { name, args, block } => {
-                let mac = self
-                    .macros
-                    .get(name)
-                    .cloned()
-                    .ok_or_else(|| EvalError::UndefinedVariable(format!("@{}", name)))?;
+                let macro_id = match self.env.get(name) {
+                    Some(Value::Macro(id)) => *id,
+                    _ => {
+                        return Err(EvalError::UndefinedVariable(format!("@{}", name)));
+                    }
+                };
+                let mac = self.macros[macro_id.0].clone();
 
                 // Build AST argument map: param name -> AST value
                 let mut ast_bindings = HashMap::new();

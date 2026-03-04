@@ -1,6 +1,6 @@
 # expect: 3 passed, 0 failed
-import Eventbus.{EventBus}
-import Testing
+import Eventbus.{EventBus, emit, on}
+import Testing.{assert, assert_eq}
 
 # --- Test 1: Events get logged ---
 bus = EventBus.new()
