@@ -81,6 +81,11 @@ impl<'src> Parser<'src> {
             return self.parse_class_def(start);
         }
 
+        // Protocol definition
+        if self.check(&Token::Protocol) {
+            return self.parse_protocol_def(start);
+        }
+
         // Module definition
         if self.check(&Token::Module) {
             return self.parse_module_def(start);
@@ -357,6 +362,20 @@ impl<'src> Parser<'src> {
     fn parse_class_def(&mut self, start: Span) -> Result<Stmt, ParseError> {
         self.advance(); // consume 'class'
         let name = self.expect_identifier()?;
+
+        // Parse optional: implements Protocol1, Protocol2
+        let mut implements = Vec::new();
+        if self.check(&Token::Implements) {
+            self.advance();
+            loop {
+                implements.push(self.expect_identifier()?);
+                if !self.check(&Token::Comma) {
+                    break;
+                }
+                self.advance();
+            }
+        }
+
         self.expect_newline()?;
         self.skip_newlines();
 
@@ -392,6 +411,7 @@ impl<'src> Parser<'src> {
                 name,
                 needs,
                 methods,
+                implements,
             },
             span: Span {
                 start: start.start,
@@ -416,6 +436,102 @@ impl<'src> Parser<'src> {
                 name,
                 type_annotation,
             }),
+            span: Span {
+                start: start.start,
+                end,
+            },
+        })
+    }
+
+    fn parse_protocol_def(&mut self, start: Span) -> Result<Stmt, ParseError> {
+        self.advance(); // consume 'protocol'
+        let name = self.expect_identifier()?;
+        self.expect_newline()?;
+        self.skip_newlines();
+
+        let mut methods = Vec::new();
+
+        while !self.check(&Token::End) && !self.is_at_end() {
+            if self.check(&Token::Def) {
+                self.advance(); // consume 'def'
+                let method_name = self.expect_identifier()?;
+
+                // Parse params
+                self.expect_token(&Token::LParen, "(")?;
+                let mut params = Vec::new();
+                if !self.check(&Token::RParen) {
+                    loop {
+                        let param_name = self.expect_identifier()?;
+                        let type_ann = if self.check(&Token::Colon) {
+                            self.advance();
+                            Some(self.expect_identifier()?)
+                        } else {
+                            None
+                        };
+                        params.push(Param {
+                            name: param_name,
+                            type_annotation: type_ann,
+                            default: None,
+                        });
+                        if !self.check(&Token::Comma) {
+                            break;
+                        }
+                        self.advance();
+                    }
+                }
+                self.expect_token(&Token::RParen, ")")?;
+
+                // Optional return type
+                let return_type = if self.check(&Token::Arrow) {
+                    self.advance();
+                    Some(self.expect_identifier()?)
+                } else {
+                    None
+                };
+
+                // Check for body (default method) or newline (required method)
+                let body = if self.check(&Token::Newline) || self.is_at_end() {
+                    self.skip_newlines();
+                    // Check if next line starts a body (not another def or end)
+                    if !self.check(&Token::Def)
+                        && !self.check(&Token::End)
+                        && !self.is_at_end()
+                    {
+                        // Has a body — parse until we hit end/def
+                        let body = self.parse_block()?;
+                        self.expect_token(&Token::End, "end")?;
+                        self.skip_newlines();
+                        Some(body)
+                    } else {
+                        None // Required method (no body)
+                    }
+                } else {
+                    None
+                };
+
+                methods.push(ProtocolMethod {
+                    name: method_name,
+                    params,
+                    return_type,
+                    body,
+                });
+            } else {
+                self.skip_newlines();
+                if self.check(&Token::End) {
+                    break;
+                }
+                return Err(ParseError::UnexpectedToken {
+                    found: self.peek().unwrap().clone(),
+                    expected: "def or end in protocol body".into(),
+                    span: self.current_span(),
+                });
+            }
+        }
+
+        self.expect_token(&Token::End, "end")?;
+        let end = self.previous_span().end;
+        Ok(Stmt {
+            kind: StmtKind::ProtocolDef { name, methods },
             span: Span {
                 start: start.start,
                 end,
@@ -2149,11 +2265,13 @@ mod tests {
                 name,
                 needs,
                 methods,
+                implements,
             } => {
                 assert_eq!(name, "Circle");
                 assert_eq!(needs.len(), 1);
                 assert_eq!(needs[0].name, "radius");
                 assert_eq!(methods.len(), 1);
+                assert!(implements.is_empty());
             }
             _ => panic!("expected class def"),
         }

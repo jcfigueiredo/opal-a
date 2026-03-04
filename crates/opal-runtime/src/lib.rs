@@ -8,5 +8,5 @@ pub use env::Environment;
 pub use function::FunctionId;
 pub use value::{
     ActorDefId, ActorId, AstId, ClassId, InstanceId, MacroId, ModuleId, NativeFunctionId,
-    NativeObjectId, Value,
+    NativeObjectId, ProtocolId, Value,
 };

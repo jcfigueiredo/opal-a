@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use opal_parser::ast::*;
 use opal_runtime::{
     ActorDefId, ActorId, AstId, ClassId, ClosureId, Environment, FunctionId, InstanceId, MacroId,
-    ModuleId, NativeFunctionId, NativeObjectId, Value,
+    ModuleId, NativeFunctionId, NativeObjectId, ProtocolId, Value,
 };
 use thiserror::Error;
 
@@ -53,6 +53,17 @@ struct StoredClass {
     name: String,
     needs: Vec<(String, Option<String>)>,
     methods: Vec<StoredFunction>,
+}
+
+/// A stored protocol definition
+#[derive(Clone)]
+struct StoredProtocol {
+    #[allow(dead_code)]
+    name: String,
+    /// Default methods (with bodies) that get copied to implementing classes
+    default_methods: Vec<StoredFunction>,
+    /// Required method names (no bodies) that classes must define
+    required_methods: Vec<String>,
 }
 
 /// A stored instance
@@ -110,6 +121,7 @@ pub struct Interpreter<W: Write> {
     /// True when loading a file-based module (functions should capture env)
     loading_module: bool,
     macros: Vec<StoredMacro>,
+    protocols: Vec<StoredProtocol>,
     ast_nodes: Vec<Vec<Stmt>>,
     /// Registry of FFI plugins
     plugin_registry: opal_stdlib::PluginRegistry,
@@ -137,6 +149,7 @@ impl Interpreter<std::io::Stdout> {
             current_actor: None,
             loading_module: false,
             macros: Vec::new(),
+            protocols: Vec::new(),
             ast_nodes: Vec::new(),
             plugin_registry: opal_stdlib::PluginRegistry::new(),
             native_objects: Vec::new(),
@@ -168,6 +181,7 @@ impl<W: Write> Interpreter<W> {
             current_actor: None,
             loading_module: false,
             macros: Vec::new(),
+            protocols: Vec::new(),
             ast_nodes: Vec::new(),
             plugin_registry: opal_stdlib::PluginRegistry::new(),
             native_objects: Vec::new(),
@@ -434,6 +448,7 @@ impl<W: Write> Interpreter<W> {
                 name,
                 needs,
                 methods,
+                implements,
             } => {
                 let mut stored_methods = Vec::new();
                 for method_stmt in methods {
@@ -452,6 +467,42 @@ impl<W: Write> Interpreter<W> {
                         });
                     }
                 }
+
+                // Apply protocol defaults and check required methods
+                let class_method_names: Vec<String> =
+                    stored_methods.iter().map(|m| m.name.clone()).collect();
+
+                for proto_name in implements {
+                    let proto_id = match self.env.get(proto_name) {
+                        Some(Value::Protocol(id)) => *id,
+                        _ => {
+                            return Err(EvalError::UndefinedVariable(format!(
+                                "protocol {}",
+                                proto_name
+                            )));
+                        }
+                    };
+                    let proto = self.protocols[proto_id.0].clone();
+
+                    // Copy default methods that aren't already defined
+                    for default in &proto.default_methods {
+                        if !class_method_names.contains(&default.name) {
+                            stored_methods.push(default.clone());
+                        }
+                    }
+
+                    // Check all required methods are implemented
+                    for required in &proto.required_methods {
+                        let has_it = stored_methods.iter().any(|m| m.name == *required);
+                        if !has_it {
+                            return Err(EvalError::RuntimeError(format!(
+                                "class '{}' implements '{}' but missing required method '{}'",
+                                name, proto_name, required
+                            )));
+                        }
+                    }
+                }
+
                 let class_id = ClassId(self.classes.len());
                 self.classes.push(StoredClass {
                     name: name.clone(),
@@ -462,6 +513,31 @@ impl<W: Write> Interpreter<W> {
                     methods: stored_methods,
                 });
                 self.env.set(name.clone(), Value::Class(class_id));
+            }
+            StmtKind::ProtocolDef { name, methods } => {
+                let mut default_methods = Vec::new();
+                let mut required_methods = Vec::new();
+
+                for method in methods {
+                    if let Some(body) = &method.body {
+                        default_methods.push(StoredFunction {
+                            name: method.name.clone(),
+                            params: method.params.iter().map(|p| p.name.clone()).collect(),
+                            body: body.clone(),
+                            captured_env: None,
+                        });
+                    } else {
+                        required_methods.push(method.name.clone());
+                    }
+                }
+
+                let proto_id = ProtocolId(self.protocols.len());
+                self.protocols.push(StoredProtocol {
+                    name: name.clone(),
+                    default_methods,
+                    required_methods,
+                });
+                self.env.set(name.clone(), Value::Protocol(proto_id));
             }
             StmtKind::ModuleDef { name, body } => {
                 // Evaluate body in a new scope, capture bindings

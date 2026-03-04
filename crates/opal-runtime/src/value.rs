@@ -48,6 +48,8 @@ pub enum Value {
     NativeFunction(NativeFunctionId),
     /// Macro (ID into interpreter's macro table)
     Macro(MacroId),
+    /// Protocol (ID into interpreter's protocol table)
+    Protocol(ProtocolId),
     /// Dict: ordered key-value pairs
     Dict(Vec<(String, Value)>),
     /// Range: start..end (exclusive) or start...end (inclusive)
@@ -94,6 +96,10 @@ pub struct NativeFunctionId(pub usize);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MacroId(pub usize);
 
+/// Opaque ID for a protocol definition
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProtocolId(pub usize);
+
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -133,6 +139,7 @@ impl fmt::Display for Value {
             Value::NativeObject(id) => write!(f, "<native #{}>", id.0),
             Value::NativeFunction(id) => write!(f, "<native fn #{}>", id.0),
             Value::Macro(id) => write!(f, "<macro #{}>", id.0),
+            Value::Protocol(id) => write!(f, "<protocol #{}>", id.0),
             Value::Dict(entries) => {
                 write!(f, "{{")?;
                 for (i, (key, value)) in entries.iter().enumerate() {

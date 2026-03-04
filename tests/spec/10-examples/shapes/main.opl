@@ -1,0 +1,20 @@
+# expect: Biggest: [Rect(10.0x5.0) area=50.0] | Total area: 102.27431
+import Protocols.{Describable, Measurable}
+import Geometry.{Circle, Rectangle, Triangle, biggest}
+
+shapes = [
+  Circle.new(radius: 3.0),
+  Rectangle.new(width: 10.0, height: 5.0),
+  Triangle.new(base: 8.0, height: 6.0, side_a: 5.0, side_b: 7.0)
+]
+
+# Find biggest shape using protocol default method (larger_than)
+big = biggest(shapes)
+
+# Calculate total area using protocol method
+total = shapes.reduce(0.0) do |acc, s|
+  acc + s.area()
+end
+
+# summary() uses default for Circle/Triangle, override for Rectangle
+print(f"Biggest: {big.summary()} | Total area: {total}")

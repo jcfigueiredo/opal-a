@@ -1,0 +1,8 @@
+# expect-error: missing required method 'draw'
+protocol Drawable
+  def draw() -> String
+end
+
+class Box implements Drawable
+  needs width: Int
+end

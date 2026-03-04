@@ -43,6 +43,12 @@ pub enum StmtKind {
         name: String,
         needs: Vec<NeedsDecl>,
         methods: Vec<Stmt>,
+        implements: Vec<String>,
+    },
+    /// Protocol definition
+    ProtocolDef {
+        name: String,
+        methods: Vec<ProtocolMethod>,
     },
     /// Module definition
     ModuleDef { name: String, body: Vec<Stmt> },
@@ -205,6 +211,15 @@ pub struct CatchClause {
     pub error_type: Option<String>,
     pub var_name: Option<String>,
     pub body: Vec<Stmt>,
+}
+
+/// A method in a protocol: required (no body) or default (has body)
+#[derive(Debug, Clone)]
+pub struct ProtocolMethod {
+    pub name: String,
+    pub params: Vec<Param>,
+    pub return_type: Option<String>,
+    pub body: Option<Vec<Stmt>>,
 }
 
 /// A function declaration inside an extern block
