@@ -1347,6 +1347,17 @@ impl<'src> Parser<'src> {
         while self.check(&Token::Case) {
             self.advance();
             let pattern = self.parse_pattern()?;
+            // Check for or-patterns: case 1 | 2 | 3
+            let pattern = if self.check(&Token::Bar) {
+                let mut alternatives = vec![pattern];
+                while self.check(&Token::Bar) {
+                    self.advance();
+                    alternatives.push(self.parse_pattern()?);
+                }
+                Pattern::Or(alternatives)
+            } else {
+                pattern
+            };
             let guard = if self.check(&Token::If) {
                 self.advance();
                 Some(self.parse_expression(0)?)
@@ -1474,6 +1485,33 @@ impl<'src> Parser<'src> {
 
         // Literal patterns (integers, strings, bools, null)
         let expr = self.parse_primary()?;
+        // Check for range pattern: 1..10 or 1...10
+        if let ExprKind::Integer(start) = &expr.kind {
+            if self.check(&Token::DotDot) {
+                self.advance();
+                let end_expr = self.parse_primary()?;
+                if let ExprKind::Integer(end) = &end_expr.kind {
+                    return Ok(Pattern::Range { start: *start, end: *end, inclusive: false });
+                }
+                return Err(ParseError::UnexpectedToken {
+                    found: Token::DotDot,
+                    expected: "integer in range pattern".to_string(),
+                    span: end_expr.span,
+                });
+            }
+            if self.check(&Token::DotDotDot) {
+                self.advance();
+                let end_expr = self.parse_primary()?;
+                if let ExprKind::Integer(end) = &end_expr.kind {
+                    return Ok(Pattern::Range { start: *start, end: *end, inclusive: true });
+                }
+                return Err(ParseError::UnexpectedToken {
+                    found: Token::DotDotDot,
+                    expected: "integer in range pattern".to_string(),
+                    span: end_expr.span,
+                });
+            }
+        }
         Ok(Pattern::Literal(expr))
     }
 

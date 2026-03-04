@@ -1756,6 +1756,33 @@ impl<W: Write> Interpreter<W> {
                     _ => None,
                 }
             }
+            Pattern::Or(alternatives) => {
+                for alt in alternatives {
+                    if let Some(bindings) = self.match_pattern(alt, value) {
+                        return Some(bindings);
+                    }
+                }
+                None
+            }
+            Pattern::Range { start, end, inclusive } => {
+                if let Value::Integer(n) = value {
+                    if *inclusive {
+                        if *n >= *start && *n <= *end { Some(vec![]) } else { None }
+                    } else {
+                        if *n >= *start && *n < *end { Some(vec![]) } else { None }
+                    }
+                } else {
+                    None
+                }
+            }
+            Pattern::As(inner, name) => {
+                if let Some(mut bindings) = self.match_pattern(inner, value) {
+                    bindings.push((name.clone(), value.clone()));
+                    Some(bindings)
+                } else {
+                    None
+                }
+            }
         }
     }
 

@@ -247,6 +247,12 @@ pub enum Pattern {
     Wildcard,
     /// Enum variant pattern: `Shape.Circle(r)`
     EnumVariant(String, String, Vec<Pattern>),
+    /// Or-pattern: matches if any sub-pattern matches
+    Or(Vec<Pattern>),
+    /// Range pattern: matches integers within range
+    Range { start: i64, end: i64, inclusive: bool },
+    /// As-binding: destructure AND bind whole value
+    As(Box<Pattern>, String),
 }
 
 /// A catch clause in try/catch
