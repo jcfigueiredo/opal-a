@@ -272,6 +272,10 @@ pub enum Token {
     Reply,
     #[token("send")]
     Send,
+    #[token("break")]
+    Break,
+    #[token("next")]
+    Next,
 
     // === Boolean & null literals ===
     #[token("true")]

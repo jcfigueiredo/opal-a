@@ -1,0 +1,16 @@
+# expect: 3 | 3
+sum = 0
+for i in 1..10
+  if i > 3
+    break
+  end
+  sum = sum + 1
+end
+count = 0
+for i in 1..6
+  if i % 2 == 0
+    next
+  end
+  count = count + 1
+end
+print(f"{sum} | {count}")

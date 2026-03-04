@@ -28,6 +28,10 @@ pub enum EvalError {
     RequiresFailed(Value),
     #[error("reply")]
     Reply(Value),
+    #[error("break")]
+    Break,
+    #[error("next")]
+    Next,
 }
 
 /// A stored user-defined function
@@ -498,7 +502,11 @@ impl<W: Write> Interpreter<W> {
                             self.env.set(var.clone(), item);
                             let result = self.eval_block(body);
                             self.env.pop_scope();
-                            result?;
+                            match result {
+                                Err(EvalError::Break) => break,
+                                Err(EvalError::Next) => continue,
+                                other => { other?; }
+                            }
                         }
                     }
                     Value::Range {
@@ -512,7 +520,11 @@ impl<W: Write> Interpreter<W> {
                             self.env.set(var.clone(), Value::Integer(i));
                             let result = self.eval_block(body);
                             self.env.pop_scope();
-                            result?;
+                            match result {
+                                Err(EvalError::Break) => break,
+                                Err(EvalError::Next) => continue,
+                                other => { other?; }
+                            }
                         }
                     }
                     _ => {
@@ -527,7 +539,11 @@ impl<W: Write> Interpreter<W> {
                 if !cond.is_truthy() {
                     break;
                 }
-                self.eval_block(body)?;
+                match self.eval_block(body) {
+                    Err(EvalError::Break) => break,
+                    Err(EvalError::Next) => continue,
+                    other => { other?; }
+                }
             },
             StmtKind::ClassDef {
                 name,
@@ -785,6 +801,12 @@ impl<W: Write> Interpreter<W> {
                 });
                 self.env
                     .set(name.clone(), Value::ActorClass(ActorDefId(def_idx)));
+            }
+            StmtKind::Break => {
+                return Err(EvalError::Break);
+            }
+            StmtKind::Next => {
+                return Err(EvalError::Next);
             }
             StmtKind::Reply(expr) => {
                 let val = self.eval_expr(expr)?;
@@ -3123,6 +3145,33 @@ print(f"Sum of even squares: {total}")
     fn while_loop() {
         let output = run("x = 0\nwhile x < 3\n  x = x + 1\nend\nprint(x)").unwrap();
         assert_eq!(output, "3");
+    }
+
+    #[test]
+    fn break_in_for() {
+        assert_eq!(
+            run("sum = 0\nfor i in 1..10\n  if i > 3\n    break\n  end\n  sum = sum + 1\nend\nprint(sum)")
+                .unwrap(),
+            "3"
+        );
+    }
+
+    #[test]
+    fn next_in_for() {
+        assert_eq!(
+            run("sum = 0\nfor i in 1..6\n  if i % 2 == 0\n    next\n  end\n  sum = sum + i\nend\nprint(sum)")
+                .unwrap(),
+            "9"
+        );
+    }
+
+    #[test]
+    fn break_in_while() {
+        assert_eq!(
+            run("i = 0\nwhile true\n  i = i + 1\n  if i == 5\n    break\n  end\nend\nprint(i)")
+                .unwrap(),
+            "5"
+        );
     }
 
     #[test]

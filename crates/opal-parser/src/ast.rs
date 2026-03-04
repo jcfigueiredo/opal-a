@@ -113,6 +113,10 @@ pub enum StmtKind {
         lib_name: String,
         declarations: Vec<ExternDecl>,
     },
+    /// Break out of a loop
+    Break,
+    /// Skip to next iteration of a loop
+    Next,
 }
 
 /// An expression

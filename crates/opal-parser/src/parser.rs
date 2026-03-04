@@ -161,6 +161,26 @@ impl<'src> Parser<'src> {
             return self.parse_reply(start);
         }
 
+        // Break
+        if self.check(&Token::Break) {
+            self.advance(); // consume 'break'
+            self.expect_statement_end()?;
+            return Ok(Stmt {
+                kind: StmtKind::Break,
+                span: start,
+            });
+        }
+
+        // Next
+        if self.check(&Token::Next) {
+            self.advance(); // consume 'next'
+            self.expect_statement_end()?;
+            return Ok(Stmt {
+                kind: StmtKind::Next,
+                span: start,
+            });
+        }
+
         // Instance variable assignment: .field = expr
         if self.check(&Token::Dot)
             && self
