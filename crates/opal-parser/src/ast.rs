@@ -162,6 +162,14 @@ pub enum ExprKind {
         subject: Box<Expr>,
         cases: Vec<MatchCase>,
     },
+    /// Dict literal: `{key: value, ...}` or `{:}` for empty
+    Dict(Vec<(Expr, Expr)>),
+    /// Range: `start..end` (exclusive) or `start...end` (inclusive)
+    Range {
+        start: Box<Expr>,
+        end: Box<Expr>,
+        inclusive: bool,
+    },
 }
 
 /// A case in a match expression

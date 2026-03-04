@@ -245,16 +245,35 @@ impl<W: Write> Interpreter<W> {
                 body,
             } => {
                 let iter_val = self.eval_expr(iterable)?;
-                let items = match iter_val {
-                    Value::List(items) => items,
-                    _ => return Err(EvalError::TypeError("for loop requires a list".into())),
-                };
-                for item in items {
-                    self.env.push_scope();
-                    self.env.set(var.clone(), item);
-                    let result = self.eval_block(body);
-                    self.env.pop_scope();
-                    result?;
+                match iter_val {
+                    Value::List(items) => {
+                        for item in items {
+                            self.env.push_scope();
+                            self.env.set(var.clone(), item);
+                            let result = self.eval_block(body);
+                            self.env.pop_scope();
+                            result?;
+                        }
+                    }
+                    Value::Range {
+                        start,
+                        end,
+                        inclusive,
+                    } => {
+                        let end_val = if inclusive { end + 1 } else { end };
+                        for i in start..end_val {
+                            self.env.push_scope();
+                            self.env.set(var.clone(), Value::Integer(i));
+                            let result = self.eval_block(body);
+                            self.env.pop_scope();
+                            result?;
+                        }
+                    }
+                    _ => {
+                        return Err(EvalError::TypeError(
+                            "for loop requires a list or range".into(),
+                        ));
+                    }
                 }
             }
             StmtKind::While { condition, body } => loop {
@@ -641,6 +660,46 @@ impl<W: Write> Interpreter<W> {
                     .get(field)
                     .cloned()
                     .ok_or_else(|| EvalError::UndefinedVariable(format!(".{}", field)))
+            }
+
+            ExprKind::Dict(entries) => {
+                let mut pairs = Vec::new();
+                for (key_expr, val_expr) in entries {
+                    let key = match &key_expr.kind {
+                        ExprKind::Identifier(name) => name.clone(),
+                        _ => {
+                            let k = self.eval_expr(key_expr)?;
+                            match k {
+                                Value::String(s) => s,
+                                _ => {
+                                    return Err(EvalError::TypeError(
+                                        "dict key must be a string or identifier".into(),
+                                    ));
+                                }
+                            }
+                        }
+                    };
+                    let val = self.eval_expr(val_expr)?;
+                    pairs.push((key, val));
+                }
+                Ok(Value::Dict(pairs))
+            }
+
+            ExprKind::Range {
+                start,
+                end,
+                inclusive,
+            } => {
+                let start_val = self.eval_expr(start)?;
+                let end_val = self.eval_expr(end)?;
+                match (&start_val, &end_val) {
+                    (Value::Integer(s), Value::Integer(e)) => Ok(Value::Range {
+                        start: *s,
+                        end: *e,
+                        inclusive: *inclusive,
+                    }),
+                    _ => Err(EvalError::TypeError("range bounds must be integers".into())),
+                }
             }
 
             ExprKind::MemberAccess { .. } => Err(EvalError::TypeError(
@@ -1045,6 +1104,69 @@ impl<W: Write> Interpreter<W> {
             }
             // String methods
             (Value::String(s), "length") => Ok(Value::Integer(s.len() as i64)),
+
+            // Dict methods
+            (Value::Dict(entries), "length") => Ok(Value::Integer(entries.len() as i64)),
+            (Value::Dict(entries), "get") => {
+                if args.len() != 1 {
+                    return Err(EvalError::TypeError(
+                        "get() takes exactly 1 argument".into(),
+                    ));
+                }
+                let key = match &args[0] {
+                    Value::String(s) => s.clone(),
+                    _ => return Err(EvalError::TypeError("dict key must be a string".into())),
+                };
+                Ok(entries
+                    .iter()
+                    .find(|(k, _)| k == &key)
+                    .map(|(_, v)| v.clone())
+                    .unwrap_or(Value::Null))
+            }
+            (Value::Dict(entries), "keys") => {
+                let keys: Vec<Value> = entries
+                    .iter()
+                    .map(|(k, _)| Value::String(k.clone()))
+                    .collect();
+                Ok(Value::List(keys))
+            }
+            (Value::Dict(entries), "values") => {
+                let values: Vec<Value> = entries.iter().map(|(_, v)| v.clone()).collect();
+                Ok(Value::List(values))
+            }
+            (Value::Dict(entries), "set") => {
+                if args.len() != 2 {
+                    return Err(EvalError::TypeError(
+                        "set() takes exactly 2 arguments (key, value)".into(),
+                    ));
+                }
+                let key = match &args[0] {
+                    Value::String(s) => s.clone(),
+                    _ => return Err(EvalError::TypeError("dict key must be a string".into())),
+                };
+                let value = args[1].clone();
+                let mut new_entries = entries.clone();
+                if let Some(entry) = new_entries.iter_mut().find(|(k, _)| k == &key) {
+                    entry.1 = value;
+                } else {
+                    new_entries.push((key, value));
+                }
+                Ok(Value::Dict(new_entries))
+            }
+
+            // Range methods
+            (
+                Value::Range {
+                    start,
+                    end,
+                    inclusive,
+                },
+                "to_list",
+            ) => {
+                let end_val = if *inclusive { end + 1 } else { *end };
+                let items: Vec<Value> = (*start..end_val).map(Value::Integer).collect();
+                Ok(Value::List(items))
+            }
 
             // Module method calls (e.g., Math.pi())
             (Value::Module(module_id), _) => {
@@ -2313,5 +2435,45 @@ serve(app, __PORT__)
 
         // Drop the handle (the server thread will exit when dropped)
         drop(handle);
+    }
+
+    // === Dicts ===
+
+    #[test]
+    fn dict_literal() {
+        let output = run("d = {name: \"Opal\", version: 1}\nprint(d.get(\"name\"))").unwrap();
+        assert_eq!(output, "Opal");
+    }
+
+    #[test]
+    fn dict_keys() {
+        let output = run("print({a: 1, b: 2}.keys())").unwrap();
+        assert_eq!(output, "[a, b]");
+    }
+
+    #[test]
+    fn empty_dict() {
+        let output = run("print({:})").unwrap();
+        assert_eq!(output, "{}");
+    }
+
+    // === Ranges ===
+
+    #[test]
+    fn range_for_loop() {
+        let output = run("for x in 1..4\n  print(x)\nend").unwrap();
+        assert_eq!(output, "1\n2\n3");
+    }
+
+    #[test]
+    fn range_inclusive() {
+        let output = run("for x in 1...3\n  print(x)\nend").unwrap();
+        assert_eq!(output, "1\n2\n3");
+    }
+
+    #[test]
+    fn range_to_list() {
+        let output = run("print((1..4).to_list())").unwrap();
+        assert_eq!(output, "[1, 2, 3]");
     }
 }

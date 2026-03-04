@@ -906,6 +906,25 @@ impl<'src> Parser<'src> {
             };
         }
 
+        // Range operators: .. (exclusive) and ... (inclusive)
+        if self.check(&Token::DotDot) || self.check(&Token::DotDotDot) {
+            let inclusive = self.check(&Token::DotDotDot);
+            self.advance();
+            let right = self.parse_unary()?;
+            let span = Span {
+                start: left.span.start,
+                end: right.span.end,
+            };
+            left = Expr {
+                kind: ExprKind::Range {
+                    start: Box::new(left),
+                    end: Box::new(right),
+                    inclusive,
+                },
+                span,
+            };
+        }
+
         Ok(left)
     }
 
@@ -1143,6 +1162,46 @@ impl<'src> Parser<'src> {
                 Ok(Expr {
                     kind: ExprKind::Symbol(name),
                     span,
+                })
+            }
+            // Dict literal: {key: value, ...} or {:} for empty
+            Some(Token::LBrace) => {
+                self.advance();
+                // Empty dict: {:}
+                if self.check(&Token::Colon) {
+                    self.advance();
+                    self.expect_token(&Token::RBrace, "}")?;
+                    let end = self.previous_span().end;
+                    return Ok(Expr {
+                        kind: ExprKind::Dict(vec![]),
+                        span: Span {
+                            start: span.start,
+                            end,
+                        },
+                    });
+                }
+                // Dict entries
+                let mut entries = Vec::new();
+                if !self.check(&Token::RBrace) {
+                    loop {
+                        let key = self.parse_expression(0)?;
+                        self.expect_token(&Token::Colon, ":")?;
+                        let value = self.parse_expression(0)?;
+                        entries.push((key, value));
+                        if !self.check(&Token::Comma) {
+                            break;
+                        }
+                        self.advance();
+                    }
+                }
+                self.expect_token(&Token::RBrace, "}")?;
+                let end = self.previous_span().end;
+                Ok(Expr {
+                    kind: ExprKind::Dict(entries),
+                    span: Span {
+                        start: span.start,
+                        end,
+                    },
                 })
             }
             // Instance variable: .field (at start of expression, not after another expr)

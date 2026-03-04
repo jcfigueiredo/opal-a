@@ -107,12 +107,10 @@ fn main() {
 
                 // Try to parse and eval
                 match opal_parser::parse(&buffer) {
-                    Ok(program) => {
-                        match interpreter.run(&program) {
-                            Ok(()) => {}
-                            Err(e) => eprintln!("{}", e),
-                        }
-                    }
+                    Ok(program) => match interpreter.run(&program) {
+                        Ok(()) => {}
+                        Err(e) => eprintln!("{}", e),
+                    },
                     Err(e) => eprintln!("ParseError: {}", e),
                 }
 
@@ -151,8 +149,8 @@ fn format_error_location(err: &opal_parser::ParseError, source: &str) -> String 
 
 fn needs_continuation(input: &str) -> bool {
     let openers = [
-        "def ", "if ", "class ", "module ", "do\n", "do ", "for ", "while ", "actor ",
-        "macro ", "try\n", "match ",
+        "def ", "if ", "class ", "module ", "do\n", "do ", "for ", "while ", "actor ", "macro ",
+        "try\n", "match ",
     ];
     let mut depth: i32 = 0;
     for line in input.lines() {

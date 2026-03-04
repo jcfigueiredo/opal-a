@@ -44,6 +44,14 @@ pub enum Value {
     NativeObject(NativeObjectId),
     /// Native function from an extern block (ID into interpreter's native_functions table)
     NativeFunction(NativeFunctionId),
+    /// Dict: ordered key-value pairs
+    Dict(Vec<(String, Value)>),
+    /// Range: start..end (exclusive) or start...end (inclusive)
+    Range {
+        start: i64,
+        end: i64,
+        inclusive: bool,
+    },
 }
 
 /// Opaque ID for a stored AST node
@@ -111,6 +119,27 @@ impl fmt::Display for Value {
             Value::Ast(id) => write!(f, "<ast #{}>", id.0),
             Value::NativeObject(id) => write!(f, "<native #{}>", id.0),
             Value::NativeFunction(id) => write!(f, "<native fn #{}>", id.0),
+            Value::Dict(entries) => {
+                write!(f, "{{")?;
+                for (i, (key, value)) in entries.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}: {}", key, value)?;
+                }
+                write!(f, "}}")
+            }
+            Value::Range {
+                start,
+                end,
+                inclusive,
+            } => {
+                if *inclusive {
+                    write!(f, "{}...{}", start, end)
+                } else {
+                    write!(f, "{}..{}", start, end)
+                }
+            }
         }
     }
 }
