@@ -1,0 +1,12 @@
+# expect: 4 6
+class Vec2
+  needs x: Int
+  needs y: Int
+  def add(other)
+    Vec2.new(x: .x + other.x, y: .y + other.y)
+  end
+end
+a = Vec2.new(x: 1, y: 2)
+b = Vec2.new(x: 3, y: 4)
+c = a + b
+print(f"{c.x} {c.y}")

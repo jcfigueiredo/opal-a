@@ -1282,7 +1282,30 @@ impl<W: Write> Interpreter<W> {
                 }
                 let lval = self.eval_expr(left)?;
                 let rval = self.eval_expr(right)?;
-                eval_binary_op(*op, lval, rval)
+                match eval_binary_op(*op, lval.clone(), rval.clone()) {
+                    Ok(v) => Ok(v),
+                    Err(EvalError::TypeError(_)) if matches!(lval, Value::Instance(_)) => {
+                        // Try operator overloading via method dispatch
+                        let op_method = match op {
+                            BinOp::Add => Some("add"),
+                            BinOp::Sub => Some("sub"),
+                            BinOp::Mul => Some("mul"),
+                            BinOp::Div => Some("div"),
+                            BinOp::Eq => Some("eq"),
+                            BinOp::Lt => Some("lt"),
+                            BinOp::Gt => Some("gt"),
+                            BinOp::LtEq => Some("lte"),
+                            BinOp::GtEq => Some("gte"),
+                            _ => None,
+                        };
+                        if let Some(method) = op_method {
+                            self.call_method(lval, method, vec![(None, rval)])
+                        } else {
+                            eval_binary_op(*op, lval, rval)
+                        }
+                    }
+                    other => other,
+                }
             }
 
             ExprKind::UnaryOp { op, operand } => {
