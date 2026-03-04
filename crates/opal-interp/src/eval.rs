@@ -360,6 +360,62 @@ impl<W: Write> Interpreter<W> {
                     }
                 }
             }
+            StmtKind::Import(imp) => {
+                match &imp.kind {
+                    ImportKind::Selective(items) => {
+                        let module_name = imp.path.join(".");
+                        let module_val = self
+                            .env
+                            .get(&module_name)
+                            .cloned()
+                            .ok_or_else(|| EvalError::UndefinedVariable(module_name.clone()))?;
+                        let module_id = match module_val {
+                            Value::Module(id) => id,
+                            _ => {
+                                return Err(EvalError::TypeError(format!(
+                                    "'{}' is not a module",
+                                    module_name
+                                )));
+                            }
+                        };
+                        let module = self.modules[module_id.0].clone();
+                        for item in items {
+                            if let Some(val) = module.bindings.get(&item.name) {
+                                let bind_name =
+                                    item.alias.as_ref().unwrap_or(&item.name).clone();
+                                self.env.set(bind_name, val.clone());
+                            } else {
+                                return Err(EvalError::UndefinedVariable(format!(
+                                    "{}.{}",
+                                    module_name, item.name
+                                )));
+                            }
+                        }
+                    }
+                    ImportKind::Module => {
+                        let module_name = imp.path.join(".");
+                        let module_val = self
+                            .env
+                            .get(&module_name)
+                            .cloned()
+                            .ok_or_else(|| EvalError::UndefinedVariable(module_name.clone()))?;
+                        let bind_name = imp.path.last().unwrap().clone();
+                        self.env.set(bind_name, module_val);
+                    }
+                    ImportKind::ModuleAlias(alias) => {
+                        let module_name = imp.path.join(".");
+                        let module_val = self
+                            .env
+                            .get(&module_name)
+                            .cloned()
+                            .ok_or_else(|| EvalError::UndefinedVariable(module_name.clone()))?;
+                        self.env.set(alias.clone(), module_val);
+                    }
+                }
+            }
+            StmtKind::ExportBlock(_) => {
+                // Export blocks are metadata; no runtime effect for now
+            }
             StmtKind::NeedsDecl(_) => {
                 // Handled during class definition parsing, not at runtime
             }

@@ -86,6 +86,16 @@ impl<'src> Parser<'src> {
             return self.parse_module_def(start);
         }
 
+        // Import statement (new syntax)
+        if self.check(&Token::Import) {
+            return self.parse_import(start);
+        }
+
+        // Export block
+        if self.check(&Token::Export) {
+            return self.parse_export_block(start);
+        }
+
         // From import
         if self.check(&Token::From) {
             return self.parse_from_import(start);
@@ -435,13 +445,107 @@ impl<'src> Parser<'src> {
         })
     }
 
+    fn parse_import(&mut self, start: Span) -> Result<Stmt, ParseError> {
+        self.advance(); // consume 'import'
+        let first = self.expect_identifier()?;
+        let mut path = vec![first];
+
+        // Parse dotted module path: Math.Vector.{abs, max}
+        // Stop if we see `.{` (selective import)
+        while self.check(&Token::Dot) {
+            // Peek ahead: if after `.` we see `{`, stop path parsing
+            if self.peek_ahead(1).is_some_and(|t| matches!(t, Token::LBrace)) {
+                self.advance(); // consume '.'
+                break;
+            }
+            self.advance(); // consume '.'
+            let segment = self.expect_identifier()?;
+            path.push(segment);
+        }
+
+        // Determine import kind
+        let kind = if self.check(&Token::LBrace) {
+            // Selective: import Math.{abs, max as maximum}
+            self.advance(); // consume '{'
+            let mut items = Vec::new();
+            if !self.check(&Token::RBrace) {
+                loop {
+                    let name = self.expect_identifier()?;
+                    let alias = if self.check(&Token::As) {
+                        self.advance();
+                        Some(self.expect_identifier()?)
+                    } else {
+                        None
+                    };
+                    items.push(ImportItem { name, alias });
+                    if !self.check(&Token::Comma) {
+                        break;
+                    }
+                    self.advance();
+                }
+            }
+            self.expect_token(&Token::RBrace, "}")?;
+            ImportKind::Selective(items)
+        } else if self.check(&Token::As) {
+            // Alias: import Math.Vector as Vec
+            self.advance();
+            let alias = self.expect_identifier()?;
+            ImportKind::ModuleAlias(alias)
+        } else {
+            // Whole module: import Math
+            ImportKind::Module
+        };
+
+        self.expect_statement_end()?;
+        let end = self.previous_span().end;
+        Ok(Stmt {
+            kind: StmtKind::Import(ImportStmt { path, kind }),
+            span: Span {
+                start: start.start,
+                end,
+            },
+        })
+    }
+
+    fn parse_export_block(&mut self, start: Span) -> Result<Stmt, ParseError> {
+        self.advance(); // consume 'export'
+        self.expect_token(&Token::LBrace, "{")?;
+        let mut names = Vec::new();
+        if !self.check(&Token::RBrace) {
+            loop {
+                names.push(self.expect_identifier()?);
+                if !self.check(&Token::Comma) {
+                    break;
+                }
+                self.advance();
+            }
+        }
+        self.expect_token(&Token::RBrace, "}")?;
+        self.expect_statement_end()?;
+        let end = self.previous_span().end;
+        Ok(Stmt {
+            kind: StmtKind::ExportBlock(names),
+            span: Span {
+                start: start.start,
+                end,
+            },
+        })
+    }
+
     fn parse_from_import(&mut self, start: Span) -> Result<Stmt, ParseError> {
         self.advance(); // consume 'from'
         let module_path = self.expect_identifier()?;
         self.expect_token(&Token::Import, "import")?;
-        let mut names = Vec::new();
+        let mut items = Vec::new();
         loop {
-            names.push(self.expect_identifier()?);
+            let name = self.expect_identifier()?;
+            let alias = if self.check(&Token::As) {
+                self.advance();
+                Some(self.expect_identifier()?)
+            } else {
+                None
+            };
+            items.push(ImportItem { name, alias });
             if !self.check(&Token::Comma) {
                 break;
             }
@@ -450,7 +554,10 @@ impl<'src> Parser<'src> {
         self.expect_statement_end()?;
         let end = self.previous_span().end;
         Ok(Stmt {
-            kind: StmtKind::FromImport { module_path, names },
+            kind: StmtKind::Import(ImportStmt {
+                path: vec![module_path],
+                kind: ImportKind::Selective(items),
+            }),
             span: Span {
                 start: start.start,
                 end,
@@ -1943,11 +2050,70 @@ mod tests {
     fn parse_from_import() {
         let prog = parse("from Shapes import Circle, Rectangle");
         match &prog.statements[0].kind {
-            StmtKind::FromImport { module_path, names } => {
-                assert_eq!(module_path, "Shapes");
-                assert_eq!(names, &["Circle", "Rectangle"]);
+            StmtKind::Import(imp) => {
+                assert_eq!(imp.path, vec!["Shapes"]);
+                if let ImportKind::Selective(items) = &imp.kind {
+                    assert_eq!(items.len(), 2);
+                    assert_eq!(items[0].name, "Circle");
+                    assert_eq!(items[1].name, "Rectangle");
+                } else {
+                    panic!("expected selective");
+                }
             }
-            _ => panic!("expected from import"),
+            _ => panic!("expected import"),
+        }
+    }
+
+    #[test]
+    fn parse_import_module() {
+        let prog = parse("import Math");
+        match &prog.statements[0].kind {
+            StmtKind::Import(imp) => {
+                assert_eq!(imp.path, vec!["Math"]);
+                assert!(matches!(imp.kind, ImportKind::Module));
+            }
+            _ => panic!("expected import"),
+        }
+    }
+
+    #[test]
+    fn parse_import_selective() {
+        let prog = parse("import Math.{abs, max}");
+        match &prog.statements[0].kind {
+            StmtKind::Import(imp) => {
+                assert_eq!(imp.path, vec!["Math"]);
+                if let ImportKind::Selective(items) = &imp.kind {
+                    assert_eq!(items.len(), 2);
+                    assert_eq!(items[0].name, "abs");
+                    assert_eq!(items[1].name, "max");
+                } else {
+                    panic!("expected selective");
+                }
+            }
+            _ => panic!("expected import"),
+        }
+    }
+
+    #[test]
+    fn parse_import_alias() {
+        let prog = parse("import Math.Vector as Vec");
+        match &prog.statements[0].kind {
+            StmtKind::Import(imp) => {
+                assert_eq!(imp.path, vec!["Math", "Vector"]);
+                assert!(matches!(imp.kind, ImportKind::ModuleAlias(ref s) if s == "Vec"));
+            }
+            _ => panic!("expected import"),
+        }
+    }
+
+    #[test]
+    fn parse_export_block() {
+        let prog = parse("export {abs, Vector}");
+        match &prog.statements[0].kind {
+            StmtKind::ExportBlock(names) => {
+                assert_eq!(names, &["abs", "Vector"]);
+            }
+            _ => panic!("expected export block"),
         }
     }
 
