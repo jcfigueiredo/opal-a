@@ -229,14 +229,20 @@ impl<W: Write> Interpreter<W> {
 
     /// Ensure a module is loaded into the environment, trying file-based loading if needed.
     /// Returns the Value for the module.
-    fn ensure_module_loaded(&mut self, module_key: &str, module_path: &[String]) -> Result<Value, EvalError> {
+    fn ensure_module_loaded(
+        &mut self,
+        module_key: &str,
+        module_path: &[String],
+    ) -> Result<Value, EvalError> {
         // Check if already in scope
         if let Some(val) = self.env.get(module_key).cloned() {
             return Ok(val);
         }
 
         // Try file-based loading
-        let file_path = self.module_loader.as_ref()
+        let file_path = self
+            .module_loader
+            .as_ref()
             .and_then(|loader| loader.resolve(module_path));
 
         if let Some(file_path) = file_path {
@@ -249,13 +255,17 @@ impl<W: Write> Interpreter<W> {
             }
 
             if !loader.mark_loading(module_key) {
-                return Err(EvalError::RuntimeError(format!("circular dependency: {}", module_key)));
+                return Err(EvalError::RuntimeError(format!(
+                    "circular dependency: {}",
+                    module_key
+                )));
             }
 
             let source = std::fs::read_to_string(&file_path)
                 .map_err(|e| EvalError::RuntimeError(e.to_string()))?;
-            let program = opal_parser::parse(&source)
-                .map_err(|e| EvalError::RuntimeError(format!("parse error in {}: {}", file_path.display(), e)))?;
+            let program = opal_parser::parse(&source).map_err(|e| {
+                EvalError::RuntimeError(format!("parse error in {}: {}", file_path.display(), e))
+            })?;
 
             // Evaluate in a new scope, capture bindings as module
             self.env.push_scope();
@@ -270,7 +280,8 @@ impl<W: Write> Interpreter<W> {
                 name: module_key.to_string(),
                 bindings,
             });
-            self.env.set(module_key.to_string(), Value::Module(module_id));
+            self.env
+                .set(module_key.to_string(), Value::Module(module_id));
 
             if let Some(loader) = self.module_loader.as_mut() {
                 loader.mark_loaded(module_key);
@@ -283,7 +294,12 @@ impl<W: Write> Interpreter<W> {
     }
 
     /// Apply import bindings from a module value according to the import kind.
-    fn apply_import(&mut self, kind: &ImportKind, module_key: &str, module_val: Value) -> Result<(), EvalError> {
+    fn apply_import(
+        &mut self,
+        kind: &ImportKind,
+        module_key: &str,
+        module_val: Value,
+    ) -> Result<(), EvalError> {
         let module_id = match module_val {
             Value::Module(id) => id,
             _ => {
@@ -310,7 +326,11 @@ impl<W: Write> Interpreter<W> {
                 }
             }
             ImportKind::Module => {
-                let bind_name = module_key.rsplit('.').next().unwrap_or(module_key).to_string();
+                let bind_name = module_key
+                    .rsplit('.')
+                    .next()
+                    .unwrap_or(module_key)
+                    .to_string();
                 self.env.set(bind_name, Value::Module(module_id));
             }
             ImportKind::ModuleAlias(alias) => {
@@ -2155,7 +2175,7 @@ print(f"Sum of even squares: {total}")
     #[test]
     fn module_and_import() {
         let output = run(
-            "module Shapes\n  class Circle\n    needs radius: Float\n\n    def area()\n      .radius * .radius\n    end\n  end\nend\nfrom Shapes import Circle\nc = Circle.new(radius: 5.0)\nprint(c.area())",
+            "module Shapes\n  class Circle\n    needs radius: Float\n\n    def area()\n      .radius * .radius\n    end\n  end\nend\nimport Shapes.{Circle}\nc = Circle.new(radius: 5.0)\nprint(c.area())",
         )
         .unwrap();
         assert_eq!(output, "25.0");
@@ -2189,7 +2209,7 @@ module Shapes
   end
 end
 
-from Shapes import Circle, Rectangle
+import Shapes.{Circle, Rectangle}
 
 shapes = [Circle.new(radius: 5.0), Rectangle.new(width: 3.0, height: 4.0)]
 for shape in shapes

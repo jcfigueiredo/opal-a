@@ -454,7 +454,10 @@ impl<'src> Parser<'src> {
         // Stop if we see `.{` (selective import)
         while self.check(&Token::Dot) {
             // Peek ahead: if after `.` we see `{`, stop path parsing
-            if self.peek_ahead(1).is_some_and(|t| matches!(t, Token::LBrace)) {
+            if self
+                .peek_ahead(1)
+                .is_some_and(|t| matches!(t, Token::LBrace))
+            {
                 self.advance(); // consume '.'
                 break;
             }

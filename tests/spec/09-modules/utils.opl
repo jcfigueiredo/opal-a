@@ -1,0 +1,7 @@
+def double(x)
+  x * 2
+end
+
+def greet(name)
+  f"Hello, {name}!"
+end

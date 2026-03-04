@@ -10,7 +10,7 @@ module Shapes
   end
 end
 
-from Shapes import Rectangle
+import Shapes.{Rectangle}
 
 r = Rectangle.new(width: 3.0, height: 4.0)
 print(f"Area: {r.area()}")
