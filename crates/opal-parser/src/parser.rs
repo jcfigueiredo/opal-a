@@ -352,6 +352,10 @@ impl<'src> Parser<'src> {
     }
 
     fn parse_function_def(&mut self) -> Result<Stmt, ParseError> {
+        self.parse_function_def_with_visibility(None)
+    }
+
+    fn parse_function_def_with_visibility(&mut self, visibility: Option<String>) -> Result<Stmt, ParseError> {
         let start = self.current_span();
         self.advance(); // consume 'def'
 
@@ -393,6 +397,7 @@ impl<'src> Parser<'src> {
                 params,
                 return_type,
                 body,
+                visibility,
             },
             span: Span {
                 start: start.start,
@@ -726,6 +731,22 @@ impl<'src> Parser<'src> {
                 }
             } else if self.check(&Token::Def) {
                 methods.push(self.parse_function_def()?);
+            } else if self.check(&Token::Private) || self.check(&Token::Public) {
+                let vis = if self.check(&Token::Private) {
+                    "private".to_string()
+                } else {
+                    "public".to_string()
+                };
+                self.advance(); // consume visibility keyword
+                if self.check(&Token::Def) {
+                    methods.push(self.parse_function_def_with_visibility(Some(vis))?);
+                } else {
+                    return Err(ParseError::UnexpectedToken {
+                        found: self.peek().unwrap().clone(),
+                        expected: "def after visibility modifier".into(),
+                        span: self.current_span(),
+                    });
+                }
             } else {
                 self.skip_newlines();
                 if self.check(&Token::End) {

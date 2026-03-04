@@ -29,6 +29,7 @@ pub enum StmtKind {
         params: Vec<Param>,
         return_type: Option<String>,
         body: Vec<Stmt>,
+        visibility: Option<String>,
     },
     /// Return statement: `return expr`
     Return(Option<Expr>),

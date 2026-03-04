@@ -34,6 +34,15 @@ pub enum EvalError {
     Next,
 }
 
+/// Method visibility level
+#[derive(Clone, Copy, PartialEq)]
+enum Visibility {
+    Public,
+    Private,
+    #[allow(dead_code)]
+    Protected,
+}
+
 /// A stored user-defined function
 #[derive(Clone)]
 struct StoredFunction {
@@ -47,6 +56,8 @@ struct StoredFunction {
     captured_env: Option<Environment>,
     /// Annotations from @[...] declarations
     annotations: Vec<Vec<(String, Value)>>,
+    /// Visibility (public, private, protected)
+    visibility: Visibility,
 }
 
 /// A stored closure
@@ -548,6 +559,7 @@ impl<W: Write> Interpreter<W> {
                     body: body.clone(),
                     captured_env: captured,
                     annotations: vec![],
+                    visibility: Visibility::Public,
                 });
 
                 // Support multiple dispatch: if name already bound to a function,
@@ -673,9 +685,15 @@ impl<W: Write> Interpreter<W> {
                         name: mname,
                         params,
                         body,
+                        visibility: vis,
                         ..
                     } = &method_stmt.kind
                     {
+                        let method_vis = match vis.as_deref() {
+                            Some("private") => Visibility::Private,
+                            Some("protected") => Visibility::Protected,
+                            _ => Visibility::Public,
+                        };
                         stored_methods.push(StoredFunction {
                             name: mname.clone(),
                             params: params.iter().map(|p| p.name.clone()).collect(),
@@ -684,6 +702,7 @@ impl<W: Write> Interpreter<W> {
                             body: body.clone(),
                             captured_env: None,
                             annotations: vec![],
+                            visibility: method_vis,
                         });
                     }
                 }
@@ -748,6 +767,7 @@ impl<W: Write> Interpreter<W> {
                             body: body.clone(),
                             captured_env: None,
                             annotations: vec![],
+                    visibility: Visibility::Public,
                         });
                     } else {
                         required_methods.push(method.name.clone());
@@ -873,6 +893,7 @@ impl<W: Write> Interpreter<W> {
                                 body: body.clone(),
                                 captured_env: None,
                                 annotations: vec![],
+                    visibility: Visibility::Public,
                             })
                         } else {
                             None
@@ -2712,6 +2733,16 @@ impl<W: Write> Interpreter<W> {
                     .or_else(|| class.methods.iter().find(|m| m.name == method));
                 if let Some(func) = method_fn {
                     let func = func.clone();
+                    // Enforce visibility: private methods only callable from same class
+                    if func.visibility == Visibility::Private {
+                        let caller_class = self.current_self.map(|id| self.instances[id.0].class_id);
+                        if caller_class != Some(instance.class_id) {
+                            return Err(EvalError::RuntimeError(format!(
+                                "private method '{}' cannot be called from outside the class",
+                                method
+                            )));
+                        }
+                    }
                     if args.len() != func.params.len() {
                         return Err(EvalError::TypeError(format!(
                             "{}() expected {} arguments, got {}",
