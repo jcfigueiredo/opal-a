@@ -1,6 +1,0 @@
-# expect: $750.00 | $250.00 | $50.00
-# Formatting bounty rewards with f-string format specs
-
-rewards = [750.0, 250.0, 50.0]
-formatted = [f"${r:.2}" for r in rewards]
-print(formatted.join(" | "))
