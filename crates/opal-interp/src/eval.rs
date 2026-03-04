@@ -1085,6 +1085,19 @@ impl<W: Write> Interpreter<W> {
             return self.call_method(obj, field, eval_args);
         }
 
+        // Self method call: .method(args) inside a class method
+        if let ExprKind::InstanceVar(method_name) = &function.kind {
+            let instance_id = self
+                .current_self
+                .ok_or_else(|| EvalError::RuntimeError("no self in scope".into()))?;
+            let obj = Value::Instance(instance_id);
+            let mut eval_args = Vec::new();
+            for arg in args {
+                eval_args.push((arg.name.clone(), self.eval_expr(&arg.value)?));
+            }
+            return self.call_method(obj, method_name, eval_args);
+        }
+
         // Regular function call: name(args)
         let func_name = match &function.kind {
             ExprKind::Identifier(name) => name.clone(),
@@ -2017,6 +2030,7 @@ fn values_equal(a: &Value, b: &Value) -> bool {
         (Value::Float(a), Value::Float(b)) => a == b,
         (Value::String(a), Value::String(b)) => a == b,
         (Value::Bool(a), Value::Bool(b)) => a == b,
+        (Value::Symbol(a), Value::Symbol(b)) => a == b,
         (Value::Null, Value::Null) => true,
         _ => false,
     }

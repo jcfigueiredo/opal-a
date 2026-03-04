@@ -1,0 +1,5 @@
+# expect: true | false | match: yes
+a = :hello
+b = :hello
+c = :world
+print(f"{a == b} | {a == c} | match: {if a == b then "yes" else "no" end}")
