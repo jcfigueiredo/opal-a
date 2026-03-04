@@ -41,6 +41,7 @@ struct StoredFunction {
     name: String,
     params: Vec<String>,
     param_types: Vec<Option<String>>,
+    param_defaults: Vec<Option<Expr>>,
     body: Vec<Stmt>,
     /// Captured environment from defining scope (for module-level functions)
     captured_env: Option<Environment>,
@@ -467,6 +468,7 @@ impl<W: Write> Interpreter<W> {
                     name: name.clone(),
                     params: params.iter().map(|p| p.name.clone()).collect(),
                     param_types: params.iter().map(|p| p.type_annotation.clone()).collect(),
+                    param_defaults: params.iter().map(|p| p.default.clone()).collect(),
                     body: body.clone(),
                     captured_env: captured,
                     annotations: vec![],
@@ -571,6 +573,7 @@ impl<W: Write> Interpreter<W> {
                             name: mname.clone(),
                             params: params.iter().map(|p| p.name.clone()).collect(),
                             param_types: params.iter().map(|p| p.type_annotation.clone()).collect(),
+                            param_defaults: params.iter().map(|p| p.default.clone()).collect(),
                             body: body.clone(),
                             captured_env: None,
                             annotations: vec![],
@@ -634,6 +637,7 @@ impl<W: Write> Interpreter<W> {
                             name: method.name.clone(),
                             params: method.params.iter().map(|p| p.name.clone()).collect(),
                             param_types: method.params.iter().map(|p| p.type_annotation.clone()).collect(),
+                            param_defaults: method.params.iter().map(|p| p.default.clone()).collect(),
                             body: body.clone(),
                             captured_env: None,
                             annotations: vec![],
@@ -758,6 +762,7 @@ impl<W: Write> Interpreter<W> {
                                 name: name.clone(),
                                 params: params.iter().map(|p| p.name.clone()).collect(),
                                 param_types: params.iter().map(|p| p.type_annotation.clone()).collect(),
+                                param_defaults: params.iter().map(|p| p.default.clone()).collect(),
                                 body: body.clone(),
                                 captured_env: None,
                                 annotations: vec![],
@@ -2648,7 +2653,23 @@ impl<W: Write> Interpreter<W> {
         arg_values: Vec<Value>,
     ) -> Result<Value, EvalError> {
         let stored = self.functions[id.0].clone();
-        if arg_values.len() != stored.params.len() {
+        let mut arg_values = arg_values;
+        // Fill missing args with defaults
+        if arg_values.len() < stored.params.len() {
+            for i in arg_values.len()..stored.params.len() {
+                if let Some(default_expr) = &stored.param_defaults[i] {
+                    let val = self.eval_expr(default_expr)?;
+                    arg_values.push(val);
+                } else {
+                    return Err(EvalError::TypeError(format!(
+                        "{}() expected {} arguments, got {}",
+                        name,
+                        stored.params.len(),
+                        arg_values.len()
+                    )));
+                }
+            }
+        } else if arg_values.len() > stored.params.len() {
             return Err(EvalError::TypeError(format!(
                 "{}() expected {} arguments, got {}",
                 name,
@@ -4016,5 +4037,21 @@ print("hi" is NumOrStr)"#).unwrap(), "true");
         assert_eq!(run("x = 10\nx -= 3\nprint(x)").unwrap(), "7");
         assert_eq!(run("x = 5\nx *= 4\nprint(x)").unwrap(), "20");
         assert_eq!(run("x = 20\nx /= 4\nprint(x)").unwrap(), "5");
+    }
+
+    #[test]
+    fn default_param_used() {
+        assert_eq!(
+            run("def greet(name, greeting = 'Hello')\n  f\"{greeting}, {name}!\"\nend\nprint(greet('World'))").unwrap(),
+            "Hello, World!"
+        );
+    }
+
+    #[test]
+    fn default_param_overridden() {
+        assert_eq!(
+            run("def greet(name, greeting = 'Hello')\n  f\"{greeting}, {name}!\"\nend\nprint(greet('World', 'Hi'))").unwrap(),
+            "Hi, World!"
+        );
     }
 }

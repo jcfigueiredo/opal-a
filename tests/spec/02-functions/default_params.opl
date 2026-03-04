@@ -1,0 +1,5 @@
+# expect: localhost:8080 | localhost:3000
+def connect(host, port = 8080)
+  f"{host}:{port}"
+end
+print(f"{connect('localhost')} | {connect('localhost', 3000)}")
