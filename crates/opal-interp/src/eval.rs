@@ -391,7 +391,23 @@ impl<W: Write> Interpreter<W> {
                     body: body.clone(),
                     captured_env: captured,
                 });
-                self.env.set(name.clone(), Value::Function(id));
+
+                // Support multiple dispatch: if name already bound to a function,
+                // create or extend a dispatch group
+                match self.env.get(name).cloned() {
+                    Some(Value::Function(existing_id)) => {
+                        // Promote to multi-function
+                        self.env
+                            .set(name.clone(), Value::MultiFunction(vec![existing_id, id]));
+                    }
+                    Some(Value::MultiFunction(mut ids)) => {
+                        ids.push(id);
+                        self.env.set(name.clone(), Value::MultiFunction(ids));
+                    }
+                    _ => {
+                        self.env.set(name.clone(), Value::Function(id));
+                    }
+                }
             }
             StmtKind::Return(expr) => {
                 let val = match expr {
@@ -1366,6 +1382,9 @@ impl<W: Write> Interpreter<W> {
         if let Some(val) = self.env.get(&func_name).cloned() {
             match val {
                 Value::Function(id) => return self.call_function(id, &func_name, arg_values),
+                Value::MultiFunction(ids) => {
+                    return self.dispatch_multi(&ids, &func_name, arg_values)
+                }
                 Value::Closure(id) => return self.call_closure(id, arg_values),
                 _ => {}
             }
@@ -1762,8 +1781,12 @@ impl<W: Write> Interpreter<W> {
                 let instance = self.instances[instance_id.0].clone();
                 let class = self.classes[instance.class_id.0].clone();
 
-                // Find method in class
-                let method_fn = class.methods.iter().find(|m| m.name == method);
+                // Find method in class — dispatch by name + arity
+                let method_fn = class
+                    .methods
+                    .iter()
+                    .find(|m| m.name == method && m.params.len() == args.len())
+                    .or_else(|| class.methods.iter().find(|m| m.name == method));
                 if let Some(func) = method_fn {
                     let func = func.clone();
                     if args.len() != func.params.len() {
@@ -1826,6 +1849,9 @@ impl<W: Write> Interpreter<W> {
                 if let Some(val) = self.env.get(name).cloned() {
                     match val {
                         Value::Function(id) => self.call_function(id, name, vec![arg]),
+                        Value::MultiFunction(ids) => {
+                            self.dispatch_multi(&ids, name, vec![arg])
+                        }
                         Value::Closure(id) => self.call_closure(id, vec![arg]),
                         _ => Err(EvalError::TypeError(format!(
                             "pipe target '{}' is not a function",
@@ -1853,6 +1879,9 @@ impl<W: Write> Interpreter<W> {
                 if let Some(val) = self.env.get(&func_name).cloned() {
                     match val {
                         Value::Function(id) => self.call_function(id, &func_name, arg_values),
+                        Value::MultiFunction(ids) => {
+                            self.dispatch_multi(&ids, &func_name, arg_values)
+                        }
                         _ => Err(EvalError::TypeError(format!(
                             "pipe target '{}' is not a function",
                             func_name
@@ -1866,6 +1895,31 @@ impl<W: Write> Interpreter<W> {
                 "pipe operator requires a function on the right side".into(),
             )),
         }
+    }
+
+    fn dispatch_multi(
+        &mut self,
+        ids: &[FunctionId],
+        name: &str,
+        arg_values: Vec<Value>,
+    ) -> Result<Value, EvalError> {
+        // Find variant matching arity
+        for id in ids {
+            let stored = &self.functions[id.0];
+            if stored.params.len() == arg_values.len() {
+                return self.call_function(*id, name, arg_values);
+            }
+        }
+        let arities: Vec<String> = ids
+            .iter()
+            .map(|id| self.functions[id.0].params.len().to_string())
+            .collect();
+        Err(EvalError::TypeError(format!(
+            "{}() no variant accepts {} arguments (available: {})",
+            name,
+            arg_values.len(),
+            arities.join(", ")
+        )))
     }
 
     fn call_function(

@@ -18,6 +18,8 @@ pub enum Value {
     Null,
     /// User-defined function (ID into the interpreter's function table)
     Function(FunctionId),
+    /// Multiple dispatch group (several functions with the same name, different arities)
+    MultiFunction(Vec<FunctionId>),
     /// List of values
     List(Vec<Value>),
     /// Closure (ID into interpreter's closure table)
@@ -115,6 +117,7 @@ impl fmt::Display for Value {
             Value::Bool(b) => write!(f, "{}", b),
             Value::Null => write!(f, "null"),
             Value::Function(id) => write!(f, "<function #{}>", id.0),
+            Value::MultiFunction(ids) => write!(f, "<function ({} variants)>", ids.len()),
             Value::List(items) => {
                 write!(f, "[")?;
                 for (i, item) in items.iter().enumerate() {
