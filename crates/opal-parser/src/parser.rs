@@ -164,21 +164,25 @@ impl<'src> Parser<'src> {
         // Break
         if self.check(&Token::Break) {
             self.advance(); // consume 'break'
-            self.expect_statement_end()?;
-            return Ok(Stmt {
+            let stmt = Stmt {
                 kind: StmtKind::Break,
                 span: start,
-            });
+            };
+            let stmt = self.try_suffix_if(stmt)?;
+            self.expect_statement_end()?;
+            return Ok(stmt);
         }
 
         // Next
         if self.check(&Token::Next) {
             self.advance(); // consume 'next'
-            self.expect_statement_end()?;
-            return Ok(Stmt {
+            let stmt = Stmt {
                 kind: StmtKind::Next,
                 span: start,
-            });
+            };
+            let stmt = self.try_suffix_if(stmt)?;
+            self.expect_statement_end()?;
+            return Ok(stmt);
         }
 
         // Instance variable assignment: .field = expr
@@ -273,13 +277,14 @@ impl<'src> Parser<'src> {
             }
         }
 
-        // Expression statement
-        self.expect_statement_end()?;
-        let span = expr.span;
-        Ok(Stmt {
+        // Expression statement — check for suffix if
+        let stmt = Stmt {
             kind: StmtKind::Expr(expr),
-            span,
-        })
+            span: start,
+        };
+        let stmt = self.try_suffix_if(stmt)?;
+        self.expect_statement_end()?;
+        Ok(stmt)
     }
 
     fn parse_let_statement(&mut self, start: Span) -> Result<Stmt, ParseError> {
@@ -391,20 +396,22 @@ impl<'src> Parser<'src> {
 
     fn parse_return_statement(&mut self, start: Span) -> Result<Stmt, ParseError> {
         self.advance(); // consume 'return'
-        let value = if self.is_at_end() || self.check(&Token::Newline) || self.check(&Token::End) {
+        let value = if self.is_at_end() || self.check(&Token::Newline) || self.check(&Token::End) || self.check(&Token::If) {
             None
         } else {
             Some(self.parse_expression(0)?)
         };
-        self.expect_statement_end()?;
         let end = value.as_ref().map_or(start.end, |e| e.span.end);
-        Ok(Stmt {
+        let stmt = Stmt {
             kind: StmtKind::Return(value),
             span: Span {
                 start: start.start,
                 end,
             },
-        })
+        };
+        let stmt = self.try_suffix_if(stmt)?;
+        self.expect_statement_end()?;
+        Ok(stmt)
     }
 
     fn parse_for_loop(&mut self, start: Span) -> Result<Stmt, ParseError> {
@@ -2294,6 +2301,32 @@ impl<'src> Parser<'src> {
 
     fn expect_newline(&mut self) -> Result<(), ParseError> {
         self.expect_token(&Token::Newline, "newline")
+    }
+
+    /// Check for suffix `if` and wrap a statement in a conditional if present.
+    fn try_suffix_if(&mut self, stmt: Stmt) -> Result<Stmt, ParseError> {
+        if self.check(&Token::If) {
+            self.advance(); // consume 'if'
+            let condition = self.parse_expression(0)?;
+            let span = Span {
+                start: stmt.span.start,
+                end: condition.span.end,
+            };
+            Ok(Stmt {
+                kind: StmtKind::Expr(Expr {
+                    kind: ExprKind::If {
+                        condition: Box::new(condition),
+                        then_branch: vec![stmt],
+                        elsif_branches: vec![],
+                        else_branch: None,
+                    },
+                    span,
+                }),
+                span,
+            })
+        } else {
+            Ok(stmt)
+        }
     }
 
     fn expect_statement_end(&mut self) -> Result<(), ParseError> {

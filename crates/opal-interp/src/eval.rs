@@ -4282,4 +4282,20 @@ print("hi" is NumOrStr)"#).unwrap(), "true");
         assert_eq!(run(r#"print(null ?? "default")"#).unwrap(), "default");
         assert_eq!(run(r#"print("value" ?? "default")"#).unwrap(), "value");
     }
+
+    #[test]
+    fn suffix_if_print() {
+        assert_eq!(run("x = 4\nprint(\"yes\") if x > 0").unwrap(), "yes");
+        assert_eq!(run("x = -1\nprint(\"yes\") if x > 0").unwrap(), "");
+    }
+
+    #[test]
+    fn suffix_if_next() {
+        assert_eq!(run("sum = 0\nfor i in 1..6\n  next if i % 2 == 0\n  sum += i\nend\nprint(sum)").unwrap(), "9");
+    }
+
+    #[test]
+    fn suffix_if_break() {
+        assert_eq!(run("sum = 0\nfor i in 1..100\n  break if i > 5\n  sum += i\nend\nprint(sum)").unwrap(), "15");
+    }
 }
