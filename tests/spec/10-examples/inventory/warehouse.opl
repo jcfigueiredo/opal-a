@@ -10,3 +10,10 @@ class Product
     .price
   end
 end
+
+def make_catalog()
+  w = Product.new(name: "Widget", price: 9.99)
+  g = Product.new(name: "Gadget", price: 24.99)
+  z = Product.new(name: "Gizmo", price: 49.99)
+  [w, g, z]
+end

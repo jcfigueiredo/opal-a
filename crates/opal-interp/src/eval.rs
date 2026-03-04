@@ -34,6 +34,8 @@ struct StoredFunction {
     name: String,
     params: Vec<String>,
     body: Vec<Stmt>,
+    /// Captured environment from defining scope (for module-level functions)
+    captured_env: Option<Environment>,
 }
 
 /// A stored closure
@@ -105,6 +107,8 @@ pub struct Interpreter<W: Write> {
     current_self: Option<InstanceId>,
     /// Current actor for receive handlers
     current_actor: Option<ActorId>,
+    /// True when loading a file-based module (functions should capture env)
+    loading_module: bool,
     macros: HashMap<String, StoredMacro>,
     ast_nodes: Vec<Vec<Stmt>>,
     /// Registry of FFI plugins
@@ -131,6 +135,7 @@ impl Interpreter<std::io::Stdout> {
             actors: Vec::new(),
             current_self: None,
             current_actor: None,
+            loading_module: false,
             macros: HashMap::new(),
             ast_nodes: Vec::new(),
             plugin_registry: opal_stdlib::PluginRegistry::new(),
@@ -161,6 +166,7 @@ impl<W: Write> Interpreter<W> {
             actors: Vec::new(),
             current_self: None,
             current_actor: None,
+            loading_module: false,
             macros: HashMap::new(),
             ast_nodes: Vec::new(),
             plugin_registry: opal_stdlib::PluginRegistry::new(),
@@ -268,12 +274,14 @@ impl<W: Write> Interpreter<W> {
             })?;
 
             // Evaluate in a new scope, capture bindings as module
+            self.loading_module = true;
             self.env.push_scope();
             for stmt in &program.statements {
                 self.eval_stmt(stmt)?;
             }
             let bindings = self.env.current_scope_bindings();
             self.env.pop_scope();
+            self.loading_module = false;
 
             let module_id = ModuleId(self.modules.len());
             self.modules.push(StoredModule {
@@ -357,10 +365,16 @@ impl<W: Write> Interpreter<W> {
                 name, params, body, ..
             } => {
                 let id = FunctionId(self.functions.len());
+                let captured = if self.loading_module {
+                    Some(self.env.snapshot())
+                } else {
+                    None
+                };
                 self.functions.push(StoredFunction {
                     name: name.clone(),
                     params: params.iter().map(|p| p.name.clone()).collect(),
                     body: body.clone(),
+                    captured_env: captured,
                 });
                 self.env.set(name.clone(), Value::Function(id));
             }
@@ -433,6 +447,7 @@ impl<W: Write> Interpreter<W> {
                             name: mname.clone(),
                             params: params.iter().map(|p| p.name.clone()).collect(),
                             body: body.clone(),
+                            captured_env: None,
                         });
                     }
                 }
@@ -1652,6 +1667,13 @@ impl<W: Write> Interpreter<W> {
             )));
         }
 
+        // If function has a captured env (defined in a module), use it
+        let saved_env = if let Some(ref captured) = stored.captured_env {
+            Some(std::mem::replace(&mut self.env, captured.clone()))
+        } else {
+            None
+        };
+
         self.env.push_scope();
         for (param_name, arg_val) in stored.params.iter().zip(arg_values) {
             self.env.set(String::clone(param_name), arg_val);
@@ -1659,6 +1681,11 @@ impl<W: Write> Interpreter<W> {
 
         let result = self.eval_block(&stored.body);
         self.env.pop_scope();
+
+        // Restore original env if we swapped
+        if let Some(original) = saved_env {
+            self.env = original;
+        }
 
         match result {
             Ok(val) => Ok(val),
