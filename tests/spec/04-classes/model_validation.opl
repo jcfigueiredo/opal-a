@@ -1,0 +1,5 @@
+# expect-error: validation failed
+model Email
+  needs address: String where |v| v.contains("@")
+end
+Email.new(address: "invalid")

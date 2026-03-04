@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use opal_parser::ast::*;
 #[allow(unused_imports)]
@@ -173,6 +173,10 @@ pub struct Interpreter<W: Write> {
     native_functions: Vec<String>,
     /// File-based module loader (set when running from a file)
     module_loader: Option<loader::ModuleLoader>,
+    /// Model class metadata: class_id -> list of (field_name, validator_expr)
+    model_classes: HashMap<ClassId, Vec<(String, Expr)>>,
+    /// Frozen (immutable) instance IDs (model instances)
+    frozen_instances: HashSet<InstanceId>,
 }
 
 impl Interpreter<std::io::Stdout> {
@@ -199,6 +203,8 @@ impl Interpreter<std::io::Stdout> {
             native_objects: Vec::new(),
             native_functions: Vec::new(),
             module_loader: None,
+            model_classes: HashMap::new(),
+            frozen_instances: HashSet::new(),
         };
         interp.register_builtin_enums();
         interp
@@ -235,6 +241,8 @@ impl<W: Write> Interpreter<W> {
             native_objects: Vec::new(),
             native_functions: Vec::new(),
             module_loader: None,
+            model_classes: HashMap::new(),
+            frozen_instances: HashSet::new(),
         };
         interp.register_builtin_enums();
         interp
@@ -993,6 +1001,12 @@ impl<W: Write> Interpreter<W> {
                 if let Some(actor_id) = self.current_actor {
                     self.actors[actor_id.0].fields.insert(field.clone(), val);
                 } else if let Some(instance_id) = self.current_self {
+                    // Check immutability for model instances
+                    if self.frozen_instances.contains(&instance_id) {
+                        return Err(EvalError::RuntimeError(
+                            "cannot modify fields of an immutable model instance".into(),
+                        ));
+                    }
                     self.instances[instance_id.0]
                         .fields
                         .insert(field.clone(), val);
@@ -1078,6 +1092,159 @@ impl<W: Write> Interpreter<W> {
                             .set(decl.name.clone(), Value::NativeFunction(nf_id));
                     }
                     // If plugin or function not found, silently skip (soft failure)
+                }
+            }
+            StmtKind::ModelDef {
+                name,
+                needs,
+                methods,
+            } => {
+                let mut stored_methods = Vec::new();
+                for method_stmt in methods {
+                    if let StmtKind::FuncDef {
+                        name: mname,
+                        params,
+                        body,
+                        ..
+                    } = &method_stmt.kind
+                    {
+                        stored_methods.push(StoredFunction {
+                            name: mname.clone(),
+                            params: params.iter().map(|p| p.name.clone()).collect(),
+                            param_types: params.iter().map(|p| p.type_annotation.clone()).collect(),
+                            param_defaults: params.iter().map(|p| p.default.clone()).collect(),
+                            body: body.clone(),
+                            captured_env: None,
+                            annotations: vec![],
+                            visibility: Visibility::Public,
+                        });
+                    }
+                }
+
+                // Store validators (closures) for each field
+                let mut validators: Vec<(String, Expr)> = Vec::new();
+                for need in needs {
+                    if let Some(validator) = &need.validator {
+                        validators.push((need.name.clone(), validator.clone()));
+                    }
+                }
+
+                let class_id = ClassId(self.classes.len());
+                self.classes.push(StoredClass {
+                    name: name.clone(),
+                    needs: needs
+                        .iter()
+                        .map(|n| (n.name.clone(), n.type_annotation.clone()))
+                        .collect(),
+                    methods: stored_methods,
+                });
+                // Store model metadata: validators and that it's a model
+                self.model_classes.insert(class_id, validators);
+                self.env.set(name.clone(), Value::Class(class_id));
+            }
+            StmtKind::RetroactiveImpl {
+                protocol_name,
+                type_name,
+                methods,
+            } => {
+                // Convert method stmts to StoredFunctions
+                let mut stored_methods = Vec::new();
+                for method_stmt in methods {
+                    if let StmtKind::FuncDef {
+                        name: mname,
+                        params,
+                        body,
+                        ..
+                    } = &method_stmt.kind
+                    {
+                        stored_methods.push(StoredFunction {
+                            name: mname.clone(),
+                            params: params.iter().map(|p| p.name.clone()).collect(),
+                            param_types: params.iter().map(|p| p.type_annotation.clone()).collect(),
+                            param_defaults: params.iter().map(|p| p.default.clone()).collect(),
+                            body: body.clone(),
+                            captured_env: None,
+                            annotations: vec![],
+                            visibility: Visibility::Public,
+                        });
+                    }
+                }
+
+                // Look up the protocol
+                let proto_id = match self.env.get(protocol_name) {
+                    Some(Value::Protocol(id)) => *id,
+                    _ => {
+                        return Err(EvalError::UndefinedVariable(format!(
+                            "protocol {}", protocol_name
+                        )));
+                    }
+                };
+                let proto = self.protocols[proto_id.0].clone();
+
+                // Find the target type (class or enum)
+                let target = self.env.get(type_name).cloned();
+                match target {
+                    Some(Value::Class(class_id)) => {
+                        // Add methods to the class
+                        for m in &stored_methods {
+                            if !self.classes[class_id.0].methods.iter().any(|em| em.name == m.name) {
+                                self.classes[class_id.0].methods.push(m.clone());
+                            }
+                        }
+                        // Copy protocol default methods
+                        let class_method_names: Vec<String> =
+                            self.classes[class_id.0].methods.iter().map(|m| m.name.clone()).collect();
+                        for default in &proto.default_methods {
+                            if !class_method_names.contains(&default.name) {
+                                self.classes[class_id.0].methods.push(default.clone());
+                            }
+                        }
+                        // Check required methods
+                        for required in &proto.required_methods {
+                            let has_it = self.classes[class_id.0].methods.iter().any(|m| m.name == *required);
+                            if !has_it {
+                                return Err(EvalError::RuntimeError(format!(
+                                    "'{}' implements '{}' but missing required method '{}'",
+                                    type_name, protocol_name, required
+                                )));
+                            }
+                        }
+                    }
+                    Some(Value::Type(TypeInfo::Enum(enum_id))) => {
+                        // Add methods to the enum
+                        for m in &stored_methods {
+                            if !self.enums[enum_id.0].methods.iter().any(|em| em.name == m.name) {
+                                self.enums[enum_id.0].methods.push(m.clone());
+                            }
+                        }
+                        // Copy protocol default methods
+                        let enum_method_names: Vec<String> =
+                            self.enums[enum_id.0].methods.iter().map(|m| m.name.clone()).collect();
+                        for default in &proto.default_methods {
+                            if !enum_method_names.contains(&default.name) {
+                                self.enums[enum_id.0].methods.push(default.clone());
+                            }
+                        }
+                        // Check required methods
+                        for required in &proto.required_methods {
+                            let has_it = self.enums[enum_id.0].methods.iter().any(|m| m.name == *required);
+                            if !has_it {
+                                return Err(EvalError::RuntimeError(format!(
+                                    "'{}' implements '{}' but missing required method '{}'",
+                                    type_name, protocol_name, required
+                                )));
+                            }
+                        }
+                        // Record that this enum implements the protocol
+                        if !self.enums[enum_id.0].implements.contains(protocol_name) {
+                            self.enums[enum_id.0].implements.push(protocol_name.clone());
+                        }
+                    }
+                    _ => {
+                        return Err(EvalError::UndefinedVariable(format!(
+                            "type {}", type_name
+                        )));
+                    }
                 }
             }
         }
@@ -2783,6 +2950,27 @@ impl<W: Write> Interpreter<W> {
                     class_id: *class_id,
                     fields,
                 });
+
+                // If this is a model class, run validators and freeze
+                if let Some(validators) = self.model_classes.get(class_id).cloned() {
+                    for (field_name, validator_expr) in &validators {
+                        let field_val = self.instances[instance_id.0]
+                            .fields
+                            .get(field_name)
+                            .cloned()
+                            .unwrap_or(Value::Null);
+                        let validator_fn = self.eval_expr(validator_expr)?;
+                        let result = self.call_value(validator_fn, vec![(None, field_val)])?;
+                        if !result.is_truthy() {
+                            return Err(EvalError::RuntimeError(format!(
+                                "validation failed for field '{}' in {}.new()",
+                                field_name, class.name
+                            )));
+                        }
+                    }
+                    self.frozen_instances.insert(instance_id);
+                }
+
                 Ok(Value::Instance(instance_id))
             }
 
@@ -2790,6 +2978,53 @@ impl<W: Write> Interpreter<W> {
             (Value::Instance(instance_id), _) => {
                 let instance = self.instances[instance_id.0].clone();
                 let class = self.classes[instance.class_id.0].clone();
+
+                // Auto-methods for model instances
+                if self.model_classes.contains_key(&instance.class_id) {
+                    if method == "to_dict" {
+                        let entries: Vec<(String, Value)> = class.needs.iter()
+                            .map(|(name, _)| {
+                                let val = instance.fields.get(name).cloned().unwrap_or(Value::Null);
+                                (name.clone(), val)
+                            })
+                            .collect();
+                        return Ok(Value::Dict(entries));
+                    }
+                    if method == "copy" {
+                        // Create a new instance with fields overridden by named args
+                        let mut new_fields = instance.fields.clone();
+                        for (name, val) in &named_args {
+                            if let Some(name) = name {
+                                new_fields.insert(name.clone(), val.clone());
+                            }
+                        }
+                        let new_instance_id = InstanceId(self.instances.len());
+                        self.instances.push(StoredInstance {
+                            class_id: instance.class_id,
+                            fields: new_fields,
+                        });
+                        // Run validators on the new instance
+                        if let Some(validators) = self.model_classes.get(&instance.class_id).cloned() {
+                            for (field_name, validator_expr) in &validators {
+                                let field_val = self.instances[new_instance_id.0]
+                                    .fields
+                                    .get(field_name)
+                                    .cloned()
+                                    .unwrap_or(Value::Null);
+                                let validator_fn = self.eval_expr(validator_expr)?;
+                                let result = self.call_value(validator_fn, vec![(None, field_val)])?;
+                                if !result.is_truthy() {
+                                    return Err(EvalError::RuntimeError(format!(
+                                        "validation failed for field '{}' in {}.copy()",
+                                        field_name, class.name
+                                    )));
+                                }
+                            }
+                        }
+                        self.frozen_instances.insert(new_instance_id);
+                        return Ok(Value::Instance(new_instance_id));
+                    }
+                }
 
                 // Find method in class — dispatch by name + arity + type
                 let method_fn = class
@@ -3551,6 +3786,16 @@ impl<W: Write> Interpreter<W> {
         }
 
         Ok(Value::Null)
+    }
+
+    /// Call a value (closure or function) with the given args
+    fn call_value(&mut self, val: Value, named_args: Vec<(Option<String>, Value)>) -> Result<Value, EvalError> {
+        let args: Vec<Value> = named_args.into_iter().map(|(_, v)| v).collect();
+        match val {
+            Value::Closure(id) => self.call_closure(id, args),
+            Value::Function(id) => self.call_function(id, "<validator>", args),
+            _ => Err(EvalError::TypeError("expected a callable value".into())),
+        }
     }
 
     fn call_closure(&mut self, id: ClosureId, arg_values: Vec<Value>) -> Result<Value, EvalError> {

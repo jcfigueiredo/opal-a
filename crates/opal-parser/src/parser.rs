@@ -151,6 +151,16 @@ impl<'src> Parser<'src> {
             return self.parse_enum_def(start);
         }
 
+        // Model definition
+        if self.check(&Token::Model) {
+            return self.parse_model_def(start);
+        }
+
+        // Implements (retroactive conformance at statement level)
+        if self.check(&Token::Implements) {
+            return self.parse_retroactive_impl(start);
+        }
+
         // Actor definition
         if self.check(&Token::Actor) {
             return self.parse_actor_def(start);
@@ -793,6 +803,111 @@ impl<'src> Parser<'src> {
                 name,
                 type_annotation,
             }),
+            span: Span {
+                start: start.start,
+                end,
+            },
+        })
+    }
+
+    fn parse_model_def(&mut self, start: Span) -> Result<Stmt, ParseError> {
+        self.advance(); // consume 'model'
+        let name = self.expect_identifier()?;
+        self.expect_newline()?;
+        self.skip_newlines();
+
+        let mut needs = Vec::new();
+        let mut methods = Vec::new();
+
+        while !self.check(&Token::End) && !self.is_at_end() {
+            if self.check(&Token::Needs) {
+                self.advance(); // consume 'needs'
+                let field_name = self.expect_identifier()?;
+                let type_annotation = if self.check(&Token::Colon) {
+                    self.advance();
+                    Some(self.parse_type_name()?)
+                } else {
+                    None
+                };
+                // Optional where clause: where |v| expr
+                let validator = if self.check(&Token::Where) {
+                    self.advance(); // consume 'where'
+                    let expr = self.parse_expression(0)?;
+                    Some(expr)
+                } else {
+                    None
+                };
+                self.expect_statement_end()?;
+                needs.push(ModelNeedsDecl {
+                    name: field_name,
+                    type_annotation,
+                    validator,
+                });
+            } else if self.check(&Token::Def) {
+                methods.push(self.parse_function_def()?);
+            } else {
+                self.skip_newlines();
+                if self.check(&Token::End) {
+                    break;
+                }
+                return Err(ParseError::UnexpectedToken {
+                    found: self.peek().unwrap().clone(),
+                    expected: "needs, def, or end in model body".into(),
+                    span: self.current_span(),
+                });
+            }
+            self.skip_newlines();
+        }
+
+        self.expect_token(&Token::End, "end")?;
+        let end = self.previous_span().end;
+        Ok(Stmt {
+            kind: StmtKind::ModelDef {
+                name,
+                needs,
+                methods,
+            },
+            span: Span {
+                start: start.start,
+                end,
+            },
+        })
+    }
+
+    fn parse_retroactive_impl(&mut self, start: Span) -> Result<Stmt, ParseError> {
+        self.advance(); // consume 'implements'
+        let protocol_name = self.expect_identifier()?;
+        self.expect_token(&Token::For, "for")?;
+        let type_name = self.expect_identifier()?;
+        self.expect_newline()?;
+        self.skip_newlines();
+
+        let mut methods = Vec::new();
+        while !self.check(&Token::End) && !self.is_at_end() {
+            if self.check(&Token::Def) {
+                methods.push(self.parse_function_def()?);
+            } else {
+                self.skip_newlines();
+                if self.check(&Token::End) {
+                    break;
+                }
+                return Err(ParseError::UnexpectedToken {
+                    found: self.peek().unwrap().clone(),
+                    expected: "def or end in implements block".into(),
+                    span: self.current_span(),
+                });
+            }
+            self.skip_newlines();
+        }
+
+        self.expect_token(&Token::End, "end")?;
+        let end = self.previous_span().end;
+        Ok(Stmt {
+            kind: StmtKind::RetroactiveImpl {
+                protocol_name,
+                type_name,
+                methods,
+            },
             span: Span {
                 start: start.start,
                 end,

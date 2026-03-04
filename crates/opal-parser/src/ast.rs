@@ -134,6 +134,18 @@ pub enum StmtKind {
     },
     /// Destructure assignment: `[a, b] = list` or `[head | tail] = list`
     DestructureAssign { pattern: Pattern, value: Expr },
+    /// Model definition (immutable validated data class)
+    ModelDef {
+        name: String,
+        needs: Vec<ModelNeedsDecl>,
+        methods: Vec<Stmt>,
+    },
+    /// Retroactive conformance: `implements Protocol for Type ... end`
+    RetroactiveImpl {
+        protocol_name: String,
+        type_name: String,
+        methods: Vec<Stmt>,
+    },
 }
 
 /// An expression
@@ -321,6 +333,14 @@ pub struct ImportItem {
 pub struct NeedsDecl {
     pub name: String,
     pub type_annotation: Option<String>,
+}
+
+/// A `needs` declaration in a model (with optional where validator)
+#[derive(Debug, Clone)]
+pub struct ModelNeedsDecl {
+    pub name: String,
+    pub type_annotation: Option<String>,
+    pub validator: Option<Expr>,  // closure expression from `where |v| ...`
 }
 
 #[derive(Debug, Clone)]

@@ -1,0 +1,7 @@
+# expect: {name: Alice, age: 30} | {name: Alice, age: 31}
+model Person
+  needs name: String
+  needs age: Int
+end
+p = Person.new(name: "Alice", age: 30)
+print(f"{p.to_dict()} | {p.copy(age: 31).to_dict()}")

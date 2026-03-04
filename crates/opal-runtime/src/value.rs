@@ -77,11 +77,11 @@ pub struct ActorId(pub usize);
 pub struct ActorDefId(pub usize);
 
 /// Opaque ID for a class
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ClassId(pub usize);
 
 /// Opaque ID for an instance
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct InstanceId(pub usize);
 
 /// Opaque ID for a module
