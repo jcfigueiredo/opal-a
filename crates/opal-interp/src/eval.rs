@@ -1104,6 +1104,105 @@ impl<W: Write> Interpreter<W> {
             }
             // String methods
             (Value::String(s), "length") => Ok(Value::Integer(s.len() as i64)),
+            (Value::String(s), "split") => {
+                if args.len() != 1 {
+                    return Err(EvalError::TypeError(
+                        "split() takes exactly 1 argument".into(),
+                    ));
+                }
+                let sep = match &args[0] {
+                    Value::String(sep) => sep.clone(),
+                    _ => {
+                        return Err(EvalError::TypeError(
+                            "split() argument must be a string".into(),
+                        ));
+                    }
+                };
+                let parts: Vec<Value> = s
+                    .split(&sep)
+                    .map(|p| Value::String(p.to_string()))
+                    .collect();
+                Ok(Value::List(parts))
+            }
+            (Value::String(s), "trim") => Ok(Value::String(s.trim().to_string())),
+            (Value::String(s), "contains") => {
+                if args.len() != 1 {
+                    return Err(EvalError::TypeError(
+                        "contains() takes exactly 1 argument".into(),
+                    ));
+                }
+                let sub = match &args[0] {
+                    Value::String(sub) => sub.clone(),
+                    _ => {
+                        return Err(EvalError::TypeError(
+                            "contains() argument must be a string".into(),
+                        ));
+                    }
+                };
+                Ok(Value::Bool(s.contains(&sub)))
+            }
+            (Value::String(s), "replace") => {
+                if args.len() != 2 {
+                    return Err(EvalError::TypeError(
+                        "replace() takes exactly 2 arguments".into(),
+                    ));
+                }
+                let old = match &args[0] {
+                    Value::String(o) => o.clone(),
+                    _ => {
+                        return Err(EvalError::TypeError(
+                            "replace() first argument must be a string".into(),
+                        ));
+                    }
+                };
+                let new = match &args[1] {
+                    Value::String(n) => n.clone(),
+                    _ => {
+                        return Err(EvalError::TypeError(
+                            "replace() second argument must be a string".into(),
+                        ));
+                    }
+                };
+                Ok(Value::String(s.replace(&old, &new)))
+            }
+            (Value::String(s), "starts_with") => {
+                if args.len() != 1 {
+                    return Err(EvalError::TypeError(
+                        "starts_with() takes exactly 1 argument".into(),
+                    ));
+                }
+                let prefix = match &args[0] {
+                    Value::String(p) => p.clone(),
+                    _ => {
+                        return Err(EvalError::TypeError(
+                            "starts_with() argument must be a string".into(),
+                        ));
+                    }
+                };
+                Ok(Value::Bool(s.starts_with(&prefix)))
+            }
+            (Value::String(s), "ends_with") => {
+                if args.len() != 1 {
+                    return Err(EvalError::TypeError(
+                        "ends_with() takes exactly 1 argument".into(),
+                    ));
+                }
+                let suffix = match &args[0] {
+                    Value::String(sf) => sf.clone(),
+                    _ => {
+                        return Err(EvalError::TypeError(
+                            "ends_with() argument must be a string".into(),
+                        ));
+                    }
+                };
+                Ok(Value::Bool(s.ends_with(&suffix)))
+            }
+            (Value::String(s), "to_upper") => Ok(Value::String(s.to_uppercase())),
+            (Value::String(s), "to_lower") => Ok(Value::String(s.to_lowercase())),
+            (Value::String(s), "chars") => {
+                let chars: Vec<Value> = s.chars().map(|c| Value::String(c.to_string())).collect();
+                Ok(Value::List(chars))
+            }
 
             // Dict methods
             (Value::Dict(entries), "length") => Ok(Value::Integer(entries.len() as i64)),
@@ -2475,5 +2574,43 @@ serve(app, __PORT__)
     fn range_to_list() {
         let output = run("print((1..4).to_list())").unwrap();
         assert_eq!(output, "[1, 2, 3]");
+    }
+
+    // === String methods ===
+
+    #[test]
+    fn string_split() {
+        let output = run(r#"print("a,b,c".split(","))"#).unwrap();
+        assert_eq!(output, "[a, b, c]");
+    }
+
+    #[test]
+    fn string_trim() {
+        let output = run(r#"print("  hello  ".trim())"#).unwrap();
+        assert_eq!(output, "hello");
+    }
+
+    #[test]
+    fn string_contains() {
+        let output = run(r#"print("hello world".contains("world"))"#).unwrap();
+        assert_eq!(output, "true");
+    }
+
+    #[test]
+    fn string_replace() {
+        let output = run(r#"print("hello world".replace("world", "opal"))"#).unwrap();
+        assert_eq!(output, "hello opal");
+    }
+
+    #[test]
+    fn string_to_upper() {
+        let output = run(r#"print("hello".to_upper())"#).unwrap();
+        assert_eq!(output, "HELLO");
+    }
+
+    #[test]
+    fn string_chars() {
+        let output = run(r#"print("abc".chars())"#).unwrap();
+        assert_eq!(output, "[a, b, c]");
     }
 }
