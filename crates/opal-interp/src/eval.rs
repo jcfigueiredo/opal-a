@@ -133,6 +133,7 @@ struct StoredEnum {
     name: String,
     variants: Vec<StoredEnumVariant>,
     methods: Vec<StoredFunction>,
+    implements: Vec<String>,
 }
 
 /// A stored enum variant
@@ -261,6 +262,7 @@ impl<W: Write> Interpreter<W> {
                 },
             ],
             methods: vec![],
+            implements: vec![],
         });
         // Option enum at index 1: Some(value), None
         self.enums.push(StoredEnum {
@@ -276,6 +278,7 @@ impl<W: Write> Interpreter<W> {
                 },
             ],
             methods: vec![],
+            implements: vec![],
         });
     }
 
@@ -871,7 +874,7 @@ impl<W: Write> Interpreter<W> {
                 name,
                 variants,
                 methods,
-                ..
+                implements,
             } => {
                 let enum_id = EnumId(self.enums.len());
                 let stored_variants: Vec<StoredEnumVariant> = variants
@@ -881,7 +884,7 @@ impl<W: Write> Interpreter<W> {
                         fields: v.fields.iter().map(|f| (f.name.clone(), f.type_annotation.clone())).collect(),
                     })
                     .collect();
-                let stored_methods: Vec<StoredFunction> = methods
+                let mut stored_methods: Vec<StoredFunction> = methods
                     .iter()
                     .filter_map(|m| {
                         if let StmtKind::FuncDef { name, params, body, .. } = &m.kind {
@@ -893,17 +896,49 @@ impl<W: Write> Interpreter<W> {
                                 body: body.clone(),
                                 captured_env: None,
                                 annotations: vec![],
-                    visibility: Visibility::Public,
+                                visibility: Visibility::Public,
                             })
                         } else {
                             None
                         }
                     })
                     .collect();
+
+                // Apply protocol defaults and check required methods
+                let method_names: Vec<String> = stored_methods.iter().map(|m| m.name.clone()).collect();
+                for proto_name in implements {
+                    let proto_id = match self.env.get(proto_name) {
+                        Some(Value::Protocol(id)) => *id,
+                        _ => {
+                            return Err(EvalError::UndefinedVariable(format!(
+                                "protocol {}", proto_name
+                            )));
+                        }
+                    };
+                    let proto = self.protocols[proto_id.0].clone();
+                    // Copy default methods that aren't already defined
+                    for default in &proto.default_methods {
+                        if !method_names.contains(&default.name) {
+                            stored_methods.push(default.clone());
+                        }
+                    }
+                    // Check all required methods are implemented
+                    for required in &proto.required_methods {
+                        let has_it = stored_methods.iter().any(|m| m.name == *required);
+                        if !has_it {
+                            return Err(EvalError::RuntimeError(format!(
+                                "enum '{}' does not implement required method '{}' from protocol '{}'",
+                                name, required, proto_name
+                            )));
+                        }
+                    }
+                }
+
                 self.enums.push(StoredEnum {
                     name: name.clone(),
                     variants: stored_variants,
                     methods: stored_methods,
+                    implements: implements.clone(),
                 });
                 self.env.set(name.clone(), Value::Type(TypeInfo::Enum(enum_id)));
             }
@@ -3127,7 +3162,12 @@ impl<W: Write> Interpreter<W> {
                     return self.class_implements_protocol(inst.class_id, name);
                 }
                 if let Value::EnumVariant { enum_id, .. } = value {
-                    if self.enums[enum_id.0].name == name {
+                    let e = &self.enums[enum_id.0];
+                    if e.name == name {
+                        return true;
+                    }
+                    // Check if enum implements a protocol with this name
+                    if e.implements.contains(&name.to_string()) {
                         return true;
                     }
                 }

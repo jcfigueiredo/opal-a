@@ -1,0 +1,17 @@
+# expect: true | a circle
+protocol Describable
+  def describe() -> String
+end
+
+enum Shape implements Describable
+  Circle(radius: Float)
+  def describe()
+    match self
+      case Shape.Circle(r)
+        f"a circle"
+    end
+  end
+end
+
+s = Shape.Circle(5.0)
+print(f"{s is Describable} | {s.describe()}")
