@@ -1,0 +1,7 @@
+# expect: Shape.Circle(5.0)
+enum Shape
+  Circle(radius: Float)
+  Rectangle(width: Float, height: Float)
+end
+s = Shape.Circle(radius: 5.0)
+print(s)

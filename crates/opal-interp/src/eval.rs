@@ -2817,16 +2817,28 @@ impl<W: Write> Interpreter<W> {
                             fields: vec![],
                         });
                     }
-                    if args.len() != variant.fields.len() {
-                        return Err(EvalError::TypeError(format!(
-                            "{}.{}() expected {} arguments, got {}",
-                            e.name, variant.name, variant.fields.len(), args.len()
-                        )));
-                    }
+                    // Support named arguments: match by field name
+                    let has_named = named_args.iter().any(|(name, _)| name.is_some());
+                    let field_values = if has_named {
+                        variant.fields.iter().map(|(field_name, _)| {
+                            named_args.iter()
+                                .find(|(name, _)| name.as_deref() == Some(field_name.as_str()))
+                                .map(|(_, v)| v.clone())
+                                .unwrap_or(Value::Null)
+                        }).collect::<Vec<_>>()
+                    } else {
+                        if args.len() != variant.fields.len() {
+                            return Err(EvalError::TypeError(format!(
+                                "{}.{}() expected {} arguments, got {}",
+                                e.name, variant.name, variant.fields.len(), args.len()
+                            )));
+                        }
+                        args
+                    };
                     return Ok(Value::EnumVariant {
                         enum_id: *enum_id,
                         variant_index: vi,
-                        fields: args,
+                        fields: field_values,
                     });
                 }
                 return Err(EvalError::TypeError(format!("enum '{}' has no variant '{}'", e.name, method)));
