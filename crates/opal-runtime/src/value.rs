@@ -38,6 +38,8 @@ pub enum Value {
     Symbol(String),
     /// Actor instance
     Actor(ActorId),
+    /// Actor class (definition, not instance)
+    ActorClass(ActorDefId),
     /// AST node (ID into interpreter's AST storage)
     Ast(AstId),
     /// Opaque native object (FFI state)
@@ -61,6 +63,10 @@ pub struct AstId(pub usize);
 /// Opaque ID for an actor
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ActorId(pub usize);
+
+/// Opaque ID for an actor definition
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ActorDefId(pub usize);
 
 /// Opaque ID for a class
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -116,6 +122,7 @@ impl fmt::Display for Value {
             Value::Some(v) => write!(f, "Some({})", v),
             Value::Symbol(s) => write!(f, ":{}", s),
             Value::Actor(id) => write!(f, "<actor #{}>", id.0),
+            Value::ActorClass(id) => write!(f, "<actor class #{}>", id.0),
             Value::Ast(id) => write!(f, "<ast #{}>", id.0),
             Value::NativeObject(id) => write!(f, "<native #{}>", id.0),
             Value::NativeFunction(id) => write!(f, "<native fn #{}>", id.0),

@@ -7,5 +7,6 @@ pub use closure::ClosureId;
 pub use env::Environment;
 pub use function::FunctionId;
 pub use value::{
-    ActorId, AstId, ClassId, InstanceId, ModuleId, NativeFunctionId, NativeObjectId, Value,
+    ActorDefId, ActorId, AstId, ClassId, InstanceId, ModuleId, NativeFunctionId, NativeObjectId,
+    Value,
 };

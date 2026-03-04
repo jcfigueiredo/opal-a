@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use opal_parser::ast::*;
 use opal_runtime::{
-    ActorId, AstId, ClassId, ClosureId, Environment, FunctionId, InstanceId, ModuleId,
+    ActorDefId, ActorId, AstId, ClassId, ClosureId, Environment, FunctionId, InstanceId, ModuleId,
     NativeFunctionId, NativeObjectId, Value,
 };
 use thiserror::Error;
@@ -427,10 +427,8 @@ impl<W: Write> Interpreter<W> {
                     init: init.clone(),
                     receive_cases: receive_cases.clone(),
                 });
-                // Store a class-like value that supports .new()
                 self.env
-                    .set(name.clone(), Value::Class(ClassId(1000 + def_idx)));
-                // Use a convention: ClassId >= 1000 means actor def
+                    .set(name.clone(), Value::ActorClass(ActorDefId(def_idx)));
             }
             StmtKind::Reply(expr) => {
                 let val = self.eval_expr(expr)?;
@@ -1285,9 +1283,9 @@ impl<W: Write> Interpreter<W> {
                 )));
             }
 
-            // Actor .new() — ClassId >= 1000 convention
-            (Value::Class(class_id), "new") if class_id.0 >= 1000 => {
-                let def_idx = class_id.0 - 1000;
+            // Actor .new()
+            (Value::ActorClass(def_id), "new") => {
+                let def_idx = def_id.0;
                 let def = self.actor_defs[def_idx].clone();
                 let actor_id = ActorId(self.actors.len());
                 self.actors.push(StoredActorInstance {
