@@ -233,6 +233,11 @@ pub enum ExprKind {
         iterable: Box<Expr>,
         condition: Option<Box<Expr>>,
     },
+    /// Type cast: `expr as Type`
+    Cast {
+        expr: Box<Expr>,
+        type_name: String,
+    },
 }
 
 /// A case in a match expression

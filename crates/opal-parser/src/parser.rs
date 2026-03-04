@@ -1603,6 +1603,23 @@ impl<'src> Parser<'src> {
             };
         }
 
+        // Cast operator: expr as Type
+        if self.check(&Token::As) {
+            self.advance();
+            let type_name = self.expect_identifier()?;
+            let span = Span {
+                start: left.span.start,
+                end: self.previous_span().end,
+            };
+            left = Expr {
+                kind: ExprKind::Cast {
+                    expr: Box::new(left),
+                    type_name,
+                },
+                span,
+            };
+        }
+
         // Range operators: .. (exclusive) and ... (inclusive)
         if self.check(&Token::DotDot) || self.check(&Token::DotDotDot) {
             let inclusive = self.check(&Token::DotDotDot);

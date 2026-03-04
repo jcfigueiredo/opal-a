@@ -1,0 +1,6 @@
+# expect: 3.0 | 3 | 42 | 42
+r1 = 3 as Float
+r2 = 3.7 as Int
+r3 = "42" as Int
+r4 = 42 as String
+print(f"{r1} | {r2} | {r3} | {r4}")

@@ -1143,6 +1143,35 @@ impl<W: Write> Interpreter<W> {
                 Ok(Value::List(result))
             }
 
+            ExprKind::Cast { expr, type_name } => {
+                let val = self.eval_expr(expr)?;
+                match (val, type_name.as_str()) {
+                    // Same type → identity
+                    (v @ Value::Integer(_), "Int") => Ok(v),
+                    (v @ Value::Float(_), "Float") => Ok(v),
+                    (v @ Value::String(_), "String") => Ok(v),
+                    // Int as Float → promote
+                    (Value::Integer(n), "Float") => Ok(Value::Float(n as f64)),
+                    // Float as Int → truncate
+                    (Value::Float(n), "Int") => Ok(Value::Integer(n as i64)),
+                    // String as Int → parse
+                    (Value::String(s), "Int") => {
+                        s.trim().parse::<i64>()
+                            .map(Value::Integer)
+                            .map_err(|_| EvalError::RuntimeError(format!("cannot cast '{}' to Int", s)))
+                    }
+                    // String as Float → parse
+                    (Value::String(s), "Float") => {
+                        s.trim().parse::<f64>()
+                            .map(Value::Float)
+                            .map_err(|_| EvalError::RuntimeError(format!("cannot cast '{}' to Float", s)))
+                    }
+                    // anything as String → format_value
+                    (v, "String") => Ok(Value::String(self.format_value(&v))),
+                    (_, t) => Err(EvalError::TypeError(format!("unsupported cast to '{}'", t))),
+                }
+            }
+
             ExprKind::Closure { params, body } => {
                 let id = ClosureId(self.closures.len());
                 self.closures.push(StoredClosure {
