@@ -1,0 +1,21 @@
+# expect: 1 2 3
+class ThreeIter
+  needs pos: Int
+  def next()
+    .pos = .pos + 1
+    if .pos > 3
+      None
+    else
+      Some(.pos)
+    end
+  end
+  def iter()
+    self
+  end
+end
+
+items = []
+for x in ThreeIter.new(pos: 0)
+  items = items.push(x)
+end
+print(items.join(" "))

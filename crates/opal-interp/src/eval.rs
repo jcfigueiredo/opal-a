@@ -622,9 +622,31 @@ impl<W: Write> Interpreter<W> {
                         }
                     }
                     _ => {
-                        return Err(EvalError::TypeError(
-                            "for loop requires a list or range".into(),
-                        ));
+                        // Try iterator protocol: call .iter(), then .next() until None
+                        let iterator = self.call_method(iter_val, "iter", vec![])?;
+                        loop {
+                            let next_val = self.call_method(iterator.clone(), "next", vec![])?;
+                            // Check if it's None (Option enum variant index 1)
+                            if let Value::EnumVariant { enum_id, variant_index: 1, .. } = &next_val {
+                                if enum_id.0 == 1 { break; }
+                            }
+                            // Extract value from Some(value)
+                            let item = if let Value::EnumVariant { enum_id, variant_index: 0, fields } = &next_val {
+                                if enum_id.0 == 1 { fields[0].clone() } else { next_val.clone() }
+                            } else {
+                                next_val
+                            };
+                            self.env.push_scope();
+                            self.env.set(var.clone(), item);
+                            let result = self.eval_block(body);
+                            self.env.pop_scope();
+                            match result {
+                                Ok(_) => {}
+                                Err(EvalError::Break) => break,
+                                Err(EvalError::Next) => continue,
+                                Err(e) => return Err(e),
+                            }
+                        }
                     }
                 }
             }
@@ -1017,6 +1039,11 @@ impl<W: Write> Interpreter<W> {
             ExprKind::Identifier(name) => {
                 if name == "None" {
                     return Ok(Self::make_none());
+                }
+                if name == "self" {
+                    if let Some(id) = self.current_self {
+                        return Ok(Value::Instance(id));
+                    }
                 }
                 self.env
                     .get(name)

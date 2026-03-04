@@ -355,7 +355,7 @@ impl<'src> Parser<'src> {
         let start = self.current_span();
         self.advance(); // consume 'def'
 
-        let name = self.expect_identifier()?;
+        let name = self.expect_method_name()?;
         self.expect_token(&Token::LParen, "(")?;
         let params = self.parse_params()?;
         self.expect_token(&Token::RParen, ")")?;
@@ -2415,7 +2415,8 @@ impl<'src> Parser<'src> {
                 | Token::Receive
                 | Token::Type
                 | Token::Match
-                | Token::Is,
+                | Token::Is
+                | Token::Next,
             ) => {
                 self.advance();
                 Ok(text)
