@@ -1204,7 +1204,7 @@ impl<'src> Parser<'src> {
                     let pattern = self.parse_pattern()?;
                     self.expect_newline()?;
                     let body = self.parse_block()?;
-                    receive_cases.push(MatchCase { pattern, body });
+                    receive_cases.push(MatchCase { pattern, guard: None, body });
                     self.skip_newlines();
                 }
                 self.expect_token(&Token::End, "end")?; // end of receive
@@ -1347,9 +1347,15 @@ impl<'src> Parser<'src> {
         while self.check(&Token::Case) {
             self.advance();
             let pattern = self.parse_pattern()?;
+            let guard = if self.check(&Token::If) {
+                self.advance();
+                Some(self.parse_expression(0)?)
+            } else {
+                None
+            };
             self.expect_newline()?;
             let body = self.parse_block()?;
-            cases.push(MatchCase { pattern, body });
+            cases.push(MatchCase { pattern, guard, body });
             self.skip_newlines();
         }
 

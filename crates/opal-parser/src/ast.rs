@@ -228,6 +228,7 @@ pub enum ExprKind {
 #[derive(Debug, Clone)]
 pub struct MatchCase {
     pub pattern: Pattern,
+    pub guard: Option<Expr>,
     pub body: Vec<Stmt>,
 }
 

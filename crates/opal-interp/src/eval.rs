@@ -1356,8 +1356,16 @@ impl<W: Write> Interpreter<W> {
                 for case in cases {
                     if let Some(bindings) = self.match_pattern(&case.pattern, &val) {
                         self.env.push_scope();
-                        for (name, bound_val) in bindings {
-                            self.env.set(name, bound_val);
+                        for (name, bound_val) in &bindings {
+                            self.env.set(name.clone(), bound_val.clone());
+                        }
+                        // Check guard if present
+                        if let Some(guard) = &case.guard {
+                            let guard_val = self.eval_expr(guard)?;
+                            if !guard_val.is_truthy() {
+                                self.env.pop_scope();
+                                continue;
+                            }
                         }
                         let result = self.eval_block(&case.body);
                         self.env.pop_scope();
