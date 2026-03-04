@@ -30,12 +30,6 @@ pub enum Value {
     Instance(InstanceId),
     /// Module
     Module(ModuleId),
-    /// Result Ok variant
-    Ok(Box<Value>),
-    /// Result Error variant
-    Error(Box<Value>),
-    /// Option Some variant
-    Some(Box<Value>),
     /// Symbol: `:name`
     Symbol(String),
     /// Actor instance
@@ -169,9 +163,6 @@ impl fmt::Display for Value {
             Value::Class(id) => write!(f, "<class #{}>", id.0),
             Value::Instance(id) => write!(f, "<instance #{}>", id.0),
             Value::Module(id) => write!(f, "<module #{}>", id.0),
-            Value::Ok(v) => write!(f, "Ok({})", v),
-            Value::Error(v) => write!(f, "Error({})", v),
-            Value::Some(v) => write!(f, "Some({})", v),
             Value::Symbol(s) => write!(f, ":{}", s),
             Value::Actor(id) => write!(f, "<actor #{}>", id.0),
             Value::ActorClass(id) => write!(f, "<actor class #{}>", id.0),

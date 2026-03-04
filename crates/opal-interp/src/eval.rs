@@ -158,7 +158,7 @@ pub struct Interpreter<W: Write> {
 
 impl Interpreter<std::io::Stdout> {
     pub fn new() -> Self {
-        Self {
+        let mut interp = Self {
             env: Environment::new(),
             writer: std::io::stdout(),
             functions: Vec::new(),
@@ -180,7 +180,9 @@ impl Interpreter<std::io::Stdout> {
             native_objects: Vec::new(),
             native_functions: Vec::new(),
             module_loader: None,
-        }
+        };
+        interp.register_builtin_enums();
+        interp
     }
 
     pub fn with_base_dir(base_dir: &std::path::Path) -> Self {
@@ -192,7 +194,7 @@ impl Interpreter<std::io::Stdout> {
 
 impl<W: Write> Interpreter<W> {
     pub fn with_writer(writer: W) -> Self {
-        Self {
+        let mut interp = Self {
             env: Environment::new(),
             writer,
             functions: Vec::new(),
@@ -214,13 +216,49 @@ impl<W: Write> Interpreter<W> {
             native_objects: Vec::new(),
             native_functions: Vec::new(),
             module_loader: None,
-        }
+        };
+        interp.register_builtin_enums();
+        interp
     }
 
     pub fn with_base_dir_writer(writer: W, base_dir: &std::path::Path) -> Self {
         let mut interp = Self::with_writer(writer);
         interp.module_loader = Some(loader::ModuleLoader::new(base_dir));
         interp
+    }
+
+    /// Register Result(Ok, Err) and Option(Some, None) as built-in enums
+    fn register_builtin_enums(&mut self) {
+        // Result enum at index 0: Ok(value), Err(value)
+        self.enums.push(StoredEnum {
+            name: "Result".to_string(),
+            variants: vec![
+                StoredEnumVariant {
+                    name: "Ok".to_string(),
+                    fields: vec![("value".to_string(), None)],
+                },
+                StoredEnumVariant {
+                    name: "Error".to_string(),
+                    fields: vec![("value".to_string(), None)],
+                },
+            ],
+            methods: vec![],
+        });
+        // Option enum at index 1: Some(value), None
+        self.enums.push(StoredEnum {
+            name: "Option".to_string(),
+            variants: vec![
+                StoredEnumVariant {
+                    name: "Some".to_string(),
+                    fields: vec![("value".to_string(), None)],
+                },
+                StoredEnumVariant {
+                    name: "None".to_string(),
+                    fields: vec![],
+                },
+            ],
+            methods: vec![],
+        });
     }
 
     /// Register an FFI plugin with its native functions.
@@ -820,7 +858,7 @@ impl<W: Write> Interpreter<W> {
 
             ExprKind::Identifier(name) => {
                 if name == "None" {
-                    return Ok(Value::Null);
+                    return Ok(Self::make_none());
                 }
                 self.env
                     .get(name)
@@ -1314,31 +1352,43 @@ impl<W: Write> Interpreter<W> {
         match pattern {
             Pattern::Wildcard => Some(vec![]),
             Pattern::Identifier(name) => Some(vec![(name.clone(), value.clone())]),
-            Pattern::Constructor(name, sub_patterns) => match (name.as_str(), value) {
-                ("Ok", Value::Ok(inner)) => {
-                    if sub_patterns.len() == 1 {
-                        self.match_pattern(&sub_patterns[0], inner)
-                    } else {
+            Pattern::Constructor(name, sub_patterns) => {
+                match name.as_str() {
+                    "Ok" => {
+                        if let Some(inner) = Self::is_ok(value) {
+                            if sub_patterns.len() == 1 {
+                                return self.match_pattern(&sub_patterns[0], inner);
+                            }
+                        }
                         None
                     }
-                }
-                ("Error", Value::Error(inner)) => {
-                    if sub_patterns.len() == 1 {
-                        self.match_pattern(&sub_patterns[0], inner)
-                    } else {
+                    "Error" | "Err" => {
+                        if let Some(inner) = Self::is_err(value) {
+                            if sub_patterns.len() == 1 {
+                                return self.match_pattern(&sub_patterns[0], inner);
+                            }
+                        }
                         None
                     }
-                }
-                ("Some", Value::Some(inner)) => {
-                    if sub_patterns.len() == 1 {
-                        self.match_pattern(&sub_patterns[0], inner)
-                    } else {
+                    "Some" => {
+                        if let Value::EnumVariant { enum_id, variant_index: 0, fields } = value {
+                            if enum_id.0 == 1 && sub_patterns.len() == 1 {
+                                return self.match_pattern(&sub_patterns[0], &fields[0]);
+                            }
+                        }
                         None
                     }
+                    "None" if sub_patterns.is_empty() => {
+                        if let Value::EnumVariant { enum_id, variant_index: 1, fields } = value {
+                            if enum_id.0 == 1 && fields.is_empty() {
+                                return Some(vec![]);
+                            }
+                        }
+                        None
+                    }
+                    _ => None,
                 }
-                ("None", Value::Null) if sub_patterns.is_empty() => Some(vec![]),
-                _ => None,
-            },
+            }
             Pattern::List(element_patterns, rest_pattern) => {
                 if let Value::List(items) = value {
                     if let Some(rest) = rest_pattern {
@@ -1480,17 +1530,13 @@ impl<W: Write> Interpreter<W> {
         // Builtin constructors and functions
         match func_name.as_str() {
             "Ok" if arg_values.len() == 1 => {
-                return Ok(Value::Ok(Box::new(arg_values.into_iter().next().unwrap())));
+                return Ok(Self::make_ok(arg_values.into_iter().next().unwrap()));
             }
-            "Error" if arg_values.len() == 1 => {
-                return Ok(Value::Error(Box::new(
-                    arg_values.into_iter().next().unwrap(),
-                )));
+            "Error" | "Err" if arg_values.len() == 1 => {
+                return Ok(Self::make_err(arg_values.into_iter().next().unwrap()));
             }
             "Some" if arg_values.len() == 1 => {
-                return Ok(Value::Some(Box::new(
-                    arg_values.into_iter().next().unwrap(),
-                )));
+                return Ok(Self::make_some(arg_values.into_iter().next().unwrap()));
             }
             "typeof" if arg_values.len() == 1 => {
                 let type_info = self.value_type_info(&arg_values[0]);
@@ -2349,6 +2395,37 @@ impl<W: Write> Interpreter<W> {
         }
     }
 
+    // Helper constructors for built-in Result/Option enum values
+    fn make_ok(val: Value) -> Value {
+        Value::EnumVariant { enum_id: EnumId(0), variant_index: 0, fields: vec![val] }
+    }
+    fn make_err(val: Value) -> Value {
+        Value::EnumVariant { enum_id: EnumId(0), variant_index: 1, fields: vec![val] }
+    }
+    fn make_some(val: Value) -> Value {
+        Value::EnumVariant { enum_id: EnumId(1), variant_index: 0, fields: vec![val] }
+    }
+    fn make_none() -> Value {
+        Value::EnumVariant { enum_id: EnumId(1), variant_index: 1, fields: vec![] }
+    }
+
+    fn is_ok(val: &Value) -> Option<&Value> {
+        match val {
+            Value::EnumVariant { enum_id, variant_index: 0, fields } if enum_id.0 == 0 => {
+                fields.first()
+            }
+            _ => None,
+        }
+    }
+    fn is_err(val: &Value) -> Option<&Value> {
+        match val {
+            Value::EnumVariant { enum_id, variant_index: 1, fields } if enum_id.0 == 0 => {
+                fields.first()
+            }
+            _ => None,
+        }
+    }
+
     fn value_type_info(&self, value: &Value) -> TypeInfo {
         match value {
             Value::Integer(_) => TypeInfo::Builtin(BuiltinType::Int),
@@ -2403,6 +2480,15 @@ impl<W: Write> Interpreter<W> {
             Value::EnumVariant { enum_id, variant_index, fields } => {
                 let e = &self.enums[enum_id.0];
                 let v = &e.variants[*variant_index];
+                // Special display for Result/Option (indices 0/1)
+                if enum_id.0 <= 1 {
+                    if fields.is_empty() {
+                        return v.name.clone();
+                    } else {
+                        let args: Vec<String> = fields.iter().map(|f| self.format_value(f)).collect();
+                        return format!("{}({})", v.name, args.join(", "));
+                    }
+                }
                 if fields.is_empty() {
                     format!("{}.{}", e.name, v.name)
                 } else {
