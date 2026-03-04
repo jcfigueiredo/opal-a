@@ -46,11 +46,16 @@ pub enum StmtKind {
     },
     /// Module definition
     ModuleDef { name: String, body: Vec<Stmt> },
+    // Deprecated: use Import instead
     /// Import: `from X import Y, Z`
     FromImport {
         module_path: String,
         names: Vec<String>,
     },
+    /// Import statement: `import Math.{abs, max}`
+    Import(ImportStmt),
+    /// Export block: `export {name1, name2}`
+    ExportBlock(Vec<String>),
     /// Needs declaration (inside class)
     NeedsDecl(NeedsDecl),
     /// Requires precondition: `requires expr, "message"`
@@ -206,6 +211,26 @@ pub struct ExternDecl {
     pub name: String,
     pub params: Vec<Param>,
     pub return_type: Option<String>,
+}
+
+/// Import statement (Gleam-style)
+#[derive(Debug, Clone)]
+pub struct ImportStmt {
+    pub path: Vec<String>,
+    pub kind: ImportKind,
+}
+
+#[derive(Debug, Clone)]
+pub enum ImportKind {
+    Module,
+    ModuleAlias(String),
+    Selective(Vec<ImportItem>),
+}
+
+#[derive(Debug, Clone)]
+pub struct ImportItem {
+    pub name: String,
+    pub alias: Option<String>,
 }
 
 /// A `needs` declaration in a class
