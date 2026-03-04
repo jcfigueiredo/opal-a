@@ -1,0 +1,17 @@
+def normalize(data, min_val, max_val)
+  range = max_val - min_val
+  data.map(|x| (x - min_val) * 100 / range)
+end
+
+def remove_outliers(data, threshold)
+  data.filter(|x| x >= 0 - threshold and x <= threshold)
+end
+
+def summarize(data)
+  count = data.length()
+  total = data.reduce(0) do |acc, x|
+    acc + x
+  end
+  avg = total / count
+  {count: count, total: total, average: avg}
+end

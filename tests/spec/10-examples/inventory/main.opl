@@ -1,0 +1,16 @@
+# expect: Inventory: 3 products | Premium: [Gadget, Gizmo] | Total: $84.97
+import Warehouse.{Product}
+
+w = Product.new(name: "Widget", price: 9.99)
+g = Product.new(name: "Gadget", price: 24.99)
+z = Product.new(name: "Gizmo", price: 49.99)
+catalog = [w, g, z]
+
+premium = catalog.filter(|p| p.get_price() > 20.0)
+premium_names = premium.map(|p| p.get_name())
+
+total = catalog.reduce(0.0) do |acc, p|
+  acc + p.get_price()
+end
+
+print(f"Inventory: {catalog.length()} products | Premium: {premium_names} | Total: ${total}")

@@ -1,0 +1,13 @@
+def domestic_rate(weight)
+  5.0 + (2.5 * weight)
+end
+
+def international_rate(weight)
+  15.0 + (8.0 * weight)
+end
+
+def validate_weight(weight)
+  requires weight > 0, "weight must be positive"
+  requires weight <= 50.0, "weight exceeds 50kg limit"
+  Ok(weight)
+end

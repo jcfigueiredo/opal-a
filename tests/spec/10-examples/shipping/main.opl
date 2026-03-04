@@ -1,0 +1,25 @@
+# expect: Order: 3 items, $160.47 (shipping $10.5)
+import Product.{Product}
+import Shipping.{domestic_rate, validate_weight}
+
+mouse = Product.new(name: "Mouse", price: 29.99, weight: 0.2)
+book = Product.new(name: "Opal Guide", price: 39.99, weight: 0.8)
+keyboard = Product.new(name: "Keyboard", price: 79.99, weight: 1.2)
+
+items = [mouse, book, keyboard]
+
+total_price = items.reduce(0.0) do |acc, item|
+  acc + item.get_price()
+end
+
+total_weight = items.reduce(0.0) do |acc, item|
+  acc + item.get_weight()
+end
+
+match validate_weight(total_weight)
+  case Ok(w)
+    shipping = domestic_rate(w)
+    print(f"Order: {items.length()} items, ${total_price + shipping} (shipping ${shipping})")
+  case Error(msg)
+    print(f"Cannot ship: {msg}")
+end
