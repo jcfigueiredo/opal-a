@@ -1,0 +1,20 @@
+# expect: Gold | Silver | Bronze | Silver
+# Classifying bounty tiers with match guards and if-expressions
+
+def classify(amount)
+  match amount
+    case n if n >= 500
+      "Gold"
+    case n if n >= 100
+      "Silver"
+    case _
+      "Bronze"
+  end
+end
+
+r1 = classify(750)
+r2 = classify(250)
+r3 = classify(50)
+r4 = if 300 >= 100 then "Silver" else "Bronze" end
+
+print(f"{r1} | {r2} | {r3} | {r4}")
