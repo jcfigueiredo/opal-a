@@ -222,6 +222,13 @@ pub enum ExprKind {
         object: Box<Expr>,
         field: String,
     },
+    /// List comprehension: [expr for var in iter] or [expr for var in iter if cond]
+    ListComprehension {
+        expr: Box<Expr>,
+        var: String,
+        iterable: Box<Expr>,
+        condition: Option<Box<Expr>>,
+    },
 }
 
 /// A case in a match expression

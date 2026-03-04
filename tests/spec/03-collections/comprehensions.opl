@@ -1,0 +1,4 @@
+# expect: [2, 4, 6] | [2, 4]
+r1 = [x * 2 for x in [1, 2, 3]]
+r2 = [x for x in [1, 2, 3, 4] if x % 2 == 0]
+print(f"{r1} | {r2}")

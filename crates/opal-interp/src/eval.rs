@@ -1049,6 +1049,32 @@ impl<W: Write> Interpreter<W> {
                 Ok(Value::List(values))
             }
 
+            ExprKind::ListComprehension { expr, var, iterable, condition } => {
+                let iter_val = self.eval_expr(iterable)?;
+                let items = match iter_val {
+                    Value::List(items) => items,
+                    Value::Range { start, end, inclusive } => {
+                        let end_val = if inclusive { end + 1 } else { end };
+                        (start..end_val).map(Value::Integer).collect()
+                    }
+                    _ => return Err(EvalError::TypeError("comprehension requires an iterable".into())),
+                };
+                let mut result = Vec::new();
+                self.env.push_scope();
+                for item in items {
+                    self.env.set(var.clone(), item);
+                    if let Some(cond) = condition {
+                        let cond_val = self.eval_expr(cond)?;
+                        if !cond_val.is_truthy() {
+                            continue;
+                        }
+                    }
+                    result.push(self.eval_expr(expr)?);
+                }
+                self.env.pop_scope();
+                Ok(Value::List(result))
+            }
+
             ExprKind::Closure { params, body } => {
                 let id = ClosureId(self.closures.len());
                 self.closures.push(StoredClosure {

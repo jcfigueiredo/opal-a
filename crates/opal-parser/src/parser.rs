@@ -1789,21 +1789,54 @@ impl<'src> Parser<'src> {
                     },
                 })
             }
-            // List literal: [expr, expr, ...]
+            // List literal or list comprehension: [expr, ...] or [expr for var in iter]
             Some(Token::LBracket) => {
                 self.advance();
                 self.skip_newlines();
-                let mut elements = Vec::new();
-                if !self.check(&Token::RBracket) {
-                    loop {
-                        self.skip_newlines();
-                        elements.push(self.parse_expression(0)?);
-                        self.skip_newlines();
-                        if !self.check(&Token::Comma) {
-                            break;
-                        }
+                if self.check(&Token::RBracket) {
+                    // Empty list
+                    self.advance();
+                    let end = self.previous_span().end;
+                    return Ok(Expr {
+                        kind: ExprKind::List(vec![]),
+                        span: Span { start: span.start, end },
+                    });
+                }
+                // Parse first expression
+                let first = self.parse_expression(0)?;
+                self.skip_newlines();
+                // Check for comprehension: [expr for var in iterable]
+                if self.check(&Token::For) {
+                    self.advance();
+                    let var = self.expect_identifier()?;
+                    self.expect_token(&Token::In, "in")?;
+                    let iterable = self.parse_expression(0)?;
+                    let condition = if self.check(&Token::If) {
                         self.advance();
-                    }
+                        Some(Box::new(self.parse_expression(0)?))
+                    } else {
+                        None
+                    };
+                    self.skip_newlines();
+                    self.expect_token(&Token::RBracket, "]")?;
+                    let end = self.previous_span().end;
+                    return Ok(Expr {
+                        kind: ExprKind::ListComprehension {
+                            expr: Box::new(first),
+                            var,
+                            iterable: Box::new(iterable),
+                            condition,
+                        },
+                        span: Span { start: span.start, end },
+                    });
+                }
+                // Regular list literal
+                let mut elements = vec![first];
+                while self.check(&Token::Comma) {
+                    self.advance();
+                    self.skip_newlines();
+                    elements.push(self.parse_expression(0)?);
+                    self.skip_newlines();
                 }
                 self.skip_newlines();
                 self.expect_token(&Token::RBracket, "]")?;
