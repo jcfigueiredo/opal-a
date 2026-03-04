@@ -1581,6 +1581,48 @@ impl<W: Write> Interpreter<W> {
                 let type_info = self.value_type_info(&arg_values[0]);
                 return Ok(Value::Type(type_info));
             }
+            "eval" if arg_values.len() == 1 => {
+                // Opal AST evaluator — only accepts Value::Ast (not strings).
+                // This is a metaprogramming primitive like Elixir's Code.eval_quoted.
+                // Evaluates in a child scope: reads parent vars but writes don't leak.
+                match &arg_values[0] {
+                    Value::Ast(ast_id) => {
+                        let stmts = self.ast_nodes[ast_id.0].clone();
+                        // Snapshot env so assignments in eval don't leak
+                        let saved_env = self.env.snapshot();
+                        self.env.push_scope();
+                        let mut result = Value::Null;
+                        let mut err = None;
+                        for stmt in &stmts {
+                            match &stmt.kind {
+                                StmtKind::Expr(expr) => {
+                                    match self.eval_expr(expr) {
+                                        Ok(v) => result = v,
+                                        Err(e) => { err = Some(e); break; }
+                                    }
+                                }
+                                _ => {
+                                    match self.eval_stmt(stmt) {
+                                        Ok(()) => result = Value::Null,
+                                        Err(e) => { err = Some(e); break; }
+                                    }
+                                }
+                            }
+                        }
+                        // Restore env (discarding eval's mutations)
+                        self.env = saved_env;
+                        if let Some(e) = err {
+                            return Err(e);
+                        }
+                        return Ok(result);
+                    }
+                    _ => {
+                        return Err(EvalError::TypeError(
+                            "eval() requires an AST value (from ast ... end block)".into(),
+                        ));
+                    }
+                }
+            }
             "annotations" if arg_values.len() == 1 => {
                 let anns = match &arg_values[0] {
                     Value::Function(id) => self.functions[id.0].annotations.clone(),
@@ -3861,6 +3903,22 @@ print(L.greet())
             run("enum Dir\n  N\n  S\nend\nd = Dir.N\nprint(d is Dir)").unwrap(),
             "true"
         );
+    }
+
+    // === AST eval tests ===
+    #[test]
+    fn ast_eval_basic() {
+        assert_eq!(run("code = ast\n  2 + 3\nend\nprint(eval(code))").unwrap(), "5");
+    }
+
+    #[test]
+    fn ast_eval_child_scope() {
+        assert_eq!(run("x = 1\ncode = ast\n  x = 99\nend\neval(code)\nprint(x)").unwrap(), "1");
+    }
+
+    #[test]
+    fn ast_eval_reads_parent() {
+        assert_eq!(run("x = 10\ncode = ast\n  x * 2\nend\nprint(eval(code))").unwrap(), "20");
     }
 
     #[test]
