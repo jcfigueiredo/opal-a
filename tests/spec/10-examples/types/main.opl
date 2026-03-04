@@ -1,0 +1,28 @@
+# expect: Shape | true | false | 78.5 | true | true | 7
+# Integration test combining typeof, is, type aliases, enums, annotations, and eval
+
+import Shapes.{Shape, area}
+
+# --- Type aliases ---
+type Primitive = Int | String | Bool
+
+# --- typeof and is ---
+s = Shape.Circle(5.0)
+t1 = typeof(s).name
+t2 = s is Shape
+t3 = s is Int
+
+# --- Pattern matching via imported function ---
+t4 = area(s)
+
+# --- Type alias with is ---
+t5 = 42 is Primitive
+t6 = "hello" is Primitive
+
+# --- AST eval ---
+code = ast
+  3 + 4
+end
+t7 = eval(code)
+
+print(f"{t1} | {t2} | {t3} | {t4} | {t5} | {t6} | {t7}")
