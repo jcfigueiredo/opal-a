@@ -442,14 +442,16 @@ impl<W: Write> Interpreter<W> {
             }
             StmtKind::Assign { name, value } => {
                 let val = self.eval_expr(value)?;
-                self.env.assign(name.clone(), val);
+                self.env.assign(name.clone(), val)
+                    .map_err(|msg| EvalError::RuntimeError(msg))?;
             }
             StmtKind::CompoundAssign { name, op, value } => {
                 let current = self.env.get(name).cloned()
                     .ok_or_else(|| EvalError::UndefinedVariable(name.clone()))?;
                 let rhs = self.eval_expr(value)?;
                 let result = eval_binary_op(*op, current, rhs)?;
-                self.env.assign(name.clone(), result);
+                self.env.assign(name.clone(), result)
+                    .map_err(|msg| EvalError::RuntimeError(msg))?;
             }
             StmtKind::IndexAssign {
                 object,
@@ -494,7 +496,8 @@ impl<W: Write> Interpreter<W> {
                             ));
                         }
                     }
-                    self.env.assign(name.clone(), obj);
+                    self.env.assign(name.clone(), obj)
+                        .map_err(|msg| EvalError::RuntimeError(msg))?;
                 } else {
                     return Err(EvalError::TypeError(
                         "index assignment target must be a variable".into(),
@@ -509,12 +512,13 @@ impl<W: Write> Interpreter<W> {
                 }
                 // Then assign to names
                 for (name, val) in names.iter().zip(vals) {
-                    self.env.assign(name.clone(), val);
+                    self.env.assign(name.clone(), val)
+                        .map_err(|msg| EvalError::RuntimeError(msg))?;
                 }
             }
             StmtKind::Let { name, value } => {
                 let val = self.eval_expr(value)?;
-                self.env.set(name.clone(), val);
+                self.env.set_frozen(name.clone(), val);
             }
             StmtKind::FuncDef {
                 name, params, body, ..
@@ -4318,5 +4322,17 @@ print("hi" is NumOrStr)"#).unwrap(), "true");
     #[test]
     fn parallel_assign_swap() {
         assert_eq!(run("x, y = 1, 2\nx, y = y, x\nprint(f\"{x} {y}\")").unwrap(), "2 1");
+    }
+
+    #[test]
+    fn let_immutable_binding() {
+        let result = run("let x = 42\nx = 99\nprint(x)");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("cannot reassign"));
+    }
+
+    #[test]
+    fn let_allows_read() {
+        assert_eq!(run("let x = 42\nprint(x)").unwrap(), "42");
     }
 }
