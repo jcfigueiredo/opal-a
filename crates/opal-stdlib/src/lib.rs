@@ -1,3 +1,7 @@
+pub mod plugin;
+
+pub use plugin::{NativeFunction, PluginRegistry};
+
 use opal_runtime::Value;
 
 /// Result of calling a builtin function
