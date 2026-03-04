@@ -77,6 +77,18 @@ pub enum StmtKind {
     Reply(Expr),
     /// Instance variable assignment: `.field = expr`
     InstanceAssign { field: String, value: Expr },
+    /// Macro definition: `macro name(params) ... end`
+    MacroDef {
+        name: String,
+        params: Vec<String>,
+        body: Vec<Stmt>,
+    },
+    /// Macro invocation as statement: `@name expr NEWLINE block end`
+    MacroInvoke {
+        name: String,
+        args: Vec<Expr>,
+        block: Option<Vec<Stmt>>,
+    },
 }
 
 /// An expression
@@ -136,6 +148,10 @@ pub enum ExprKind {
     Symbol(String),
     /// Await expression: `await expr`
     Await(Box<Expr>),
+    /// AST quasi-quote block: `ast ... end` — produces AST as a value
+    AstBlock(Vec<Stmt>),
+    /// Splice: `$var` inside ast block — substitutes an AST value
+    Splice(String),
     /// Match expression
     Match {
         subject: Box<Expr>,

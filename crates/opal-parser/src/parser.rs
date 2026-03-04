@@ -106,6 +106,16 @@ impl<'src> Parser<'src> {
             return self.parse_raise(start);
         }
 
+        // Macro definition
+        if self.check(&Token::Macro) {
+            return self.parse_macro_def(start);
+        }
+
+        // Macro invocation: @name
+        if self.check(&Token::At) {
+            return self.parse_macro_invoke(start);
+        }
+
         // Actor definition
         if self.check(&Token::Actor) {
             return self.parse_actor_def(start);
@@ -628,6 +638,82 @@ impl<'src> Parser<'src> {
         })
     }
 
+    fn parse_macro_def(&mut self, start: Span) -> Result<Stmt, ParseError> {
+        self.advance(); // consume 'macro'
+        let name = self.expect_identifier()?;
+        self.expect_token(&Token::LParen, "(")?;
+        let mut params = Vec::new();
+        if !self.check(&Token::RParen) {
+            loop {
+                params.push(self.expect_identifier()?);
+                if !self.check(&Token::Comma) {
+                    break;
+                }
+                self.advance();
+            }
+        }
+        self.expect_token(&Token::RParen, ")")?;
+        self.expect_newline()?;
+        let body = self.parse_block()?;
+        self.expect_token(&Token::End, "end")?;
+        let end = self.previous_span().end;
+        Ok(Stmt {
+            kind: StmtKind::MacroDef {
+                name,
+                params,
+                body,
+            },
+            span: Span {
+                start: start.start,
+                end,
+            },
+        })
+    }
+
+    fn parse_macro_invoke(&mut self, start: Span) -> Result<Stmt, ParseError> {
+        self.advance(); // consume '@'
+        let name = self.expect_identifier()?;
+
+        // Collect arguments: expressions until newline
+        let mut args = Vec::new();
+        while !self.is_at_end()
+            && !self.check(&Token::Newline)
+            && !self.check(&Token::End)
+        {
+            args.push(self.parse_expression(0)?);
+            if self.check(&Token::Comma) {
+                self.advance();
+            } else {
+                break;
+            }
+        }
+
+        // Check for trailing block (indented body until end)
+        let block = if self.check(&Token::Newline) {
+            self.advance();
+            self.skip_newlines();
+            if self.check(&Token::End) {
+                self.advance();
+                None
+            } else {
+                let body = self.parse_block()?;
+                self.expect_token(&Token::End, "end")?;
+                Some(body)
+            }
+        } else {
+            None
+        };
+
+        let end = self.previous_span().end;
+        Ok(Stmt {
+            kind: StmtKind::MacroInvoke { name, args, block },
+            span: Span {
+                start: start.start,
+                end,
+            },
+        })
+    }
+
     fn parse_match_expression(&mut self) -> Result<Expr, ParseError> {
         let start = self.current_span();
         self.advance(); // consume 'match'
@@ -941,6 +1027,34 @@ impl<'src> Parser<'src> {
                 })
             }
             // Symbol literal: :name
+            // AST quasi-quote: ast ... end
+            Some(Token::Ast) => {
+                self.advance();
+                self.skip_newlines();
+                let body = self.parse_block()?;
+                self.expect_token(&Token::End, "end")?;
+                let end = self.previous_span().end;
+                Ok(Expr {
+                    kind: ExprKind::AstBlock(body),
+                    span: Span {
+                        start: span.start,
+                        end,
+                    },
+                })
+            }
+            // Splice: $var
+            Some(Token::Dollar) => {
+                self.advance();
+                let name = self.expect_identifier()?;
+                let end = self.previous_span().end;
+                Ok(Expr {
+                    kind: ExprKind::Splice(name),
+                    span: Span {
+                        start: span.start,
+                        end,
+                    },
+                })
+            }
             Some(Token::Symbol) => {
                 let text = self.extract_text(&span);
                 let name = text[1..].to_string(); // strip leading ':'
