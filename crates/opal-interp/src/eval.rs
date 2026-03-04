@@ -203,6 +203,9 @@ impl<W: Write> Interpreter<W> {
             bindings: math_bindings,
         });
         self.env.set("Math".into(), Value::Module(math_module_id));
+
+        // HTTP plugin — provides create_app, add_route, get_routes, serve
+        self.register_plugin("http", opal_stdlib::http::register_http_plugin());
     }
 
     fn eval_stmt(&mut self, stmt: &Stmt) -> Result<(), EvalError> {
@@ -910,6 +913,12 @@ impl<W: Write> Interpreter<W> {
         // Try native functions (from extern blocks)
         if let Some(Value::NativeFunction(nf_id)) = self.env.get(&func_name).cloned() {
             let key = self.native_functions[nf_id.0].clone();
+
+            // Special handling for http:serve — needs interpreter access for closures
+            if key == "http:serve" {
+                return self.serve_http(&arg_values);
+            }
+
             let parts: Vec<&str> = key.split(':').collect();
             let (plugin, func) = (parts[0], parts[1]);
             if let Some(native_fn) = self.plugin_registry.get_function(plugin, func) {
@@ -1298,6 +1307,152 @@ impl<W: Write> Interpreter<W> {
         }
     }
 
+    /// Run the HTTP serve loop. Binds a TCP listener and dispatches incoming
+    /// requests to Opal closure handlers registered via `add_route`.
+    fn serve_http(&mut self, args: &[Value]) -> Result<Value, EvalError> {
+        if args.len() < 2 {
+            return Err(EvalError::TypeError(
+                "serve requires 2 arguments: app_id, port".into(),
+            ));
+        }
+        let app_id = match &args[0] {
+            Value::Integer(id) => *id,
+            _ => {
+                return Err(EvalError::TypeError(
+                    "serve: expected integer app id".into(),
+                ));
+            }
+        };
+        let port = match &args[1] {
+            Value::Integer(p) => *p,
+            _ => return Err(EvalError::TypeError("serve: expected integer port".into())),
+        };
+
+        // Retrieve routes via the http plugin's get_routes function
+        let routes_val =
+            if let Some(native_fn) = self.plugin_registry.get_function("http", "get_routes") {
+                native_fn(&[Value::Integer(app_id)], &mut self.writer)
+                    .map_err(|e| EvalError::RuntimeError(e))?
+            } else {
+                return Err(EvalError::RuntimeError(
+                    "http plugin missing get_routes".into(),
+                ));
+            };
+
+        // Parse the routes list: [[method, path, handler_id], ...]
+        let routes = match routes_val {
+            Value::List(items) => items,
+            _ => {
+                return Err(EvalError::RuntimeError(
+                    "get_routes returned non-list".into(),
+                ));
+            }
+        };
+
+        struct ParsedRoute {
+            method: String,
+            path: String,
+            handler_id: usize,
+        }
+
+        let mut parsed_routes = Vec::new();
+        for route in &routes {
+            if let Value::List(parts) = route {
+                if parts.len() == 3 {
+                    let method = match &parts[0] {
+                        Value::String(s) => s.clone(),
+                        _ => continue,
+                    };
+                    let path = match &parts[1] {
+                        Value::String(s) => s.clone(),
+                        _ => continue,
+                    };
+                    let handler_id = match &parts[2] {
+                        Value::Integer(id) => *id as usize,
+                        _ => continue,
+                    };
+                    parsed_routes.push(ParsedRoute {
+                        method,
+                        path,
+                        handler_id,
+                    });
+                }
+            }
+        }
+
+        // Bind TCP listener
+        let listener = std::net::TcpListener::bind(format!("0.0.0.0:{}", port))
+            .map_err(|e| EvalError::RuntimeError(format!("Failed to bind port {}: {}", port, e)))?;
+
+        writeln!(self.writer, "Opal HTTP server listening on port {}", port).ok();
+
+        for stream in listener.incoming() {
+            let mut stream = match stream {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
+
+            // Read request
+            let mut buf = [0u8; 4096];
+            let n = std::io::Read::read(&mut stream, &mut buf).unwrap_or(0);
+            let request = String::from_utf8_lossy(&buf[..n]);
+
+            // Parse the HTTP request line: "METHOD /path HTTP/1.1"
+            let first_line = request.lines().next().unwrap_or("");
+            let parts: Vec<&str> = first_line.split_whitespace().collect();
+            if parts.len() < 2 {
+                continue;
+            }
+            let (method, path) = (parts[0], parts[1]);
+
+            // Match against registered routes
+            let mut matched = false;
+            for route in &parsed_routes {
+                if route.method == method {
+                    if let Some(params) = match_path(&route.path, path) {
+                        matched = true;
+                        let closure_id = ClosureId(route.handler_id);
+
+                        // Pass route params as a simple argument if any exist
+                        let handler_args = if params.is_empty() {
+                            vec![]
+                        } else {
+                            vec![Value::String(
+                                params.values().next().unwrap_or(&String::new()).clone(),
+                            )]
+                        };
+
+                        let result = self.call_closure(closure_id, handler_args);
+                        let body = match result {
+                            Ok(val) => val.to_string(),
+                            Err(e) => format!("Error: {}", e),
+                        };
+
+                        let response = format!(
+                            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n{}",
+                            body.len(),
+                            body
+                        );
+                        std::io::Write::write_all(&mut stream, response.as_bytes()).ok();
+                        break;
+                    }
+                }
+            }
+
+            if !matched {
+                let body = "404 Not Found";
+                let response = format!(
+                    "HTTP/1.1 404 Not Found\r\nContent-Length: {}\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                std::io::Write::write_all(&mut stream, response.as_bytes()).ok();
+            }
+        }
+
+        Ok(Value::Null)
+    }
+
     fn call_closure(&mut self, id: ClosureId, arg_values: Vec<Value>) -> Result<Value, EvalError> {
         let stored = self.closures[id.0].clone();
 
@@ -1337,6 +1492,28 @@ impl Default for Interpreter<std::io::Stdout> {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Match a URL path pattern against an actual path.
+/// Patterns like `/users/:id` match `/users/42` and extract `{id: "42"}`.
+/// Returns `Some(params)` on match, `None` on mismatch.
+fn match_path(pattern: &str, actual: &str) -> Option<HashMap<String, String>> {
+    let pattern_parts: Vec<&str> = pattern.split('/').collect();
+    let actual_parts: Vec<&str> = actual.split('/').collect();
+
+    if pattern_parts.len() != actual_parts.len() {
+        return None;
+    }
+
+    let mut params = HashMap::new();
+    for (p, a) in pattern_parts.iter().zip(actual_parts.iter()) {
+        if p.starts_with(':') {
+            params.insert(p[1..].to_string(), a.to_string());
+        } else if p != a {
+            return None;
+        }
+    }
+    Some(params)
 }
 
 fn eval_binary_op(op: BinOp, left: Value, right: Value) -> Result<Value, EvalError> {
@@ -2002,9 +2179,7 @@ print(add_native(3, 4))
             fns.insert(
                 "add_native".to_string(),
                 Box::new(
-                    |args: &[Value],
-                     _writer: &mut dyn std::io::Write|
-                     -> Result<Value, String> {
+                    |args: &[Value], _writer: &mut dyn std::io::Write| -> Result<Value, String> {
                         match (&args[0], &args[1]) {
                             (Value::Integer(a), Value::Integer(b)) => Ok(Value::Integer(a + b)),
                             _ => Err("expected integers".into()),
@@ -2030,5 +2205,113 @@ print("ok")
 "#;
         let output = run(source).unwrap();
         assert_eq!(output, "ok");
+    }
+
+    #[test]
+    fn http_plugin_route_registration() {
+        // Test that the HTTP plugin's create_app and add_route functions work.
+        // We don't call serve here since it would block on TCP listen.
+        let source = r#"
+extern "http"
+  def create_app() -> Int
+  def add_route(app: Int, method: String, path: String, handler: Fn) -> Null
+end
+
+app = create_app()
+add_route(app, "GET", "/hello", |req| "Hello!")
+add_route(app, "GET", "/world", |req| "World!")
+print("routes registered")
+"#;
+        let output = run(source).unwrap();
+        assert_eq!(output, "routes registered");
+    }
+
+    #[test]
+    fn http_serve_loop() {
+        // Integration test: start the server on port 0 (OS-assigned),
+        // send a request from another thread, and verify the response.
+        let source = r#"
+extern "http"
+  def create_app() -> Int
+  def add_route(app: Int, method: String, path: String, handler: Fn) -> Null
+  def serve(app: Int, port: Int) -> Null
+end
+
+app = create_app()
+add_route(app, "GET", "/", |req| "Hello from Opal!")
+add_route(app, "GET", "/greet/:name", |name| name)
+serve(app, __PORT__)
+"#;
+        // Bind a listener to get a free port, then close it so serve can use it.
+        let tmp_listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = tmp_listener.local_addr().unwrap().port();
+        drop(tmp_listener);
+
+        let source = source.replace("__PORT__", &port.to_string());
+
+        let program = opal_parser::parse(&source).expect("parse error");
+
+        // Run the server in a background thread
+        let handle = std::thread::spawn(move || {
+            let mut output = Vec::new();
+            {
+                let mut interp = Interpreter::with_writer(&mut output);
+                // The server loop runs indefinitely; the test will just
+                // make requests and then the thread will be dropped.
+                let _ = interp.run(&program);
+            }
+            String::from_utf8(output).unwrap()
+        });
+
+        // Give the server a moment to bind
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        // Send a GET / request
+        let mut stream = std::net::TcpStream::connect(format!("127.0.0.1:{}", port)).unwrap();
+        std::io::Write::write_all(&mut stream, b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n")
+            .unwrap();
+
+        let mut response = String::new();
+        std::io::Read::read_to_string(&mut stream, &mut response).unwrap();
+        assert!(
+            response.contains("Hello from Opal!"),
+            "expected 'Hello from Opal!' in response, got: {}",
+            response
+        );
+
+        // Send a GET /greet/world request (path param)
+        let mut stream = std::net::TcpStream::connect(format!("127.0.0.1:{}", port)).unwrap();
+        std::io::Write::write_all(
+            &mut stream,
+            b"GET /greet/world HTTP/1.1\r\nHost: localhost\r\n\r\n",
+        )
+        .unwrap();
+
+        let mut response = String::new();
+        std::io::Read::read_to_string(&mut stream, &mut response).unwrap();
+        assert!(
+            response.contains("world"),
+            "expected 'world' in response, got: {}",
+            response
+        );
+
+        // Send a request for a non-existent route
+        let mut stream = std::net::TcpStream::connect(format!("127.0.0.1:{}", port)).unwrap();
+        std::io::Write::write_all(
+            &mut stream,
+            b"GET /missing HTTP/1.1\r\nHost: localhost\r\n\r\n",
+        )
+        .unwrap();
+
+        let mut response = String::new();
+        std::io::Read::read_to_string(&mut stream, &mut response).unwrap();
+        assert!(
+            response.contains("404 Not Found"),
+            "expected 404 response, got: {}",
+            response
+        );
+
+        // Drop the handle (the server thread will exit when dropped)
+        drop(handle);
     }
 }

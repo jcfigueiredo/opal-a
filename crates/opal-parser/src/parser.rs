@@ -1935,9 +1935,14 @@ mod tests {
 
     #[test]
     fn parse_extern_def() {
-        let prog = parse("extern \"http\"\n  def listen(port: Int) -> Null\n  def serve(app: App) -> Null\nend");
+        let prog = parse(
+            "extern \"http\"\n  def listen(port: Int) -> Null\n  def serve(app: App) -> Null\nend",
+        );
         match &prog.statements[0].kind {
-            StmtKind::ExternDef { lib_name, declarations } => {
+            StmtKind::ExternDef {
+                lib_name,
+                declarations,
+            } => {
                 assert_eq!(lib_name, "http");
                 assert_eq!(declarations.len(), 2);
                 assert_eq!(declarations[0].name, "listen");

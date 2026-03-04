@@ -1,3 +1,4 @@
+pub mod http;
 pub mod plugin;
 
 pub use plugin::{NativeFunction, PluginRegistry};
