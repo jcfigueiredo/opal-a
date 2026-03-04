@@ -1,0 +1,6 @@
+# expect: [{deprecated: true, since: 2.0}]
+@[deprecated, since: "2.0"]
+def old_api()
+  "old"
+end
+print(annotations(old_api))

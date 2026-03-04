@@ -40,6 +40,8 @@ struct StoredFunction {
     body: Vec<Stmt>,
     /// Captured environment from defining scope (for module-level functions)
     captured_env: Option<Environment>,
+    /// Annotations from @[...] declarations
+    annotations: Vec<Vec<(String, Value)>>,
 }
 
 /// A stored closure
@@ -456,6 +458,7 @@ impl<W: Write> Interpreter<W> {
                     param_types: params.iter().map(|p| p.type_annotation.clone()).collect(),
                     body: body.clone(),
                     captured_env: captured,
+                    annotations: vec![],
                 });
 
                 // Support multiple dispatch: if name already bound to a function,
@@ -547,6 +550,7 @@ impl<W: Write> Interpreter<W> {
                             param_types: params.iter().map(|p| p.type_annotation.clone()).collect(),
                             body: body.clone(),
                             captured_env: None,
+                            annotations: vec![],
                         });
                     }
                 }
@@ -609,6 +613,7 @@ impl<W: Write> Interpreter<W> {
                             param_types: method.params.iter().map(|p| p.type_annotation.clone()).collect(),
                             body: body.clone(),
                             captured_env: None,
+                            annotations: vec![],
                         });
                     } else {
                         required_methods.push(method.name.clone());
@@ -672,6 +677,39 @@ impl<W: Write> Interpreter<W> {
                 let module_val = self.ensure_module_loaded(&module_key, &imp.path)?;
                 self.apply_import(&imp.kind, &module_key, module_val)?;
             }
+            StmtKind::Annotated { annotations, statement } => {
+                // Evaluate annotation values and store them
+                let mut stored_anns: Vec<Vec<(String, Value)>> = Vec::new();
+                for ann in annotations {
+                    let mut entries = Vec::new();
+                    for entry in &ann.entries {
+                        let val = match &entry.value {
+                            Some(expr) => self.eval_expr(expr)?,
+                            None => Value::Bool(true),
+                        };
+                        entries.push((entry.key.clone(), val));
+                    }
+                    stored_anns.push(entries);
+                }
+                // Evaluate the inner statement
+                self.eval_stmt(statement)?;
+                // Attach annotations to the last defined function
+                if let StmtKind::FuncDef { name, .. } = &statement.kind {
+                    if let Some(val) = self.env.get(name).cloned() {
+                        match val {
+                            Value::Function(id) => {
+                                self.functions[id.0].annotations = stored_anns;
+                            }
+                            Value::MultiFunction(ids) => {
+                                if let Some(id) = ids.last() {
+                                    self.functions[id.0].annotations = stored_anns;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
             StmtKind::TypeAlias { name, definition } => {
                 self.type_aliases.insert(name.clone(), definition.clone());
             }
@@ -699,6 +737,7 @@ impl<W: Write> Interpreter<W> {
                                 param_types: params.iter().map(|p| p.type_annotation.clone()).collect(),
                                 body: body.clone(),
                                 captured_env: None,
+                                annotations: vec![],
                             })
                         } else {
                             None
@@ -1541,6 +1580,23 @@ impl<W: Write> Interpreter<W> {
             "typeof" if arg_values.len() == 1 => {
                 let type_info = self.value_type_info(&arg_values[0]);
                 return Ok(Value::Type(type_info));
+            }
+            "annotations" if arg_values.len() == 1 => {
+                let anns = match &arg_values[0] {
+                    Value::Function(id) => self.functions[id.0].annotations.clone(),
+                    Value::MultiFunction(ids) => {
+                        if let Some(id) = ids.last() {
+                            self.functions[id.0].annotations.clone()
+                        } else {
+                            vec![]
+                        }
+                    }
+                    _ => vec![],
+                };
+                let ann_list: Vec<Value> = anns.iter().map(|entries| {
+                    Value::Dict(entries.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
+                }).collect();
+                return Ok(Value::List(ann_list));
             }
             _ => {}
         }

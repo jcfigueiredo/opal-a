@@ -131,6 +131,11 @@ impl<'src> Parser<'src> {
             return self.parse_macro_def(start);
         }
 
+        // Annotation: @[key: val, ...]
+        if self.check(&Token::AtBracket) {
+            return self.parse_annotated(start);
+        }
+
         // Macro invocation: @name
         if self.check(&Token::At) {
             return self.parse_macro_invoke(start);
@@ -366,6 +371,43 @@ impl<'src> Parser<'src> {
                 start: start.start,
                 end,
             },
+        })
+    }
+
+    fn parse_annotated(&mut self, start: Span) -> Result<Stmt, ParseError> {
+        let mut annotations = Vec::new();
+        while self.check(&Token::AtBracket) {
+            self.advance(); // consume '@['
+            let mut entries = Vec::new();
+            if !self.check(&Token::RBracket) {
+                loop {
+                    let key = self.expect_identifier()?;
+                    let value = if self.check(&Token::Colon) {
+                        self.advance();
+                        Some(self.parse_expression(0)?)
+                    } else {
+                        None
+                    };
+                    entries.push(AnnotationEntry { key, value });
+                    if !self.check(&Token::Comma) {
+                        break;
+                    }
+                    self.advance();
+                }
+            }
+            self.expect_token(&Token::RBracket, "]")?;
+            annotations.push(Annotation { entries });
+            self.expect_newline()?;
+            self.skip_newlines();
+        }
+        let statement = self.parse_statement()?;
+        let end = statement.span.end;
+        Ok(Stmt {
+            kind: StmtKind::Annotated {
+                annotations,
+                statement: Box::new(statement),
+            },
+            span: Span { start: start.start, end },
         })
     }
 

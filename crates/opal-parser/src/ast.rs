@@ -94,6 +94,11 @@ pub enum StmtKind {
         args: Vec<Expr>,
         block: Option<Vec<Stmt>>,
     },
+    /// Annotated statement: @[...] followed by a def/class/etc
+    Annotated {
+        annotations: Vec<Annotation>,
+        statement: Box<Stmt>,
+    },
     /// Type alias: `type Name = TypeExpr`
     TypeAlias { name: String, definition: TypeExpr },
     /// Enum definition
@@ -286,6 +291,19 @@ pub struct Param {
     pub name: String,
     pub type_annotation: Option<String>,
     pub default: Option<Expr>,
+}
+
+/// An annotation entry: key or key: value
+#[derive(Debug, Clone)]
+pub struct AnnotationEntry {
+    pub key: String,
+    pub value: Option<Expr>,
+}
+
+/// An annotation: @[entries]
+#[derive(Debug, Clone)]
+pub struct Annotation {
+    pub entries: Vec<AnnotationEntry>,
 }
 
 /// An enum variant definition
