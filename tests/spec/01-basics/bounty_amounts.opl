@@ -1,0 +1,14 @@
+# expect: Pool: 850.0 | After claim: 600.0 | Bonus: 660.0 | Final: 627.0
+# Tracking bounty pool changes with arithmetic and compound assignment
+
+pool = 1000.0
+pool -= 150.0
+r1 = pool
+pool -= 250.0
+r2 = pool
+pool += 60.0
+r3 = pool
+pool *= 0.95
+r4 = pool
+
+print(f"Pool: {r1} | After claim: {r2} | Bonus: {r3} | Final: {r4}")
