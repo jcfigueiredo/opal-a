@@ -416,10 +416,10 @@ impl<'src> Parser<'src> {
         loop {
             let name = self.expect_identifier()?;
 
-            // Optional type annotation: : Type
+            // Optional type annotation: : Type or : Type?
             let type_annotation = if self.check(&Token::Colon) {
                 self.advance();
-                Some(self.expect_identifier()?)
+                Some(self.parse_type_name()?)
             } else {
                 None
             };
@@ -593,7 +593,7 @@ impl<'src> Parser<'src> {
                             let field_name = self.expect_identifier()?;
                             let type_ann = if self.check(&Token::Colon) {
                                 self.advance();
-                                Some(self.expect_identifier()?)
+                                Some(self.parse_type_name()?)
                             } else {
                                 None
                             };
@@ -782,7 +782,7 @@ impl<'src> Parser<'src> {
         let name = self.expect_identifier()?;
         let type_annotation = if self.check(&Token::Colon) {
             self.advance();
-            Some(self.expect_identifier()?)
+            Some(self.parse_type_name()?)
         } else {
             None
         };
@@ -821,7 +821,7 @@ impl<'src> Parser<'src> {
                         let param_name = self.expect_identifier()?;
                         let type_ann = if self.check(&Token::Colon) {
                             self.advance();
-                            Some(self.expect_identifier()?)
+                            Some(self.parse_type_name()?)
                         } else {
                             None
                         };
@@ -2468,6 +2468,16 @@ impl<'src> Parser<'src> {
                 expected: "method name".to_string(),
             }),
         }
+    }
+
+    /// Parse a type name with optional `?` suffix for nullable types
+    fn parse_type_name(&mut self) -> Result<String, ParseError> {
+        let mut name = self.expect_identifier()?;
+        if self.check(&Token::Question) {
+            self.advance();
+            name.push('?');
+        }
+        Ok(name)
     }
 
     fn expect_newline(&mut self) -> Result<(), ParseError> {

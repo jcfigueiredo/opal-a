@@ -3059,6 +3059,12 @@ impl<W: Write> Interpreter<W> {
 
     /// Check if a value matches a type name (class name, protocol, or builtin)
     fn value_matches_type(&self, value: &Value, type_name: &str) -> bool {
+        // Handle nullable types: T? accepts null or T
+        if type_name.ends_with('?') {
+            if matches!(value, Value::Null) { return true; }
+            let base = &type_name[..type_name.len()-1];
+            return self.value_matches_type(value, base);
+        }
         match (value, type_name) {
             // Builtin types
             (Value::Integer(_), "Int" | "Int32" | "Int64" | "Integer") => true,
@@ -3083,6 +3089,12 @@ impl<W: Write> Interpreter<W> {
     }
 
     fn value_is_type(&self, value: &Value, type_name: &str) -> bool {
+        // Handle nullable types: T? accepts null or T
+        if type_name.ends_with('?') {
+            if matches!(value, Value::Null) { return true; }
+            let base = &type_name[..type_name.len()-1];
+            return self.value_is_type(value, base);
+        }
         match type_name {
             "Int" => matches!(value, Value::Integer(_)),
             "Float" => matches!(value, Value::Float(_)),

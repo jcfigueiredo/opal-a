@@ -395,6 +395,8 @@ pub enum Token {
     QuestionDot,
     #[token("??")]
     QuestionQuestion,
+    #[token("?")]
+    Question,
 
     // === Delimiters ===
     #[token("(")]

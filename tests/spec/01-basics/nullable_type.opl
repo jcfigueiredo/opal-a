@@ -1,0 +1,9 @@
+# expect: 42 | null accepted
+def greet(name: String?)
+  if name is Null
+    "null accepted"
+  else
+    name
+  end
+end
+print(f"{greet('42')} | {greet(null)}")
