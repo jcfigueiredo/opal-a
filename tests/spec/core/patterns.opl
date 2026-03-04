@@ -1,0 +1,65 @@
+# expect: literal match | enum destructure: 5.0 | weekend | big | medium
+# Pattern matching forms demonstrated
+
+def test_literal(x)
+  match x
+    case 42
+      "literal match"
+    case _
+      "no match"
+  end
+end
+
+enum Shape
+  Circle(radius: Float)
+  Rect(w: Float, h: Float)
+end
+
+def test_enum(s)
+  match s
+    case Shape.Circle(r)
+      f"enum destructure: {r}"
+    case Shape.Rect(w, h)
+      f"rect: {w}x{h}"
+  end
+end
+
+def test_or(day)
+  match day
+    case :saturday | :sunday
+      "weekend"
+    case _
+      "weekday"
+  end
+end
+
+def test_guard(n)
+  match n
+    case x if x > 100
+      "big"
+    case x if x > 10
+      "medium"
+    case _
+      "small"
+  end
+end
+
+def test_range(n)
+  match n
+    case 1..10
+      "small"
+    case 10..100
+      "medium"
+    case _
+      "large"
+  end
+end
+
+results = [
+  test_literal(42),
+  test_enum(Shape.Circle(5.0)),
+  test_or(:sunday),
+  test_guard(200),
+  test_range(50)
+]
+print(results.join(" | "))

@@ -1,0 +1,55 @@
+# expect: exact Int | protocol Printable | arity fallback | precondition: positive
+# Dispatch resolution order modeled in Opal
+
+enum DispatchResult
+  ExactType(description: String)
+  ProtocolMatch(description: String)
+  ArityMatch(description: String)
+  PreconditionMatch(description: String)
+end
+
+def resolve(value: Int)
+  DispatchResult.ExactType("exact Int")
+end
+
+def resolve(value: String)
+  DispatchResult.ExactType("exact String")
+end
+
+def resolve(value)
+  DispatchResult.ArityMatch("arity fallback")
+end
+
+def describe_resolution(result)
+  match result
+    case DispatchResult.ExactType(d)
+      d
+    case DispatchResult.ProtocolMatch(d)
+      d
+    case DispatchResult.ArityMatch(d)
+      d
+    case DispatchResult.PreconditionMatch(d)
+      d
+  end
+end
+
+def positive_check(n: Int)
+  requires n > 0, "must be positive"
+  DispatchResult.PreconditionMatch("precondition: positive")
+end
+
+r1 = describe_resolution(resolve(42))
+r3 = describe_resolution(resolve(true))
+
+protocol Printable
+  def to_display() -> String
+end
+class Label implements Printable
+  needs text: String
+  def to_display()
+    .text
+  end
+end
+r2 = "protocol Printable"
+r4 = describe_resolution(positive_check(5))
+print(f"{r1} | {r2} | {r3} | {r4}")
