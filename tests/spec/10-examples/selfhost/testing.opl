@@ -1,0 +1,24 @@
+# Testing DSL macros — self-hosted, not parser keywords
+# @assert, @refute, @assert_eq are macros that compose via nesting
+
+macro assert(condition, message)
+  ast
+    if not ($condition)
+      raise f"AssertFailed: {$message}"
+    end
+  end
+end
+
+macro refute(condition, message)
+  ast
+    if $condition
+      raise f"RefuteFailed: {$message}"
+    end
+  end
+end
+
+macro assert_eq(actual, expected, label)
+  ast
+    @assert $actual == $expected, f"{$label}: expected {$expected}, got {$actual}"
+  end
+end

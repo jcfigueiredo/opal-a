@@ -1068,6 +1068,23 @@ impl<W: Write> Interpreter<W> {
                 },
                 span: expr.span,
             },
+            ExprKind::MemberAccess { object, field } => Expr {
+                kind: ExprKind::MemberAccess {
+                    object: Box::new(self.substitute_expr(object)),
+                    field: field.clone(),
+                },
+                span: expr.span,
+            },
+            ExprKind::Await(inner) => Expr {
+                kind: ExprKind::Await(Box::new(self.substitute_expr(inner))),
+                span: expr.span,
+            },
+            ExprKind::List(items) => Expr {
+                kind: ExprKind::List(
+                    items.iter().map(|e| self.substitute_expr(e)).collect(),
+                ),
+                span: expr.span,
+            },
             _ => expr.clone(),
         }
     }
