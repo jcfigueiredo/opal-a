@@ -64,8 +64,56 @@ fn main() {
             }
         }
         Commands::Repl => {
-            eprintln!("opal repl: not yet implemented");
-            process::exit(1);
+            use std::io::{self, BufRead, Write};
+
+            let mut interpreter = opal_interp::Interpreter::new();
+            let stdin = io::stdin();
+            let mut buffer = String::new();
+            let mut continuation = false;
+
+            println!("Opal REPL v0.1.0 (type 'exit' to quit)");
+
+            loop {
+                if continuation {
+                    print!("... ");
+                } else {
+                    print!("opal> ");
+                }
+                io::stdout().flush().unwrap();
+
+                let mut line = String::new();
+                if stdin.lock().read_line(&mut line).unwrap() == 0 {
+                    break; // EOF
+                }
+                let line = line.trim_end_matches('\n').trim_end_matches('\r');
+
+                if !continuation && line == "exit" {
+                    break;
+                }
+
+                buffer.push_str(line);
+                buffer.push('\n');
+
+                // Check if we need more input (unclosed blocks)
+                if needs_continuation(&buffer) {
+                    continuation = true;
+                    continue;
+                }
+
+                // Try to parse and eval
+                match opal_parser::parse(&buffer) {
+                    Ok(program) => {
+                        match interpreter.run(&program) {
+                            Ok(()) => {}
+                            Err(e) => eprintln!("{}", e),
+                        }
+                    }
+                    Err(e) => eprintln!("ParseError: {}", e),
+                }
+
+                buffer.clear();
+                continuation = false;
+            }
         }
         Commands::Test { path } => {
             eprintln!(
@@ -82,4 +130,24 @@ fn main() {
             process::exit(1);
         }
     }
+}
+
+fn needs_continuation(input: &str) -> bool {
+    let openers = [
+        "def ", "if ", "class ", "module ", "do\n", "do ", "for ", "while ", "actor ",
+        "macro ", "try\n", "match ",
+    ];
+    let mut depth: i32 = 0;
+    for line in input.lines() {
+        let trimmed = line.trim();
+        for opener in &openers {
+            if trimmed.starts_with(opener) || trimmed == opener.trim() {
+                depth += 1;
+            }
+        }
+        if trimmed == "end" {
+            depth -= 1;
+        }
+    }
+    depth > 0
 }
