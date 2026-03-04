@@ -1,0 +1,21 @@
+extern "http"
+  def create_app() -> App
+  def add_route(app, method: String, path: String, handler: Fn) -> Null
+  def serve(app, port: Int) -> Null
+end
+
+app = create_app()
+
+macro get(path, handler)
+  ast
+    add_route(app, "GET", $path, $handler)
+  end
+end
+
+@get "/", |req| "Hello, world!"
+
+@get "/greet/:name", do |params|
+  f"Hello, {params}!"
+end
+
+serve(app, 8080)

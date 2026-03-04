@@ -1,0 +1,9 @@
+# expect: routes registered
+extern "http"
+  def create_app() -> App
+  def add_route(app, method: String, path: String, handler: Fn) -> Null
+end
+
+app = create_app()
+add_route(app, "GET", "/", |req| "Hello!")
+print("routes registered")
