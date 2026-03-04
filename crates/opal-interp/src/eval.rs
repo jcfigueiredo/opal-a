@@ -1720,6 +1720,29 @@ impl<W: Write> Interpreter<W> {
                         return result;
                     }
                 }
+                // Exhaustiveness warning for enums
+                if let Value::EnumVariant { enum_id, .. } = &val {
+                    let e = &self.enums[enum_id.0];
+                    let has_wildcard = cases.iter().any(|c| matches!(c.pattern, Pattern::Wildcard));
+                    if !has_wildcard {
+                        let covered: Vec<&str> = cases.iter().filter_map(|c| {
+                            if let Pattern::EnumVariant(_, vname, _) = &c.pattern {
+                                Some(vname.as_str())
+                            } else if let Pattern::Constructor(vname, _) = &c.pattern {
+                                Some(vname.as_str())
+                            } else {
+                                None
+                            }
+                        }).collect();
+                        let missing: Vec<&str> = e.variants.iter()
+                            .filter(|v| !covered.contains(&v.name.as_str()))
+                            .map(|v| v.name.as_str())
+                            .collect();
+                        if !missing.is_empty() {
+                            eprintln!("warning: non-exhaustive match on {} — missing: {}", e.name, missing.join(", "));
+                        }
+                    }
+                }
                 Ok(Value::Null) // no match
             }
 
@@ -5103,5 +5126,100 @@ print("hi" is NumOrStr)"#).unwrap(), "true");
     #[test]
     fn let_allows_read() {
         assert_eq!(run("let x = 42\nprint(x)").unwrap(), "42");
+    }
+
+    #[test]
+    fn match_unmatched_enum_returns_null() {
+        let output = run(r#"
+enum Color
+  Red
+  Green
+  Blue
+end
+c = Color.Blue
+result = match c
+  case Color.Red
+    "red"
+end
+print(result)
+"#).unwrap();
+        assert_eq!(output, "null");
+    }
+
+    #[test]
+    fn model_basic() {
+        let output = run(r#"
+model Point
+  needs x: Int
+  needs y: Int
+end
+p = Point.new(x: 1, y: 2)
+print(p.to_dict())
+"#).unwrap();
+        assert_eq!(output, "{x: 1, y: 2}");
+    }
+
+    #[test]
+    fn model_immutable() {
+        let result = run(r#"
+model Point
+  needs x: Int
+  needs y: Int
+
+  def set_x(val)
+    .x = val
+  end
+end
+p = Point.new(x: 1, y: 2)
+p.set_x(99)
+"#);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("immutable model"));
+    }
+
+    #[test]
+    fn model_copy() {
+        let output = run(r#"
+model Point
+  needs x: Int
+  needs y: Int
+end
+p = Point.new(x: 1, y: 2)
+p2 = p.copy(x: 10)
+print(p2.to_dict())
+"#).unwrap();
+        assert_eq!(output, "{x: 10, y: 2}");
+    }
+
+    #[test]
+    fn model_validation_failure() {
+        let result = run(r#"
+model Email
+  needs address: String where |v| v.contains("@")
+end
+Email.new(address: "invalid")
+"#);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("validation failed"));
+    }
+
+    #[test]
+    fn retroactive_conformance() {
+        let output = run(r#"
+class Dog
+  needs name: String
+end
+protocol Speakable
+  def speak() -> String
+end
+implements Speakable for Dog
+  def speak()
+    f"{.name} says woof"
+  end
+end
+d = Dog.new(name: "Rex")
+print(f"{d is Speakable} | {d.speak()}")
+"#).unwrap();
+        assert_eq!(output, "true | Rex says woof");
     }
 }
