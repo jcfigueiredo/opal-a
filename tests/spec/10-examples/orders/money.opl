@@ -1,0 +1,29 @@
+class Money
+  needs amount: Float
+  needs currency: String
+
+  def get_amount()
+    .amount
+  end
+
+  def get_currency()
+    .currency
+  end
+
+  def add(other)
+    requires .currency == other.get_currency(), "currency mismatch"
+    Money.new(amount: .amount + other.get_amount(), currency: .currency)
+  end
+
+  def multiply(factor)
+    Money.new(amount: .amount * factor, currency: .currency)
+  end
+
+  def display()
+    f"{.currency} {.amount}"
+  end
+end
+
+def zero_usd()
+  Money.new(amount: 0.0, currency: "USD")
+end
