@@ -1154,6 +1154,14 @@ impl<'src> Parser<'src> {
                 break;
             }
             self.advance(); // consume operator
+            // Handle `is not` as two-token operator
+            let op = if op == BinOp::Is && self.check(&Token::Not) {
+                self.advance(); // consume `not`
+                BinOp::IsNot
+            } else {
+                op
+            };
+            let (prec, _) = op_precedence(op);
             let next_prec = if assoc == Assoc::Left { prec + 1 } else { prec };
             let right = self.parse_expression(next_prec)?;
             let span = Span {
@@ -2001,6 +2009,7 @@ impl<'src> Parser<'src> {
             Some(Token::And) => Some(BinOp::And),
             Some(Token::Or) => Some(BinOp::Or),
             Some(Token::Pipe) => Some(BinOp::Pipe),
+            Some(Token::Is) => Some(BinOp::Is),
             _ => None,
         }
     }
@@ -2020,6 +2029,7 @@ fn op_precedence(op: BinOp) -> (u8, Assoc) {
         BinOp::And => (2, Assoc::Left),
         BinOp::Eq | BinOp::NotEq => (3, Assoc::Left),
         BinOp::Lt | BinOp::Gt | BinOp::LtEq | BinOp::GtEq => (4, Assoc::Left),
+        BinOp::Is | BinOp::IsNot => (4, Assoc::Left),
         BinOp::Pipe => (5, Assoc::Left),
         BinOp::Add | BinOp::Sub => (6, Assoc::Left),
         BinOp::Mul | BinOp::Div | BinOp::Mod => (7, Assoc::Left),

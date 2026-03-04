@@ -1,0 +1,21 @@
+# expect: true | false | true | true | false
+class Dog
+  needs name: String
+end
+protocol Greetable
+  def greet() -> String
+end
+class Cat implements Greetable
+  needs name: String
+  def greet()
+    f"meow from {.name}"
+  end
+end
+d = Dog.new(name: "Rex")
+c = Cat.new(name: "Whiskers")
+r1 = d is Dog
+r2 = d is Cat
+r3 = c is Greetable
+r4 = 42 is Int
+r5 = 42 is String
+print(f"{r1} | {r2} | {r3} | {r4} | {r5}")

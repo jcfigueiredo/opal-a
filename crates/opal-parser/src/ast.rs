@@ -294,6 +294,8 @@ pub enum BinOp {
     And,
     Or,
     Pipe,
+    Is,
+    IsNot,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

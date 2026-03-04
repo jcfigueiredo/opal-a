@@ -847,6 +847,16 @@ impl<W: Write> Interpreter<W> {
                 if *op == BinOp::Pipe {
                     return self.eval_pipe(left, right);
                 }
+                // Special handling for `is` / `is not` — RHS is a type name, not evaluated
+                if *op == BinOp::Is || *op == BinOp::IsNot {
+                    let left_val = self.eval_expr(left)?;
+                    let type_name = match &right.kind {
+                        ExprKind::Identifier(name) => name.clone(),
+                        _ => return Err(EvalError::TypeError("is operator requires a type name".into())),
+                    };
+                    let result = self.value_is_type(&left_val, &type_name);
+                    return Ok(Value::Bool(if *op == BinOp::Is { result } else { !result }));
+                }
                 let lval = self.eval_expr(left)?;
                 let rval = self.eval_expr(right)?;
                 eval_binary_op(*op, lval, rval)
@@ -2128,6 +2138,36 @@ impl<W: Write> Interpreter<W> {
                 self.class_implements_protocol(class_id, type_name)
             }
             _ => false,
+        }
+    }
+
+    fn value_is_type(&self, value: &Value, type_name: &str) -> bool {
+        match type_name {
+            "Int" => matches!(value, Value::Integer(_)),
+            "Float" => matches!(value, Value::Float(_)),
+            "String" => matches!(value, Value::String(_)),
+            "Bool" => matches!(value, Value::Bool(_)),
+            "Null" => matches!(value, Value::Null),
+            "Symbol" => matches!(value, Value::Symbol(_)),
+            "List" => matches!(value, Value::List(_)),
+            "Dict" => matches!(value, Value::Dict(_)),
+            "Range" => matches!(value, Value::Range { .. }),
+            "Fn" => matches!(value, Value::Function(_) | Value::MultiFunction(_) | Value::Closure(_)),
+            name => {
+                if let Value::Instance(id) = value {
+                    let inst = &self.instances[id.0];
+                    if self.classes[inst.class_id.0].name == name {
+                        return true;
+                    }
+                    return self.class_implements_protocol(inst.class_id, name);
+                }
+                if let Value::EnumVariant { enum_id, .. } = value {
+                    if self.enums[enum_id.0].name == name {
+                        return true;
+                    }
+                }
+                false
+            }
         }
     }
 
@@ -3442,6 +3482,30 @@ print(L.greet())
         assert_eq!(
             run("class Foo\n  needs x: Int\nend\nf = Foo.new(x: 1)\nprint(typeof(f).name)").unwrap(),
             "Foo"
+        );
+    }
+
+    // === is operator tests ===
+    #[test]
+    fn is_operator_builtins() {
+        assert_eq!(run("print(42 is Int)").unwrap(), "true");
+        assert_eq!(run("print(42 is String)").unwrap(), "false");
+        assert_eq!(run(r#"print("hi" is String)"#).unwrap(), "true");
+        assert_eq!(run("print(true is Bool)").unwrap(), "true");
+        assert_eq!(run("print(null is Null)").unwrap(), "true");
+    }
+
+    #[test]
+    fn is_not_operator() {
+        assert_eq!(run("print(42 is not String)").unwrap(), "true");
+        assert_eq!(run("print(42 is not Int)").unwrap(), "false");
+    }
+
+    #[test]
+    fn is_operator_class() {
+        assert_eq!(
+            run("class Foo\n  needs x: Int\nend\nf = Foo.new(x: 1)\nprint(f is Foo)").unwrap(),
+            "true"
         );
     }
 
