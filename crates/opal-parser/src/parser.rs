@@ -136,6 +136,11 @@ impl<'src> Parser<'src> {
             return self.parse_macro_invoke(start);
         }
 
+        // Type alias: type Name = ...
+        if self.check(&Token::Type) {
+            return self.parse_type_alias(start);
+        }
+
         // Actor definition
         if self.check(&Token::Actor) {
             return self.parse_actor_def(start);
@@ -356,6 +361,69 @@ impl<'src> Parser<'src> {
                 start: start.start,
                 end,
             },
+        })
+    }
+
+    fn parse_type_alias(&mut self, start: Span) -> Result<Stmt, ParseError> {
+        self.advance(); // consume 'type'
+        let name = self.expect_identifier()?;
+        self.expect_token(&Token::Eq, "=")?;
+        let definition = self.parse_type_expr()?;
+        let end = self.previous_span().end;
+        self.expect_newline()?;
+        Ok(Stmt {
+            kind: StmtKind::TypeAlias { name, definition },
+            span: Span { start: start.start, end },
+        })
+    }
+
+    fn parse_type_expr(&mut self) -> Result<TypeExpr, ParseError> {
+        // Parse the first element — either a symbol (:name) or a named type (Name)
+        let first = self.parse_type_atom()?;
+
+        // Check for union: ... | ...
+        if self.check(&Token::Bar) {
+            let mut parts = vec![first];
+            while self.check(&Token::Bar) {
+                self.advance(); // consume '|'
+                parts.push(self.parse_type_atom()?);
+            }
+            // Check if all parts are symbols — if so, it's a SymbolSet
+            let all_symbols: Vec<String> = parts.iter().filter_map(|p| {
+                if let TypeExpr::SymbolSet(syms) = p {
+                    if syms.len() == 1 { return Some(syms[0].clone()); }
+                }
+                None
+            }).collect();
+            if all_symbols.len() == parts.len() {
+                return Ok(TypeExpr::SymbolSet(all_symbols));
+            }
+            // Otherwise it's a Union of types
+            return Ok(TypeExpr::Union(parts));
+        }
+
+        Ok(first)
+    }
+
+    fn parse_type_atom(&mut self) -> Result<TypeExpr, ParseError> {
+        // Symbol: :name
+        if self.check(&Token::Symbol) {
+            let text = self.extract_text(&self.current_span());
+            let name = text[1..].to_string();
+            self.advance();
+            return Ok(TypeExpr::SymbolSet(vec![name]));
+        }
+        // Named type: Identifier
+        if self.peek_is_identifier() {
+            let name = self.extract_text(&self.current_span());
+            self.advance();
+            return Ok(TypeExpr::Named(name));
+        }
+        let span = self.current_span();
+        Err(ParseError::UnexpectedToken {
+            found: self.peek().cloned().unwrap_or(Token::Newline),
+            expected: "type name or symbol".to_string(),
+            span,
         })
     }
 

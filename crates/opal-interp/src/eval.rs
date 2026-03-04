@@ -144,6 +144,7 @@ pub struct Interpreter<W: Write> {
     macros: Vec<StoredMacro>,
     protocols: Vec<StoredProtocol>,
     enums: Vec<StoredEnum>,
+    type_aliases: HashMap<String, TypeExpr>,
     ast_nodes: Vec<Vec<Stmt>>,
     /// Registry of FFI plugins
     plugin_registry: opal_stdlib::PluginRegistry,
@@ -173,6 +174,7 @@ impl Interpreter<std::io::Stdout> {
             macros: Vec::new(),
             protocols: Vec::new(),
             enums: Vec::new(),
+            type_aliases: HashMap::new(),
             ast_nodes: Vec::new(),
             plugin_registry: opal_stdlib::PluginRegistry::new(),
             native_objects: Vec::new(),
@@ -206,6 +208,7 @@ impl<W: Write> Interpreter<W> {
             macros: Vec::new(),
             protocols: Vec::new(),
             enums: Vec::new(),
+            type_aliases: HashMap::new(),
             ast_nodes: Vec::new(),
             plugin_registry: opal_stdlib::PluginRegistry::new(),
             native_objects: Vec::new(),
@@ -630,6 +633,9 @@ impl<W: Write> Interpreter<W> {
                 let module_key = imp.path.join(".");
                 let module_val = self.ensure_module_loaded(&module_key, &imp.path)?;
                 self.apply_import(&imp.kind, &module_key, module_val)?;
+            }
+            StmtKind::TypeAlias { name, definition } => {
+                self.type_aliases.insert(name.clone(), definition.clone());
             }
             StmtKind::ExportBlock(_) => {
                 // Export blocks are metadata; no runtime effect for now
@@ -2166,7 +2172,27 @@ impl<W: Write> Interpreter<W> {
                         return true;
                     }
                 }
+                // Check type aliases
+                if let Some(type_expr) = self.type_aliases.get(name).cloned() {
+                    return self.value_matches_type_expr(value, &type_expr);
+                }
                 false
+            }
+        }
+    }
+
+    fn value_matches_type_expr(&self, value: &Value, type_expr: &TypeExpr) -> bool {
+        match type_expr {
+            TypeExpr::Named(name) => self.value_is_type(value, name),
+            TypeExpr::SymbolSet(symbols) => {
+                if let Value::Symbol(s) = value {
+                    symbols.contains(s)
+                } else {
+                    false
+                }
+            }
+            TypeExpr::Union(parts) => {
+                parts.iter().any(|p| self.value_matches_type_expr(value, p))
             }
         }
     }
@@ -3507,6 +3533,26 @@ print(L.greet())
             run("class Foo\n  needs x: Int\nend\nf = Foo.new(x: 1)\nprint(f is Foo)").unwrap(),
             "true"
         );
+    }
+
+    // === type alias tests ===
+    #[test]
+    fn type_alias_basic() {
+        assert_eq!(run("type ID = Int\nprint(42 is ID)").unwrap(), "true");
+    }
+
+    #[test]
+    fn type_alias_symbol_set() {
+        assert_eq!(run("type Status = :ok | :error\nprint(:ok is Status)").unwrap(), "true");
+        assert_eq!(run("type Status = :ok | :error\nprint(:unknown is Status)").unwrap(), "false");
+    }
+
+    #[test]
+    fn type_alias_union() {
+        assert_eq!(run("type NumOrStr = Int | String\nprint(42 is NumOrStr)").unwrap(), "true");
+        assert_eq!(run(r#"type NumOrStr = Int | String
+print("hi" is NumOrStr)"#).unwrap(), "true");
+        assert_eq!(run("type NumOrStr = Int | String\nprint(true is NumOrStr)").unwrap(), "false");
     }
 
     #[test]

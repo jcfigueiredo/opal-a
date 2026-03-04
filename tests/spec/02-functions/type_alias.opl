@@ -1,0 +1,9 @@
+# expect: true | true | false | true
+type Status = :ok | :error | :pending
+type ID = Int
+
+r1 = :ok is Status
+r2 = :error is Status
+r3 = :unknown is Status
+r4 = 42 is ID
+print(f"{r1} | {r2} | {r3} | {r4}")

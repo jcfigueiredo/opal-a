@@ -94,6 +94,8 @@ pub enum StmtKind {
         args: Vec<Expr>,
         block: Option<Vec<Stmt>>,
     },
+    /// Type alias: `type Name = TypeExpr`
+    TypeAlias { name: String, definition: TypeExpr },
     /// Extern FFI declaration: `extern "lib" ... end`
     ExternDef {
         lib_name: String,
@@ -275,6 +277,14 @@ pub struct Param {
     pub name: String,
     pub type_annotation: Option<String>,
     pub default: Option<Expr>,
+}
+
+/// A type expression used in type aliases
+#[derive(Debug, Clone)]
+pub enum TypeExpr {
+    Named(String),
+    Union(Vec<TypeExpr>),
+    SymbolSet(Vec<String>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
