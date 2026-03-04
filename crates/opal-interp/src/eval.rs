@@ -1822,4 +1822,90 @@ print("done")
         .unwrap();
         assert_eq!(output, "done");
     }
+
+    // === Slice 7.1: Macro regression tests ===
+
+    #[test]
+    fn macro_inline_args_no_trailing_block() {
+        // Bug: @macro arg1, arg2 inside a function body consumed the
+        // enclosing function's body as a trailing block
+        let output = run(r#"
+macro guard(condition, message)
+  ast
+    if not ($condition)
+      raise $message
+    end
+  end
+end
+
+def withdraw(amount)
+  @guard amount > 0, "must be positive"
+  print(f"ok: {amount}")
+end
+
+withdraw(50)
+"#)
+        .unwrap();
+        assert_eq!(output, "ok: 50");
+    }
+
+    #[test]
+    fn macro_splice_in_raise() {
+        // Bug: $var inside `raise $var` wasn't substituted
+        let output = run(r#"
+macro check(cond, msg)
+  ast
+    if not ($cond)
+      raise $msg
+    end
+  end
+end
+
+try
+  @check false, "boom"
+catch as e
+  print(e)
+end
+"#)
+        .unwrap();
+        assert_eq!(output, "boom");
+    }
+
+    #[test]
+    fn macro_splice_in_fstring() {
+        // Bug: $var inside f"...{$var}..." wasn't substituted
+        let output = run(r#"
+macro log(label, body)
+  ast
+    print(f"[{$label}]")
+    $body
+  end
+end
+
+@log "start"
+  print("running")
+end
+"#)
+        .unwrap();
+        assert_eq!(output, "[start]\nrunning");
+    }
+
+    #[test]
+    fn mixed_type_comparison() {
+        // Bug: Float > Integer and similar comparisons were missing
+        let output = run("print(5.0 > 3)").unwrap();
+        assert_eq!(output, "true");
+    }
+
+    #[test]
+    fn mixed_type_comparison_all_ops() {
+        let output = run(r#"
+print(1.5 < 2)
+print(3.0 > 2)
+print(2.0 <= 2)
+print(3.0 >= 4)
+"#)
+        .unwrap();
+        assert_eq!(output, "true\ntrue\ntrue\nfalse");
+    }
 }
