@@ -1,0 +1,3 @@
+# expect: 0
+d = {:}
+print(d.length())

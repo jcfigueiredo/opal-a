@@ -1,0 +1,11 @@
+# expect: [LOG] starting
+macro log(label, body)
+  ast
+    print(f"[LOG] {$label}")
+    $body
+  end
+end
+
+@log "starting"
+  x = 1 + 1
+end

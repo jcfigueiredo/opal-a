@@ -1,0 +1,19 @@
+# expect: 30
+actor Accumulator
+  def init()
+    .total = 0
+  end
+
+  receive
+    case :add
+      .total = .total + 10
+    case :get
+      reply .total
+  end
+end
+
+acc = Accumulator.new()
+acc.send(:add)
+acc.send(:add)
+acc.send(:add)
+print(await acc.send(:get))

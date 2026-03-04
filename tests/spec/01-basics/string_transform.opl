@@ -1,0 +1,2 @@
+# expect: HELLO OPAL
+print("hello opal".to_upper())

@@ -1,0 +1,17 @@
+# expect: Alice: 150.0
+class Account
+  needs name: String
+  needs balance: Float
+
+  def deposit(amount)
+    .balance = .balance + amount
+  end
+
+  def to_string()
+    f"{.name}: {.balance}"
+  end
+end
+
+acc = Account.new(name: "Alice", balance: 100.0)
+acc.deposit(50.0)
+print(acc.to_string())

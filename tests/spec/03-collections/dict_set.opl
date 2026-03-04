@@ -1,0 +1,4 @@
+# expect: 42
+d = {a: 1}
+d2 = d.set("b", 42)
+print(d2.get("b"))

@@ -1,0 +1,5 @@
+# expect: 15
+x = 10
+f = |n| n + x
+x = 99
+print(f(5))
