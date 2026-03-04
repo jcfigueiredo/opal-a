@@ -344,7 +344,10 @@ pub enum Token {
     Symbol,
 
     // === Identifiers (must come after keywords) ===
-    #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*[?!]?")]
+    // Note: `?` is not included in identifier suffix to avoid conflicting with
+    // `?.` (null-safe access) and `??` (null coalesce) operators.
+    // `!` suffix is still supported for methods like `save!`.
+    #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*!?")]
     Identifier,
 
     // === Operators ===

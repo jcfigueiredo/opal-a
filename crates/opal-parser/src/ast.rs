@@ -212,6 +212,11 @@ pub enum ExprKind {
         object: Box<Expr>,
         index: Box<Expr>,
     },
+    /// Null-safe member access: `obj?.field`
+    NullSafeMemberAccess {
+        object: Box<Expr>,
+        field: String,
+    },
 }
 
 /// A case in a match expression
@@ -359,6 +364,7 @@ pub enum BinOp {
     IsNot,
     In,
     NotIn,
+    NullCoalesce,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -1592,6 +1592,21 @@ impl<'src> Parser<'src> {
                     },
                     span,
                 };
+            } else if self.check(&Token::QuestionDot) {
+                // Null-safe member access: expr?.field
+                self.advance();
+                let field = self.expect_method_name()?;
+                let span = Span {
+                    start: expr.span.start,
+                    end: self.previous_span().end,
+                };
+                expr = Expr {
+                    kind: ExprKind::NullSafeMemberAccess {
+                        object: Box::new(expr),
+                        field,
+                    },
+                    span,
+                };
             } else if self.check(&Token::LBracket) {
                 // Index access: expr[index]
                 self.advance(); // consume '['
@@ -2333,6 +2348,7 @@ impl<'src> Parser<'src> {
             Some(Token::Is) => Some(BinOp::Is),
             Some(Token::In) => Some(BinOp::In),
             Some(Token::Not) if self.peek_ahead(1) == Some(&Token::In) => Some(BinOp::NotIn),
+            Some(Token::QuestionQuestion) => Some(BinOp::NullCoalesce),
             _ => None,
         }
     }
@@ -2348,16 +2364,17 @@ enum Assoc {
 
 fn op_precedence(op: BinOp) -> (u8, Assoc) {
     match op {
-        BinOp::Or => (1, Assoc::Left),
-        BinOp::And => (2, Assoc::Left),
-        BinOp::Eq | BinOp::NotEq => (3, Assoc::Left),
-        BinOp::Lt | BinOp::Gt | BinOp::LtEq | BinOp::GtEq => (4, Assoc::Left),
-        BinOp::Is | BinOp::IsNot => (4, Assoc::Left),
-        BinOp::In | BinOp::NotIn => (4, Assoc::Left),
-        BinOp::Pipe => (5, Assoc::Left),
-        BinOp::Add | BinOp::Sub => (6, Assoc::Left),
-        BinOp::Mul | BinOp::Div | BinOp::Mod => (7, Assoc::Left),
-        BinOp::Pow => (8, Assoc::Right),
+        BinOp::NullCoalesce => (1, Assoc::Right),
+        BinOp::Or => (2, Assoc::Left),
+        BinOp::And => (3, Assoc::Left),
+        BinOp::Eq | BinOp::NotEq => (4, Assoc::Left),
+        BinOp::Lt | BinOp::Gt | BinOp::LtEq | BinOp::GtEq => (5, Assoc::Left),
+        BinOp::Is | BinOp::IsNot => (5, Assoc::Left),
+        BinOp::In | BinOp::NotIn => (5, Assoc::Left),
+        BinOp::Pipe => (6, Assoc::Left),
+        BinOp::Add | BinOp::Sub => (7, Assoc::Left),
+        BinOp::Mul | BinOp::Div | BinOp::Mod => (8, Assoc::Left),
+        BinOp::Pow => (9, Assoc::Right),
     }
 }
 

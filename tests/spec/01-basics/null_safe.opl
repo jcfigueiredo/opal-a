@@ -1,0 +1,6 @@
+# expect: null | fallback | hello
+x = null
+r1 = x?.name
+r2 = null ?? "fallback"
+r3 = "hello" ?? "fallback"
+print(f"{r1} | {r2} | {r3}")

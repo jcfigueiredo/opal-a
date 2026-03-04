@@ -1052,6 +1052,14 @@ impl<W: Write> Interpreter<W> {
                     return self.eval_pipe(left, right);
                 }
                 // Special handling for `is` / `is not` — RHS is a type name, not evaluated
+                // Special handling for `??` — short-circuit: if left is non-null, return it
+                if *op == BinOp::NullCoalesce {
+                    let left_val = self.eval_expr(left)?;
+                    if !matches!(left_val, Value::Null) {
+                        return Ok(left_val);
+                    }
+                    return self.eval_expr(right);
+                }
                 // Special handling for `in` / `not in`
                 if *op == BinOp::In || *op == BinOp::NotIn {
                     let left_val = self.eval_expr(left)?;
@@ -1299,6 +1307,32 @@ impl<W: Write> Interpreter<W> {
                         "cannot access field '{}' on this value",
                         field
                     ))),
+                }
+            }
+
+            ExprKind::NullSafeMemberAccess { object, field } => {
+                let obj = self.eval_expr(object)?;
+                if matches!(obj, Value::Null) {
+                    return Ok(Value::Null);
+                }
+                // Re-use MemberAccess evaluation by wrapping the already-evaluated object
+                // as a literal identifier that resolves to the same value.
+                // Simpler: just handle the key cases inline.
+                match &obj {
+                    Value::Instance(id) => {
+                        let instance = &self.instances[id.0];
+                        if let Some(val) = instance.fields.get(field) {
+                            Ok(val.clone())
+                        } else {
+                            Ok(Value::Null)
+                        }
+                    }
+                    Value::Dict(entries) => Ok(entries
+                        .iter()
+                        .find(|(k, _)| k == field)
+                        .map(|(_, v)| v.clone())
+                        .unwrap_or(Value::Null)),
+                    _ => Ok(Value::Null),
                 }
             }
 
@@ -1703,6 +1737,18 @@ impl<W: Write> Interpreter<W> {
     }
 
     fn eval_call(&mut self, function: &Expr, args: &[Arg]) -> Result<Value, EvalError> {
+        // Null-safe method call: expr?.method(args) — if null, return null
+        if let ExprKind::NullSafeMemberAccess { object, field } = &function.kind {
+            let obj = self.eval_expr(object)?;
+            if matches!(obj, Value::Null) {
+                return Ok(Value::Null);
+            }
+            let mut eval_args = Vec::new();
+            for arg in args {
+                eval_args.push((arg.name.clone(), self.eval_expr(&arg.value)?));
+            }
+            return self.call_method(obj, field, eval_args);
+        }
         // Method call: expr.method(args)
         if let ExprKind::MemberAccess { object, field } = &function.kind {
             let obj = self.eval_expr(object)?;
@@ -4224,5 +4270,16 @@ print("hi" is NumOrStr)"#).unwrap(), "true");
     fn not_in_operator() {
         assert_eq!(run("print(5 not in [1, 2, 3])").unwrap(), "true");
         assert_eq!(run("print(2 not in [1, 2, 3])").unwrap(), "false");
+    }
+
+    #[test]
+    fn null_safe_access() {
+        assert_eq!(run("val = null\nprint(val?.name)").unwrap(), "null");
+    }
+
+    #[test]
+    fn null_coalesce() {
+        assert_eq!(run(r#"print(null ?? "default")"#).unwrap(), "default");
+        assert_eq!(run(r#"print("value" ?? "default")"#).unwrap(), "value");
     }
 }
