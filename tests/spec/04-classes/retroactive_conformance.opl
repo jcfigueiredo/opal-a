@@ -1,0 +1,17 @@
+# expect: true | Dog says woof
+class Dog
+  needs name: String
+end
+
+protocol Speakable
+  def speak() -> String
+end
+
+implements Speakable for Dog
+  def speak()
+    f"{.name} says woof"
+  end
+end
+
+d = Dog.new(name: "Dog")
+print(f"{d is Speakable} | {d.speak()}")
