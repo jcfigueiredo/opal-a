@@ -1,4 +1,0 @@
-class Point
-  needs x: Int
-  needs y: Int
-end

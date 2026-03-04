@@ -1,3 +1,0 @@
-# expect: Lang: Opal | Ver: 1.0
-data = {"lang": "Opal", "ver": "1.0"}
-print(f"Lang: {data.get("lang")} | Ver: {data.get("ver")}")

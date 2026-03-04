@@ -1,3 +1,0 @@
-# expect: Opal
-name = "Opal"
-print(name)

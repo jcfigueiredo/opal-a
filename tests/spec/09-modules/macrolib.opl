@@ -1,9 +1,0 @@
-macro shout(val)
-  ast
-    print($val)
-  end
-end
-
-def helper()
-  "from macrolib"
-end

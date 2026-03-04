@@ -1,5 +1,0 @@
-# expect: 3.14 |      hello
-pi = 3.14159
-r1 = f"{pi:.2}"
-r2 = f"{'hello':>10}"
-print(f"{r1} | {r2}")

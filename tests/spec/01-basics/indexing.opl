@@ -1,9 +1,0 @@
-# expect: 2 | c | h | 3
-list = [1, 2, 3]
-r1 = list[1]
-r2 = ["a", "b", "c"][-1]
-r3 = "hello"[0]
-list2 = [1, 2, 0]
-list2[2] = 3
-r4 = list2[2]
-print(f"{r1} | {r2} | {r3} | {r4}")

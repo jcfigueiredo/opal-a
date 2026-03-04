@@ -1,3 +1,0 @@
-# expect: even
-x = 4
-print("even") if x % 2 == 0

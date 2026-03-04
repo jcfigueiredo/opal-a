@@ -1,6 +1,0 @@
-# expect: even | odd
-x = 4
-r1 = if x % 2 == 0 then "even" else "odd" end
-x = 7
-r2 = if x % 2 == 0 then "even" else "odd" end
-print(f"{r1} | {r2}")

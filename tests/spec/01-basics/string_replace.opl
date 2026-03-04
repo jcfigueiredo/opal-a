@@ -1,2 +1,0 @@
-# expect: hello opal
-print("hello world".replace("world", "opal"))

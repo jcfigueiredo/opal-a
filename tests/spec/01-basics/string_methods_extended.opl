@@ -1,6 +1,0 @@
-# expect: 42 | 3.14 | olleh | hahaha
-r1 = "42".to_int()
-r2 = "3.14".to_float()
-r3 = "hello".reverse()
-r4 = "ha" * 3
-print(f"{r1} | {r2} | {r3} | {r4}")

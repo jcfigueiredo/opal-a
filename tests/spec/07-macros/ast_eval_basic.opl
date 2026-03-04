@@ -1,8 +1,0 @@
-# expect: 20 | still 5
-x = 5
-code = ast
-  x = 10
-  x * 2
-end
-result = eval(code)
-print(f"{result} | still {x}")

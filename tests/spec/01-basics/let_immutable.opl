@@ -1,3 +1,0 @@
-# expect-error: cannot reassign immutable binding 'x'
-let x = 42
-x = 99

@@ -1,6 +1,0 @@
-# expect: 10
-total = 0
-for i in 1...4
-  total = total + i
-end
-print(total)

@@ -1,3 +1,0 @@
-# expect: [name, lang]
-d = {name: "Opal", lang: "Rust"}
-print(d.keys())

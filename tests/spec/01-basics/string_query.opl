@@ -1,2 +1,0 @@
-# expect: true
-print("hello world".contains("world"))

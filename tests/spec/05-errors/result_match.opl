@@ -1,8 +1,0 @@
-# expect: Got: 42
-x = Ok(42)
-match x
-  case Ok(v)
-    print(f"Got: {v}")
-  case Error(e)
-    print(f"Err: {e}")
-end

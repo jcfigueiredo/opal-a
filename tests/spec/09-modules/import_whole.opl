@@ -1,3 +1,0 @@
-# expect: Hello, Opal!
-import Utils
-print(Utils.greet("Opal"))

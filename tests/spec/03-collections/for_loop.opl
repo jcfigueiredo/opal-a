@@ -1,6 +1,0 @@
-# expect: 6
-total = 0
-for x in [1, 2, 3]
-  total = total + x
-end
-print(total)

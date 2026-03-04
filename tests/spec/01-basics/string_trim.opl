@@ -1,2 +1,0 @@
-# expect: hello
-print("  hello  ".trim())

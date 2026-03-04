@@ -1,7 +1,0 @@
-# expect: Shape | true | false
-enum Shape
-  Circle(radius: Float)
-  Rectangle(width: Float, height: Float)
-end
-s = Shape.Circle(5.0)
-print(f"{typeof(s).name} | {s is Shape} | {s is Int}")

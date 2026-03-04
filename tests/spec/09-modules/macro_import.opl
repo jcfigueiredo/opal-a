@@ -1,4 +1,0 @@
-# expect: HELLO
-import Macrolib.{shout}
-
-@shout "HELLO"

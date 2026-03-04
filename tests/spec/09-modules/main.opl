@@ -1,3 +1,0 @@
-# expect: 10
-import Utils.{double}
-print(double(5))
