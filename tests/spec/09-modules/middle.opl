@@ -1,0 +1,9 @@
+import Base.{Point}
+
+def make_point(x, y)
+  Point.new(x: x, y: y)
+end
+
+def distance(p)
+  p.x + p.y
+end

@@ -1,0 +1,5 @@
+# expect: 8
+import Middle.{make_point, distance}
+
+p = make_point(3, 5)
+print(distance(p))

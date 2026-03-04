@@ -274,6 +274,7 @@ impl<W: Write> Interpreter<W> {
             })?;
 
             // Evaluate in a new scope, capture bindings as module
+            let was_loading = self.loading_module;
             self.loading_module = true;
             self.env.push_scope();
             for stmt in &program.statements {
@@ -281,7 +282,7 @@ impl<W: Write> Interpreter<W> {
             }
             let bindings = self.env.current_scope_bindings();
             self.env.pop_scope();
-            self.loading_module = false;
+            self.loading_module = was_loading;
 
             let module_id = ModuleId(self.modules.len());
             self.modules.push(StoredModule {
