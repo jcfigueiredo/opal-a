@@ -1,0 +1,12 @@
+# expect: This prints!
+macro unless(condition, body)
+  ast
+    if not ($condition)
+      $body
+    end
+  end
+end
+
+@unless false
+  print("This prints!")
+end

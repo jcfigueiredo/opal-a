@@ -658,11 +658,7 @@ impl<'src> Parser<'src> {
         self.expect_token(&Token::End, "end")?;
         let end = self.previous_span().end;
         Ok(Stmt {
-            kind: StmtKind::MacroDef {
-                name,
-                params,
-                body,
-            },
+            kind: StmtKind::MacroDef { name, params, body },
             span: Span {
                 start: start.start,
                 end,
@@ -676,10 +672,7 @@ impl<'src> Parser<'src> {
 
         // Collect arguments: expressions until newline
         let mut args = Vec::new();
-        while !self.is_at_end()
-            && !self.check(&Token::Newline)
-            && !self.check(&Token::End)
-        {
+        while !self.is_at_end() && !self.check(&Token::Newline) && !self.check(&Token::End) {
             args.push(self.parse_expression(0)?);
             if self.check(&Token::Comma) {
                 self.advance();

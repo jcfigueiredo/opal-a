@@ -38,7 +38,13 @@ pub enum Value {
     Symbol(String),
     /// Actor instance
     Actor(ActorId),
+    /// AST node (ID into interpreter's AST storage)
+    Ast(AstId),
 }
+
+/// Opaque ID for a stored AST node
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AstId(pub usize);
 
 /// Opaque ID for an actor
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -90,6 +96,7 @@ impl fmt::Display for Value {
             Value::Some(v) => write!(f, "Some({})", v),
             Value::Symbol(s) => write!(f, ":{}", s),
             Value::Actor(id) => write!(f, "<actor #{}>", id.0),
+            Value::Ast(id) => write!(f, "<ast #{}>", id.0),
         }
     }
 }

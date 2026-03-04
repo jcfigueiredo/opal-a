@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use opal_parser::ast::*;
 use opal_runtime::{
-    ActorId, ClassId, ClosureId, Environment, FunctionId, InstanceId, ModuleId, Value,
+    ActorId, AstId, ClassId, ClosureId, Environment, FunctionId, InstanceId, ModuleId, Value,
 };
 use thiserror::Error;
 
@@ -64,6 +64,13 @@ struct StoredModule {
     bindings: HashMap<String, Value>,
 }
 
+/// A stored macro definition
+#[derive(Clone)]
+struct StoredMacro {
+    params: Vec<String>,
+    body: Vec<Stmt>,
+}
+
 /// A stored actor definition
 #[derive(Clone)]
 struct StoredActorDef {
@@ -94,6 +101,8 @@ pub struct Interpreter<W: Write> {
     current_self: Option<InstanceId>,
     /// Current actor for receive handlers
     current_actor: Option<ActorId>,
+    macros: HashMap<String, StoredMacro>,
+    ast_nodes: Vec<Vec<Stmt>>,
 }
 
 impl Interpreter<std::io::Stdout> {
@@ -110,6 +119,8 @@ impl Interpreter<std::io::Stdout> {
             actors: Vec::new(),
             current_self: None,
             current_actor: None,
+            macros: HashMap::new(),
+            ast_nodes: Vec::new(),
         }
     }
 }
@@ -128,6 +139,8 @@ impl<W: Write> Interpreter<W> {
             actors: Vec::new(),
             current_self: None,
             current_actor: None,
+            macros: HashMap::new(),
+            ast_nodes: Vec::new(),
         }
     }
 
@@ -376,6 +389,63 @@ impl<W: Write> Interpreter<W> {
                     ));
                 }
             }
+            StmtKind::MacroDef { name, params, body } => {
+                self.macros.insert(
+                    name.clone(),
+                    StoredMacro {
+                        params: params.clone(),
+                        body: body.clone(),
+                    },
+                );
+            }
+            StmtKind::MacroInvoke { name, args, block } => {
+                let mac = self
+                    .macros
+                    .get(name)
+                    .cloned()
+                    .ok_or_else(|| EvalError::UndefinedVariable(format!("@{}", name)))?;
+
+                // Build AST argument map: param name -> AST value
+                let mut ast_bindings = HashMap::new();
+                for (i, param) in mac.params.iter().enumerate() {
+                    if i < args.len() {
+                        // Store argument expression as AST
+                        let ast_id = AstId(self.ast_nodes.len());
+                        self.ast_nodes.push(vec![Stmt {
+                            kind: StmtKind::Expr(args[i].clone()),
+                            span: args[i].span,
+                        }]);
+                        ast_bindings.insert(param.clone(), ast_id);
+                    } else if i == args.len() && block.is_some() {
+                        // Block becomes the last parameter
+                        let ast_id = AstId(self.ast_nodes.len());
+                        self.ast_nodes.push(block.clone().unwrap());
+                        ast_bindings.insert(param.clone(), ast_id);
+                    }
+                }
+
+                // Evaluate macro body with AST bindings in scope
+                self.env.push_scope();
+                for (param, ast_id) in &ast_bindings {
+                    self.env.set(param.clone(), Value::Ast(*ast_id));
+                }
+                let result = self.eval_block(&mac.body);
+                self.env.pop_scope();
+
+                // If the macro body returns an AST, evaluate it
+                match result {
+                    Ok(Value::Ast(ast_id)) => {
+                        let stmts = self.ast_nodes[ast_id.0].clone();
+                        self.eval_block(&stmts)?;
+                    }
+                    Ok(_) => {} // macro returned non-AST, ignore
+                    Err(EvalError::Return(Value::Ast(ast_id))) => {
+                        let stmts = self.ast_nodes[ast_id.0].clone();
+                        self.eval_block(&stmts)?;
+                    }
+                    Err(e) => return Err(e),
+                }
+            }
         }
         Ok(())
     }
@@ -413,6 +483,22 @@ impl<W: Write> Interpreter<W> {
             ExprKind::Await(inner) => {
                 // Synchronous actors: await is a passthrough
                 self.eval_expr(inner)
+            }
+
+            ExprKind::AstBlock(body) => {
+                // Construct AST with $var substitutions
+                let substituted = self.substitute_splices(body);
+                let ast_id = AstId(self.ast_nodes.len());
+                self.ast_nodes.push(substituted);
+                Ok(Value::Ast(ast_id))
+            }
+
+            ExprKind::Splice(name) => {
+                // $var — resolve to the AST value bound in scope
+                self.env
+                    .get(name)
+                    .cloned()
+                    .ok_or_else(|| EvalError::UndefinedVariable(format!("${}", name)))
             }
 
             ExprKind::List(elements) => {
@@ -514,6 +600,109 @@ impl<W: Write> Interpreter<W> {
                 }
                 Ok(Value::Null) // no match
             }
+        }
+    }
+
+    /// Substitute $var splices in AST with stored AST nodes
+    fn substitute_splices(&self, stmts: &[Stmt]) -> Vec<Stmt> {
+        stmts
+            .iter()
+            .flat_map(|stmt| self.substitute_stmt(stmt))
+            .collect()
+    }
+
+    fn substitute_stmt(&self, stmt: &Stmt) -> Vec<Stmt> {
+        match &stmt.kind {
+            StmtKind::Expr(expr) => {
+                // Check if the expression is a splice
+                if let ExprKind::Splice(name) = &expr.kind {
+                    if let Some(Value::Ast(ast_id)) = self.env.get(name) {
+                        return self.ast_nodes[ast_id.0].clone();
+                    }
+                }
+                vec![Stmt {
+                    kind: StmtKind::Expr(self.substitute_expr(expr)),
+                    span: stmt.span,
+                }]
+            }
+            _ => {
+                // For other statement types, substitute expressions within them
+                vec![self.substitute_stmt_inner(stmt)]
+            }
+        }
+    }
+
+    fn substitute_stmt_inner(&self, stmt: &Stmt) -> Stmt {
+        let kind = match &stmt.kind {
+            StmtKind::Expr(expr) => StmtKind::Expr(self.substitute_expr(expr)),
+            other => other.clone(),
+        };
+        Stmt {
+            kind,
+            span: stmt.span,
+        }
+    }
+
+    fn substitute_expr(&self, expr: &Expr) -> Expr {
+        match &expr.kind {
+            ExprKind::Splice(name) => {
+                if let Some(Value::Ast(ast_id)) = self.env.get(name) {
+                    let stmts = &self.ast_nodes[ast_id.0];
+                    if stmts.len() == 1 {
+                        if let StmtKind::Expr(inner) = &stmts[0].kind {
+                            return inner.clone();
+                        }
+                    }
+                }
+                expr.clone()
+            }
+            ExprKind::UnaryOp { op, operand } => Expr {
+                kind: ExprKind::UnaryOp {
+                    op: *op,
+                    operand: Box::new(self.substitute_expr(operand)),
+                },
+                span: expr.span,
+            },
+            ExprKind::BinaryOp { left, op, right } => Expr {
+                kind: ExprKind::BinaryOp {
+                    left: Box::new(self.substitute_expr(left)),
+                    op: *op,
+                    right: Box::new(self.substitute_expr(right)),
+                },
+                span: expr.span,
+            },
+            ExprKind::If {
+                condition,
+                then_branch,
+                elsif_branches,
+                else_branch,
+            } => Expr {
+                kind: ExprKind::If {
+                    condition: Box::new(self.substitute_expr(condition)),
+                    then_branch: self.substitute_splices(then_branch),
+                    elsif_branches: elsif_branches.clone(),
+                    else_branch: else_branch.as_ref().map(|b| self.substitute_splices(b)),
+                },
+                span: expr.span,
+            },
+            ExprKind::Grouped(inner) => Expr {
+                kind: ExprKind::Grouped(Box::new(self.substitute_expr(inner))),
+                span: expr.span,
+            },
+            ExprKind::Call { function, args } => Expr {
+                kind: ExprKind::Call {
+                    function: Box::new(self.substitute_expr(function)),
+                    args: args
+                        .iter()
+                        .map(|a| Arg {
+                            name: a.name.clone(),
+                            value: self.substitute_expr(&a.value),
+                        })
+                        .collect(),
+                },
+                span: expr.span,
+            },
+            _ => expr.clone(),
         }
     }
 
@@ -1549,5 +1738,46 @@ print(m.get())
 "#)
         .unwrap();
         assert_eq!(output, "42");
+    }
+
+    // === Slice 7: Macro tests ===
+
+    #[test]
+    fn simple_macro() {
+        let output = run(r#"
+macro unless(condition, body)
+  ast
+    if not ($condition)
+      $body
+    end
+  end
+end
+
+@unless false
+  print("This prints!")
+end
+"#)
+        .unwrap();
+        assert_eq!(output, "This prints!");
+    }
+
+    #[test]
+    fn macro_with_true_condition() {
+        let output = run(r#"
+macro unless(condition, body)
+  ast
+    if not ($condition)
+      $body
+    end
+  end
+end
+
+@unless true
+  print("Should not print")
+end
+print("done")
+"#)
+        .unwrap();
+        assert_eq!(output, "done");
     }
 }
