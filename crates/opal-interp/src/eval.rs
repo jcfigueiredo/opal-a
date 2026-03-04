@@ -9,6 +9,8 @@ use opal_runtime::{
 };
 use thiserror::Error;
 
+use crate::loader;
+
 #[derive(Error, Debug)]
 pub enum EvalError {
     #[error("NameError: undefined variable '{0}'")]
@@ -111,6 +113,8 @@ pub struct Interpreter<W: Write> {
     native_objects: Vec<Box<dyn std::any::Any>>,
     /// Maps NativeFunctionId → "plugin:function" key for dispatch
     native_functions: Vec<String>,
+    /// File-based module loader (set when running from a file)
+    module_loader: Option<loader::ModuleLoader>,
 }
 
 impl Interpreter<std::io::Stdout> {
@@ -132,7 +136,14 @@ impl Interpreter<std::io::Stdout> {
             plugin_registry: opal_stdlib::PluginRegistry::new(),
             native_objects: Vec::new(),
             native_functions: Vec::new(),
+            module_loader: None,
         }
+    }
+
+    pub fn with_base_dir(base_dir: &std::path::Path) -> Self {
+        let mut interp = Self::new();
+        interp.module_loader = Some(loader::ModuleLoader::new(base_dir));
+        interp
     }
 }
 
@@ -155,7 +166,14 @@ impl<W: Write> Interpreter<W> {
             plugin_registry: opal_stdlib::PluginRegistry::new(),
             native_objects: Vec::new(),
             native_functions: Vec::new(),
+            module_loader: None,
         }
+    }
+
+    pub fn with_base_dir_writer(writer: W, base_dir: &std::path::Path) -> Self {
+        let mut interp = Self::with_writer(writer);
+        interp.module_loader = Some(loader::ModuleLoader::new(base_dir));
+        interp
     }
 
     /// Register an FFI plugin with its native functions.
@@ -207,6 +225,99 @@ impl<W: Write> Interpreter<W> {
 
         // HTTP plugin — provides create_app, add_route, get_routes, serve
         self.register_plugin("http", opal_stdlib::http::register_http_plugin());
+    }
+
+    /// Ensure a module is loaded into the environment, trying file-based loading if needed.
+    /// Returns the Value for the module.
+    fn ensure_module_loaded(&mut self, module_key: &str, module_path: &[String]) -> Result<Value, EvalError> {
+        // Check if already in scope
+        if let Some(val) = self.env.get(module_key).cloned() {
+            return Ok(val);
+        }
+
+        // Try file-based loading
+        let file_path = self.module_loader.as_ref()
+            .and_then(|loader| loader.resolve(module_path));
+
+        if let Some(file_path) = file_path {
+            let loader = self.module_loader.as_mut().unwrap();
+            if loader.is_loaded(module_key) {
+                // Already loaded, should be in env
+                if let Some(val) = self.env.get(module_key).cloned() {
+                    return Ok(val);
+                }
+            }
+
+            if !loader.mark_loading(module_key) {
+                return Err(EvalError::RuntimeError(format!("circular dependency: {}", module_key)));
+            }
+
+            let source = std::fs::read_to_string(&file_path)
+                .map_err(|e| EvalError::RuntimeError(e.to_string()))?;
+            let program = opal_parser::parse(&source)
+                .map_err(|e| EvalError::RuntimeError(format!("parse error in {}: {}", file_path.display(), e)))?;
+
+            // Evaluate in a new scope, capture bindings as module
+            self.env.push_scope();
+            for stmt in &program.statements {
+                self.eval_stmt(stmt)?;
+            }
+            let bindings = self.env.current_scope_bindings();
+            self.env.pop_scope();
+
+            let module_id = ModuleId(self.modules.len());
+            self.modules.push(StoredModule {
+                name: module_key.to_string(),
+                bindings,
+            });
+            self.env.set(module_key.to_string(), Value::Module(module_id));
+
+            if let Some(loader) = self.module_loader.as_mut() {
+                loader.mark_loaded(module_key);
+            }
+
+            return Ok(Value::Module(module_id));
+        }
+
+        Err(EvalError::UndefinedVariable(module_key.to_string()))
+    }
+
+    /// Apply import bindings from a module value according to the import kind.
+    fn apply_import(&mut self, kind: &ImportKind, module_key: &str, module_val: Value) -> Result<(), EvalError> {
+        let module_id = match module_val {
+            Value::Module(id) => id,
+            _ => {
+                return Err(EvalError::TypeError(format!(
+                    "'{}' is not a module",
+                    module_key
+                )));
+            }
+        };
+
+        match kind {
+            ImportKind::Selective(items) => {
+                let module = self.modules[module_id.0].clone();
+                for item in items {
+                    if let Some(val) = module.bindings.get(&item.name) {
+                        let bind_name = item.alias.as_ref().unwrap_or(&item.name).clone();
+                        self.env.set(bind_name, val.clone());
+                    } else {
+                        return Err(EvalError::UndefinedVariable(format!(
+                            "{}.{}",
+                            module_key, item.name
+                        )));
+                    }
+                }
+            }
+            ImportKind::Module => {
+                let bind_name = module_key.rsplit('.').next().unwrap_or(module_key).to_string();
+                self.env.set(bind_name, Value::Module(module_id));
+            }
+            ImportKind::ModuleAlias(alias) => {
+                self.env.set(alias.clone(), Value::Module(module_id));
+            }
+        }
+        Ok(())
     }
 
     fn eval_stmt(&mut self, stmt: &Stmt) -> Result<(), EvalError> {
@@ -361,57 +472,9 @@ impl<W: Write> Interpreter<W> {
                 }
             }
             StmtKind::Import(imp) => {
-                match &imp.kind {
-                    ImportKind::Selective(items) => {
-                        let module_name = imp.path.join(".");
-                        let module_val = self
-                            .env
-                            .get(&module_name)
-                            .cloned()
-                            .ok_or_else(|| EvalError::UndefinedVariable(module_name.clone()))?;
-                        let module_id = match module_val {
-                            Value::Module(id) => id,
-                            _ => {
-                                return Err(EvalError::TypeError(format!(
-                                    "'{}' is not a module",
-                                    module_name
-                                )));
-                            }
-                        };
-                        let module = self.modules[module_id.0].clone();
-                        for item in items {
-                            if let Some(val) = module.bindings.get(&item.name) {
-                                let bind_name =
-                                    item.alias.as_ref().unwrap_or(&item.name).clone();
-                                self.env.set(bind_name, val.clone());
-                            } else {
-                                return Err(EvalError::UndefinedVariable(format!(
-                                    "{}.{}",
-                                    module_name, item.name
-                                )));
-                            }
-                        }
-                    }
-                    ImportKind::Module => {
-                        let module_name = imp.path.join(".");
-                        let module_val = self
-                            .env
-                            .get(&module_name)
-                            .cloned()
-                            .ok_or_else(|| EvalError::UndefinedVariable(module_name.clone()))?;
-                        let bind_name = imp.path.last().unwrap().clone();
-                        self.env.set(bind_name, module_val);
-                    }
-                    ImportKind::ModuleAlias(alias) => {
-                        let module_name = imp.path.join(".");
-                        let module_val = self
-                            .env
-                            .get(&module_name)
-                            .cloned()
-                            .ok_or_else(|| EvalError::UndefinedVariable(module_name.clone()))?;
-                        self.env.set(alias.clone(), module_val);
-                    }
-                }
+                let module_key = imp.path.join(".");
+                let module_val = self.ensure_module_loaded(&module_key, &imp.path)?;
+                self.apply_import(&imp.kind, &module_key, module_val)?;
             }
             StmtKind::ExportBlock(_) => {
                 // Export blocks are metadata; no runtime effect for now
@@ -2687,5 +2750,55 @@ serve(app, __PORT__)
     fn closure_captures_at_creation() {
         let output = run("x = 10\nf = |n| n + x\nx = 99\nprint(f(5))").unwrap();
         assert_eq!(output, "15"); // captures x=10 at creation, not x=99
+    }
+
+    // === New import syntax tests ===
+
+    #[test]
+    fn import_selective_new_syntax() {
+        let output = run(r#"
+module Utils
+  def double(x)
+    x * 2
+  end
+  def triple(x)
+    x * 3
+  end
+end
+import Utils.{double}
+print(double(5))
+"#)
+        .unwrap();
+        assert_eq!(output, "10");
+    }
+
+    #[test]
+    fn import_whole_module() {
+        let output = run(r#"
+module Math2
+  def abs(x)
+    if x < 0 then -x else x end
+  end
+end
+import Math2
+print(Math2.abs(-5))
+"#)
+        .unwrap();
+        assert_eq!(output, "5");
+    }
+
+    #[test]
+    fn import_alias() {
+        let output = run(r#"
+module LongModuleName
+  def greet()
+    "hello"
+  end
+end
+import LongModuleName as L
+print(L.greet())
+"#)
+        .unwrap();
+        assert_eq!(output, "hello");
     }
 }

@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process;
 
 use clap::{Parser, Subcommand};
@@ -62,7 +62,8 @@ fn main() {
                 }
             };
 
-            let mut interpreter = opal_interp::Interpreter::new();
+            let base_dir = file.parent().unwrap_or(Path::new("."));
+            let mut interpreter = opal_interp::Interpreter::with_base_dir(base_dir);
             if let Err(e) = interpreter.run(&program) {
                 eprintln!("{}", e);
                 process::exit(1);
