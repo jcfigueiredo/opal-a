@@ -1052,6 +1052,44 @@ impl<W: Write> Interpreter<W> {
                     return self.eval_pipe(left, right);
                 }
                 // Special handling for `is` / `is not` — RHS is a type name, not evaluated
+                // Special handling for `in` / `not in`
+                if *op == BinOp::In || *op == BinOp::NotIn {
+                    let left_val = self.eval_expr(left)?;
+                    let right_val = self.eval_expr(right)?;
+                    let result = match &right_val {
+                        Value::List(items) => items.iter().any(|item| values_equal(&left_val, item)),
+                        Value::Dict(entries) => {
+                            if let Value::String(key) = &left_val {
+                                entries.iter().any(|(k, _)| k == key)
+                            } else {
+                                false
+                            }
+                        }
+                        Value::String(s) => {
+                            if let Value::String(sub) = &left_val {
+                                s.contains(sub.as_str())
+                            } else {
+                                false
+                            }
+                        }
+                        Value::Range { start, end, inclusive } => {
+                            if let Value::Integer(n) = &left_val {
+                                if *inclusive {
+                                    *n >= *start && *n <= *end
+                                } else {
+                                    *n >= *start && *n < *end
+                                }
+                            } else {
+                                false
+                            }
+                        }
+                        _ => return Err(EvalError::TypeError(format!(
+                            "cannot use 'in' with {:?}", right_val
+                        ))),
+                    };
+                    return Ok(Value::Bool(if *op == BinOp::In { result } else { !result }));
+                }
+                // Special handling for `is` / `is not` — RHS is a type name, not evaluated
                 if *op == BinOp::Is || *op == BinOp::IsNot {
                     let left_val = self.eval_expr(left)?;
                     let type_name = match &right.kind {
@@ -4174,5 +4212,17 @@ print("hi" is NumOrStr)"#).unwrap(), "true");
             run("l = [1, 2, 3]\nl[0] = 99\nprint(l[0])").unwrap(),
             "99"
         );
+    }
+
+    #[test]
+    fn in_operator() {
+        assert_eq!(run("print(2 in [1, 2, 3])").unwrap(), "true");
+        assert_eq!(run("print(4 in [1, 2, 3])").unwrap(), "false");
+    }
+
+    #[test]
+    fn not_in_operator() {
+        assert_eq!(run("print(5 not in [1, 2, 3])").unwrap(), "true");
+        assert_eq!(run("print(2 not in [1, 2, 3])").unwrap(), "false");
     }
 }

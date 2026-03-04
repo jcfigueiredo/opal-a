@@ -1453,6 +1453,9 @@ impl<'src> Parser<'src> {
             let op = if op == BinOp::Is && self.check(&Token::Not) {
                 self.advance(); // consume `not`
                 BinOp::IsNot
+            } else if op == BinOp::NotIn {
+                self.advance(); // consume `in` (we already consumed `not`)
+                op
             } else {
                 op
             };
@@ -2328,6 +2331,8 @@ impl<'src> Parser<'src> {
             Some(Token::Or) => Some(BinOp::Or),
             Some(Token::Pipe) => Some(BinOp::Pipe),
             Some(Token::Is) => Some(BinOp::Is),
+            Some(Token::In) => Some(BinOp::In),
+            Some(Token::Not) if self.peek_ahead(1) == Some(&Token::In) => Some(BinOp::NotIn),
             _ => None,
         }
     }
@@ -2348,6 +2353,7 @@ fn op_precedence(op: BinOp) -> (u8, Assoc) {
         BinOp::Eq | BinOp::NotEq => (3, Assoc::Left),
         BinOp::Lt | BinOp::Gt | BinOp::LtEq | BinOp::GtEq => (4, Assoc::Left),
         BinOp::Is | BinOp::IsNot => (4, Assoc::Left),
+        BinOp::In | BinOp::NotIn => (4, Assoc::Left),
         BinOp::Pipe => (5, Assoc::Left),
         BinOp::Add | BinOp::Sub => (6, Assoc::Left),
         BinOp::Mul | BinOp::Div | BinOp::Mod => (7, Assoc::Left),

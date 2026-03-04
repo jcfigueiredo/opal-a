@@ -1,0 +1,6 @@
+# expect: true | false | true | true
+r1 = 2 in [1, 2, 3]
+r2 = 4 in [1, 2, 3]
+r3 = 5 not in [1, 2, 3]
+r4 = "ell" in "hello"
+print(f"{r1} | {r2} | {r3} | {r4}")

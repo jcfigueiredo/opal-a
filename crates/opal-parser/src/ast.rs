@@ -357,6 +357,8 @@ pub enum BinOp {
     Pipe,
     Is,
     IsNot,
+    In,
+    NotIn,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
