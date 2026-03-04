@@ -1216,16 +1216,20 @@ impl<'src> Parser<'src> {
             // List literal: [expr, expr, ...]
             Some(Token::LBracket) => {
                 self.advance();
+                self.skip_newlines();
                 let mut elements = Vec::new();
                 if !self.check(&Token::RBracket) {
                     loop {
+                        self.skip_newlines();
                         elements.push(self.parse_expression(0)?);
+                        self.skip_newlines();
                         if !self.check(&Token::Comma) {
                             break;
                         }
                         self.advance();
                     }
                 }
+                self.skip_newlines();
                 self.expect_token(&Token::RBracket, "]")?;
                 let end = self.previous_span().end;
                 Ok(Expr {
@@ -1277,6 +1281,7 @@ impl<'src> Parser<'src> {
             // Dict literal: {key: value, ...} or {:} for empty
             Some(Token::LBrace) => {
                 self.advance();
+                self.skip_newlines();
                 // Empty dict: {:}
                 if self.check(&Token::Colon) {
                     self.advance();
@@ -1294,16 +1299,19 @@ impl<'src> Parser<'src> {
                 let mut entries = Vec::new();
                 if !self.check(&Token::RBrace) {
                     loop {
+                        self.skip_newlines();
                         let key = self.parse_expression(0)?;
                         self.expect_token(&Token::Colon, ":")?;
                         let value = self.parse_expression(0)?;
                         entries.push((key, value));
+                        self.skip_newlines();
                         if !self.check(&Token::Comma) {
                             break;
                         }
                         self.advance();
                     }
                 }
+                self.skip_newlines();
                 self.expect_token(&Token::RBrace, "}")?;
                 let end = self.previous_span().end;
                 Ok(Expr {
@@ -1505,12 +1513,14 @@ impl<'src> Parser<'src> {
 
     fn parse_args(&mut self) -> Result<Vec<Arg>, ParseError> {
         let mut args = Vec::new();
+        self.skip_newlines();
 
         if self.check(&Token::RParen) {
             return Ok(args);
         }
 
         loop {
+            self.skip_newlines();
             // Check for named argument: `name: expr`
             if self.peek_is_identifier() && self.peek_ahead(1).is_some_and(|t| *t == Token::Colon) {
                 let name = self.extract_text(&self.current_span());
@@ -1526,11 +1536,13 @@ impl<'src> Parser<'src> {
                 args.push(Arg { name: None, value });
             }
 
+            self.skip_newlines();
             if !self.check(&Token::Comma) {
                 break;
             }
             self.advance(); // consume comma
         }
+        self.skip_newlines();
 
         Ok(args)
     }
@@ -1995,6 +2007,36 @@ mod tests {
             },
             _ => panic!("expected expression"),
         }
+    }
+
+    #[test]
+    fn parse_multiline_list() {
+        let prog = parse("[\n  1,\n  2,\n  3\n]");
+        match &prog.statements[0].kind {
+            StmtKind::Expr(expr) => match &expr.kind {
+                ExprKind::List(elements) => assert_eq!(elements.len(), 3),
+                _ => panic!("expected list"),
+            },
+            _ => panic!("expected expression"),
+        }
+    }
+
+    #[test]
+    fn parse_multiline_dict() {
+        let prog = parse("{\n  a: 1,\n  b: 2\n}");
+        match &prog.statements[0].kind {
+            StmtKind::Expr(expr) => match &expr.kind {
+                ExprKind::Dict(entries) => assert_eq!(entries.len(), 2),
+                _ => panic!("expected dict"),
+            },
+            _ => panic!("expected expression"),
+        }
+    }
+
+    #[test]
+    fn parse_multiline_call() {
+        let prog = parse("foo(\n  1,\n  2,\n  3\n)");
+        assert_eq!(prog.statements.len(), 1);
     }
 
     #[test]
