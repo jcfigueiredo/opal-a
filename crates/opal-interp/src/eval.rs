@@ -635,6 +635,20 @@ impl<W: Write> Interpreter<W> {
     fn substitute_stmt_inner(&self, stmt: &Stmt) -> Stmt {
         let kind = match &stmt.kind {
             StmtKind::Expr(expr) => StmtKind::Expr(self.substitute_expr(expr)),
+            StmtKind::Raise(expr) => StmtKind::Raise(self.substitute_expr(expr)),
+            StmtKind::Return(Some(expr)) => StmtKind::Return(Some(self.substitute_expr(expr))),
+            StmtKind::Assign { name, value } => StmtKind::Assign {
+                name: name.clone(),
+                value: self.substitute_expr(value),
+            },
+            StmtKind::Let { name, value } => StmtKind::Let {
+                name: name.clone(),
+                value: self.substitute_expr(value),
+            },
+            StmtKind::InstanceAssign { field, value } => StmtKind::InstanceAssign {
+                field: field.clone(),
+                value: self.substitute_expr(value),
+            },
             other => other.clone(),
         };
         Stmt {
@@ -683,6 +697,18 @@ impl<W: Write> Interpreter<W> {
                     elsif_branches: elsif_branches.clone(),
                     else_branch: else_branch.as_ref().map(|b| self.substitute_splices(b)),
                 },
+                span: expr.span,
+            },
+            ExprKind::FString(parts) => Expr {
+                kind: ExprKind::FString(
+                    parts
+                        .iter()
+                        .map(|part| match part {
+                            FStringPart::Literal(s) => FStringPart::Literal(s.clone()),
+                            FStringPart::Expr(e) => FStringPart::Expr(self.substitute_expr(e)),
+                        })
+                        .collect(),
+                ),
                 span: expr.span,
             },
             ExprKind::Grouped(inner) => Expr {
@@ -1285,6 +1311,22 @@ fn eval_binary_op(op: BinOp, left: Value, right: Value) -> Result<Value, EvalErr
         (BinOp::Gt, Value::Integer(a), Value::Integer(b)) => Ok(Value::Bool(a > b)),
         (BinOp::LtEq, Value::Integer(a), Value::Integer(b)) => Ok(Value::Bool(a <= b)),
         (BinOp::GtEq, Value::Integer(a), Value::Integer(b)) => Ok(Value::Bool(a >= b)),
+
+        // Float comparisons
+        (BinOp::Lt, Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a < b)),
+        (BinOp::Gt, Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a > b)),
+        (BinOp::LtEq, Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a <= b)),
+        (BinOp::GtEq, Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a >= b)),
+
+        // Mixed numeric comparisons
+        (BinOp::Lt, Value::Integer(a), Value::Float(b)) => Ok(Value::Bool((*a as f64) < *b)),
+        (BinOp::Lt, Value::Float(a), Value::Integer(b)) => Ok(Value::Bool(*a < (*b as f64))),
+        (BinOp::Gt, Value::Integer(a), Value::Float(b)) => Ok(Value::Bool((*a as f64) > *b)),
+        (BinOp::Gt, Value::Float(a), Value::Integer(b)) => Ok(Value::Bool(*a > (*b as f64))),
+        (BinOp::LtEq, Value::Integer(a), Value::Float(b)) => Ok(Value::Bool((*a as f64) <= *b)),
+        (BinOp::LtEq, Value::Float(a), Value::Integer(b)) => Ok(Value::Bool(*a <= (*b as f64))),
+        (BinOp::GtEq, Value::Integer(a), Value::Float(b)) => Ok(Value::Bool((*a as f64) >= *b)),
+        (BinOp::GtEq, Value::Float(a), Value::Integer(b)) => Ok(Value::Bool(*a >= (*b as f64))),
 
         // Logical
         (BinOp::And, _, _) => {

@@ -672,21 +672,24 @@ impl<'src> Parser<'src> {
 
         // Collect arguments: expressions until newline
         let mut args = Vec::new();
+        let mut had_comma = false;
         while !self.is_at_end() && !self.check(&Token::Newline) && !self.check(&Token::End) {
             args.push(self.parse_expression(0)?);
             if self.check(&Token::Comma) {
                 self.advance();
+                had_comma = true;
             } else {
                 break;
             }
         }
 
-        // Check for trailing block (indented body until end)
-        let block = if self.check(&Token::Newline) {
+        // Only parse trailing block if no comma-separated args were given.
+        // `@name expr NEWLINE block end` = trailing block form
+        // `@name arg1, arg2` = inline form (no trailing block)
+        let block = if !had_comma && self.check(&Token::Newline) {
             self.advance();
             self.skip_newlines();
-            if self.check(&Token::End) {
-                self.advance();
+            if self.check(&Token::End) || self.is_at_end() {
                 None
             } else {
                 let body = self.parse_block()?;
@@ -694,6 +697,7 @@ impl<'src> Parser<'src> {
                 Some(body)
             }
         } else {
+            self.expect_statement_end()?;
             None
         };
 

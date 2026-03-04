@@ -1,0 +1,25 @@
+# expect: 150.0
+macro validate(condition, message)
+  ast
+    if not ($condition)
+      raise $message
+    end
+  end
+end
+
+class Account
+  needs balance: Float
+
+  def deposit(amount)
+    @validate amount > 0, "amount must be positive"
+    .balance = .balance + amount
+  end
+
+  def get_balance()
+    .balance
+  end
+end
+
+acc = Account.new(balance: 100.0)
+acc.deposit(50.0)
+print(acc.get_balance())
