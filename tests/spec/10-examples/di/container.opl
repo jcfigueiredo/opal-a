@@ -1,0 +1,40 @@
+# Dependency Injection Container
+# Registers factory closures by name, resolves with singleton caching.
+# Factories capture the container reference for recursive resolution.
+
+class Container
+  needs factories: Dict
+  needs cache: Dict
+
+  def register(name, factory)
+    .factories = .factories.set(name, factory)
+  end
+
+  def resolve(name)
+    cached = .cache.get(name)
+    if cached != null
+      return cached
+    end
+
+    factory = .factories.get(name)
+    if factory == null
+      raise f"DI: no factory registered for '{name}'"
+    end
+
+    instance = factory()
+    .cache = .cache.set(name, instance)
+    instance
+  end
+
+  def has(name)
+    .factories.get(name) != null
+  end
+
+  def registered()
+    .factories.keys()
+  end
+end
+
+def new_container()
+  Container.new(factories: {:}, cache: {:})
+end
