@@ -1,0 +1,21 @@
+# expect: circle: 78.5 | rect: 30.0
+class Circle
+  needs radius: Float
+end
+
+class Rectangle
+  needs width: Float
+  needs height: Float
+end
+
+def area(shape: Circle)
+  3.14 * shape.radius * shape.radius
+end
+
+def area(shape: Rectangle)
+  shape.width * shape.height
+end
+
+c = Circle.new(radius: 5.0)
+r = Rectangle.new(width: 10.0, height: 3.0)
+print(f"circle: {area(c)} | rect: {area(r)}")

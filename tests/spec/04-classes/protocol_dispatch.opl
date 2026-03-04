@@ -1,0 +1,30 @@
+# expect: measured: box=10 | its a ball! ball=5
+protocol Measurable
+  def measure() -> String
+end
+
+class Box implements Measurable
+  needs size: Int
+  def measure()
+    f"box={.size}"
+  end
+end
+
+class Ball implements Measurable
+  needs diameter: Int
+  def measure()
+    f"ball={.diameter}"
+  end
+end
+
+def describe(thing: Measurable)
+  f"measured: {thing.measure()}"
+end
+
+def describe(thing: Ball)
+  f"its a ball! {thing.measure()}"
+end
+
+r1 = describe(Box.new(size: 10))
+r2 = describe(Ball.new(diameter: 5))
+print(f"{r1} | {r2}")

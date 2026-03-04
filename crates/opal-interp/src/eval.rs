@@ -23,6 +23,8 @@ pub enum EvalError {
     Return(Value),
     #[error("{0}")]
     Raise(Value),
+    #[error("requires failed")]
+    RequiresFailed(Value),
     #[error("reply")]
     Reply(Value),
 }
@@ -33,6 +35,7 @@ struct StoredFunction {
     #[allow(dead_code)]
     name: String,
     params: Vec<String>,
+    param_types: Vec<Option<String>>,
     body: Vec<Stmt>,
     /// Captured environment from defining scope (for module-level functions)
     captured_env: Option<Environment>,
@@ -388,6 +391,7 @@ impl<W: Write> Interpreter<W> {
                 self.functions.push(StoredFunction {
                     name: name.clone(),
                     params: params.iter().map(|p| p.name.clone()).collect(),
+                    param_types: params.iter().map(|p| p.type_annotation.clone()).collect(),
                     body: body.clone(),
                     captured_env: captured,
                 });
@@ -478,6 +482,7 @@ impl<W: Write> Interpreter<W> {
                         stored_methods.push(StoredFunction {
                             name: mname.clone(),
                             params: params.iter().map(|p| p.name.clone()).collect(),
+                            param_types: params.iter().map(|p| p.type_annotation.clone()).collect(),
                             body: body.clone(),
                             captured_env: None,
                         });
@@ -539,6 +544,7 @@ impl<W: Write> Interpreter<W> {
                         default_methods.push(StoredFunction {
                             name: method.name.clone(),
                             params: method.params.iter().map(|p| p.name.clone()).collect(),
+                            param_types: method.params.iter().map(|p| p.type_annotation.clone()).collect(),
                             body: body.clone(),
                             captured_env: None,
                         });
@@ -617,7 +623,7 @@ impl<W: Write> Interpreter<W> {
                         Some(m) => self.eval_expr(m)?,
                         None => Value::String("requires condition failed".into()),
                     };
-                    return Err(EvalError::Raise(msg));
+                    return Err(EvalError::RequiresFailed(msg));
                 }
             }
             StmtKind::Raise(expr) => {
@@ -972,7 +978,7 @@ impl<W: Write> Interpreter<W> {
                 let result = self.eval_block(body);
 
                 let value = match result {
-                    Err(EvalError::Raise(val)) => {
+                    Err(EvalError::Raise(val) | EvalError::RequiresFailed(val)) => {
                         if let Some(catch) = catches.first() {
                             self.env.push_scope();
                             if let Some(var) = &catch.var_name {
@@ -1381,7 +1387,12 @@ impl<W: Write> Interpreter<W> {
         // Try user-defined functions or closures
         if let Some(val) = self.env.get(&func_name).cloned() {
             match val {
-                Value::Function(id) => return self.call_function(id, &func_name, arg_values),
+                Value::Function(id) => {
+                    return self.call_function(id, &func_name, arg_values).map_err(|e| match e {
+                        EvalError::RequiresFailed(v) => EvalError::Raise(v),
+                        other => other,
+                    });
+                }
                 Value::MultiFunction(ids) => {
                     return self.dispatch_multi(&ids, &func_name, arg_values)
                 }
@@ -1781,11 +1792,32 @@ impl<W: Write> Interpreter<W> {
                 let instance = self.instances[instance_id.0].clone();
                 let class = self.classes[instance.class_id.0].clone();
 
-                // Find method in class — dispatch by name + arity
+                // Find method in class — dispatch by name + arity + type
                 let method_fn = class
                     .methods
                     .iter()
-                    .find(|m| m.name == method && m.params.len() == args.len())
+                    // 1. Exact type + arity match
+                    .find(|m| {
+                        m.name == method
+                            && m.params.len() == args.len()
+                            && self.args_match_types(&args, &m.param_types)
+                    })
+                    // 2. Arity match (untyped)
+                    .or_else(|| {
+                        class.methods.iter().find(|m| {
+                            m.name == method
+                                && m.params.len() == args.len()
+                                && m.param_types.iter().all(|t| t.is_none())
+                        })
+                    })
+                    // 3. Any arity match
+                    .or_else(|| {
+                        class
+                            .methods
+                            .iter()
+                            .find(|m| m.name == method && m.params.len() == args.len())
+                    })
+                    // 4. Fallback to name match
                     .or_else(|| class.methods.iter().find(|m| m.name == method));
                 if let Some(func) = method_fn {
                     let func = func.clone();
@@ -1903,23 +1935,143 @@ impl<W: Write> Interpreter<W> {
         name: &str,
         arg_values: Vec<Value>,
     ) -> Result<Value, EvalError> {
-        // Find variant matching arity
-        for id in ids {
+        // Filter to arity-matching variants
+        let arity_matches: Vec<FunctionId> = ids
+            .iter()
+            .filter(|id| self.functions[id.0].params.len() == arg_values.len())
+            .copied()
+            .collect();
+
+        if arity_matches.is_empty() {
+            let arities: Vec<String> = ids
+                .iter()
+                .map(|id| self.functions[id.0].params.len().to_string())
+                .collect();
+            return Err(EvalError::TypeError(format!(
+                "{}() no variant accepts {} arguments (available: {})",
+                name,
+                arg_values.len(),
+                arities.join(", ")
+            )));
+        }
+
+        // 1. Try exact class type match (most specific)
+        for id in &arity_matches {
             let stored = &self.functions[id.0];
-            if stored.params.len() == arg_values.len() {
+            if stored.param_types.iter().any(|t| t.is_some())
+                && self.args_match_types_exact(&arg_values, &stored.param_types)
+            {
+                match self.call_function(*id, name, arg_values.clone()) {
+                    Err(EvalError::RequiresFailed(_)) => continue,
+                    result => return result,
+                }
+            }
+        }
+
+        // 2. Try protocol/wider type match
+        for id in &arity_matches {
+            let stored = &self.functions[id.0];
+            if stored.param_types.iter().any(|t| t.is_some())
+                && self.args_match_types(&arg_values, &stored.param_types)
+            {
+                match self.call_function(*id, name, arg_values.clone()) {
+                    Err(EvalError::RequiresFailed(_)) => continue,
+                    result => return result,
+                }
+            }
+        }
+
+        // 3. Try untyped variant (no type annotations — catch-all)
+        for id in &arity_matches {
+            let stored = &self.functions[id.0];
+            if stored.param_types.iter().all(|t| t.is_none()) {
                 return self.call_function(*id, name, arg_values);
             }
         }
-        let arities: Vec<String> = ids
-            .iter()
-            .map(|id| self.functions[id.0].params.len().to_string())
-            .collect();
-        Err(EvalError::TypeError(format!(
-            "{}() no variant accepts {} arguments (available: {})",
-            name,
-            arg_values.len(),
-            arities.join(", ")
-        )))
+
+        // 4. Fall back to first arity match
+        self.call_function(arity_matches[0], name, arg_values)
+    }
+
+    /// Check if argument values match exactly (class name, no protocol widening)
+    fn args_match_types_exact(&self, args: &[Value], param_types: &[Option<String>]) -> bool {
+        for (arg, expected_type) in args.iter().zip(param_types.iter()) {
+            if let Some(type_name) = expected_type {
+                if !self.value_matches_type_exact(arg, type_name) {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    fn value_matches_type_exact(&self, value: &Value, type_name: &str) -> bool {
+        match (value, type_name) {
+            (Value::Integer(_), "Int" | "Int32" | "Int64" | "Integer") => true,
+            (Value::Float(_), "Float" | "Float32" | "Float64") => true,
+            (Value::String(_), "String") => true,
+            (Value::Bool(_), "Bool") => true,
+            (Value::List(_), "List") => true,
+            (Value::Dict(_), "Dict") => true,
+            (Value::Symbol(_), "Symbol") => true,
+            (Value::Instance(id), _) => {
+                let class_id = self.instances[id.0].class_id;
+                self.classes[class_id.0].name == type_name
+            }
+            _ => false,
+        }
+    }
+
+    /// Check if argument values match the expected parameter types (including protocols)
+    fn args_match_types(&self, args: &[Value], param_types: &[Option<String>]) -> bool {
+        for (arg, expected_type) in args.iter().zip(param_types.iter()) {
+            if let Some(type_name) = expected_type {
+                if !self.value_matches_type(arg, type_name) {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    /// Check if a value matches a type name (class name, protocol, or builtin)
+    fn value_matches_type(&self, value: &Value, type_name: &str) -> bool {
+        match (value, type_name) {
+            // Builtin types
+            (Value::Integer(_), "Int" | "Int32" | "Int64" | "Integer") => true,
+            (Value::Float(_), "Float" | "Float32" | "Float64") => true,
+            (Value::String(_), "String") => true,
+            (Value::Bool(_), "Bool") => true,
+            (Value::List(_), "List") => true,
+            (Value::Dict(_), "Dict") => true,
+            (Value::Symbol(_), "Symbol") => true,
+            // Class instance — check class name
+            (Value::Instance(id), _) => {
+                let class_id = self.instances[id.0].class_id;
+                let class = &self.classes[class_id.0];
+                if class.name == type_name {
+                    return true;
+                }
+                // Check if class implements a protocol with this name
+                self.class_implements_protocol(class_id, type_name)
+            }
+            _ => false,
+        }
+    }
+
+    /// Check if a class implements a protocol by name
+    fn class_implements_protocol(&self, class_id: ClassId, protocol_name: &str) -> bool {
+        // Check if the protocol exists and the class has all its required methods
+        let proto = self.protocols.iter().find(|p| p.name == protocol_name);
+        if let Some(proto) = proto {
+            let class = &self.classes[class_id.0];
+            proto
+                .required_methods
+                .iter()
+                .all(|req| class.methods.iter().any(|m| m.name == *req))
+        } else {
+            false
+        }
     }
 
     fn call_function(
