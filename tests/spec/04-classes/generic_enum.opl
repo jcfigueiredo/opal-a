@@ -1,0 +1,7 @@
+# expect: Box.Full(42)
+enum Box[T]
+  Full(value: T)
+  Empty
+end
+b = Box.Full(42)
+print(b)

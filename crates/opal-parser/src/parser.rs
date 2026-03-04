@@ -563,6 +563,21 @@ impl<'src> Parser<'src> {
         self.advance(); // consume 'enum'
         let name = self.expect_identifier()?;
 
+        // Skip optional generic params: [T], [K, V], etc.
+        if self.check(&Token::LBracket) {
+            self.advance();
+            let mut depth = 1;
+            while depth > 0 && !self.is_at_end() {
+                if self.check(&Token::LBracket) {
+                    depth += 1;
+                }
+                if self.check(&Token::RBracket) {
+                    depth -= 1;
+                }
+                self.advance();
+            }
+        }
+
         // Parse optional: implements Protocol1, Protocol2
         let mut implements = Vec::new();
         if self.check(&Token::Implements) {
