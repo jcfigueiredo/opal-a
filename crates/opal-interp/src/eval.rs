@@ -446,6 +446,9 @@ impl<W: Write> Interpreter<W> {
                     Err(e) => return Err(e),
                 }
             }
+            StmtKind::ExternDef { .. } => {
+                // Extern declarations are registered at a higher level; nothing to do at eval time yet.
+            }
         }
         Ok(())
     }

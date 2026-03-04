@@ -40,6 +40,8 @@ pub enum Value {
     Actor(ActorId),
     /// AST node (ID into interpreter's AST storage)
     Ast(AstId),
+    /// Opaque native object (FFI state)
+    NativeObject(NativeObjectId),
 }
 
 /// Opaque ID for a stored AST node
@@ -61,6 +63,10 @@ pub struct InstanceId(pub usize);
 /// Opaque ID for a module
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ModuleId(pub usize);
+
+/// Opaque ID for a native object (FFI state)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeObjectId(pub usize);
 
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -97,6 +103,7 @@ impl fmt::Display for Value {
             Value::Symbol(s) => write!(f, ":{}", s),
             Value::Actor(id) => write!(f, "<actor #{}>", id.0),
             Value::Ast(id) => write!(f, "<ast #{}>", id.0),
+            Value::NativeObject(id) => write!(f, "<native #{}>", id.0),
         }
     }
 }

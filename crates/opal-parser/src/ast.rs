@@ -89,6 +89,11 @@ pub enum StmtKind {
         args: Vec<Expr>,
         block: Option<Vec<Stmt>>,
     },
+    /// Extern FFI declaration: `extern "lib" ... end`
+    ExternDef {
+        lib_name: String,
+        declarations: Vec<ExternDecl>,
+    },
 }
 
 /// An expression
@@ -185,6 +190,14 @@ pub struct CatchClause {
     pub error_type: Option<String>,
     pub var_name: Option<String>,
     pub body: Vec<Stmt>,
+}
+
+/// A function declaration inside an extern block
+#[derive(Debug, Clone)]
+pub struct ExternDecl {
+    pub name: String,
+    pub params: Vec<Param>,
+    pub return_type: Option<String>,
 }
 
 /// A `needs` declaration in a class
