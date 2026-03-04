@@ -42,6 +42,8 @@ pub enum Value {
     Ast(AstId),
     /// Opaque native object (FFI state)
     NativeObject(NativeObjectId),
+    /// Native function from an extern block (ID into interpreter's native_functions table)
+    NativeFunction(NativeFunctionId),
 }
 
 /// Opaque ID for a stored AST node
@@ -67,6 +69,10 @@ pub struct ModuleId(pub usize);
 /// Opaque ID for a native object (FFI state)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NativeObjectId(pub usize);
+
+/// Opaque ID for a native function (FFI dispatch)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeFunctionId(pub usize);
 
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -104,6 +110,7 @@ impl fmt::Display for Value {
             Value::Actor(id) => write!(f, "<actor #{}>", id.0),
             Value::Ast(id) => write!(f, "<ast #{}>", id.0),
             Value::NativeObject(id) => write!(f, "<native #{}>", id.0),
+            Value::NativeFunction(id) => write!(f, "<native fn #{}>", id.0),
         }
     }
 }

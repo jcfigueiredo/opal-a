@@ -6,4 +6,6 @@ pub mod value;
 pub use closure::ClosureId;
 pub use env::Environment;
 pub use function::FunctionId;
-pub use value::{ActorId, AstId, ClassId, InstanceId, ModuleId, NativeObjectId, Value};
+pub use value::{
+    ActorId, AstId, ClassId, InstanceId, ModuleId, NativeFunctionId, NativeObjectId, Value,
+};

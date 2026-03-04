@@ -4,7 +4,8 @@ use std::collections::HashMap;
 
 use opal_parser::ast::*;
 use opal_runtime::{
-    ActorId, AstId, ClassId, ClosureId, Environment, FunctionId, InstanceId, ModuleId, Value,
+    ActorId, AstId, ClassId, ClosureId, Environment, FunctionId, InstanceId, ModuleId,
+    NativeFunctionId, NativeObjectId, Value,
 };
 use thiserror::Error;
 
@@ -103,6 +104,12 @@ pub struct Interpreter<W: Write> {
     current_actor: Option<ActorId>,
     macros: HashMap<String, StoredMacro>,
     ast_nodes: Vec<Vec<Stmt>>,
+    /// Registry of FFI plugins
+    plugin_registry: opal_stdlib::PluginRegistry,
+    /// Storage for opaque native objects (FFI state)
+    native_objects: Vec<Box<dyn std::any::Any>>,
+    /// Maps NativeFunctionId → "plugin:function" key for dispatch
+    native_functions: Vec<String>,
 }
 
 impl Interpreter<std::io::Stdout> {
@@ -121,6 +128,9 @@ impl Interpreter<std::io::Stdout> {
             current_actor: None,
             macros: HashMap::new(),
             ast_nodes: Vec::new(),
+            plugin_registry: opal_stdlib::PluginRegistry::new(),
+            native_objects: Vec::new(),
+            native_functions: Vec::new(),
         }
     }
 }
@@ -141,7 +151,36 @@ impl<W: Write> Interpreter<W> {
             current_actor: None,
             macros: HashMap::new(),
             ast_nodes: Vec::new(),
+            plugin_registry: opal_stdlib::PluginRegistry::new(),
+            native_objects: Vec::new(),
+            native_functions: Vec::new(),
         }
+    }
+
+    /// Register an FFI plugin with its native functions.
+    pub fn register_plugin(
+        &mut self,
+        name: &str,
+        functions: HashMap<String, opal_stdlib::NativeFunction>,
+    ) {
+        self.plugin_registry.register_plugin(name, functions);
+    }
+
+    /// Store a native object and return its opaque ID.
+    pub fn store_native_object<T: 'static>(&mut self, obj: T) -> NativeObjectId {
+        let id = NativeObjectId(self.native_objects.len());
+        self.native_objects.push(Box::new(obj));
+        id
+    }
+
+    /// Retrieve a reference to a stored native object by ID.
+    pub fn get_native_object<T: 'static>(&self, id: NativeObjectId) -> Option<&T> {
+        self.native_objects.get(id.0)?.downcast_ref::<T>()
+    }
+
+    /// Retrieve a mutable reference to a stored native object by ID.
+    pub fn get_native_object_mut<T: 'static>(&mut self, id: NativeObjectId) -> Option<&mut T> {
+        self.native_objects.get_mut(id.0)?.downcast_mut::<T>()
     }
 
     pub fn run(&mut self, program: &Program) -> Result<(), EvalError> {
@@ -446,8 +485,25 @@ impl<W: Write> Interpreter<W> {
                     Err(e) => return Err(e),
                 }
             }
-            StmtKind::ExternDef { .. } => {
-                // Extern declarations are registered at a higher level; nothing to do at eval time yet.
+            StmtKind::ExternDef {
+                lib_name,
+                declarations,
+            } => {
+                // Register each declared function from the extern block as a NativeFunction
+                for decl in declarations {
+                    if self
+                        .plugin_registry
+                        .get_function(lib_name, &decl.name)
+                        .is_some()
+                    {
+                        let nf_id = NativeFunctionId(self.native_functions.len());
+                        self.native_functions
+                            .push(format!("{}:{}", lib_name, decl.name));
+                        self.env
+                            .set(decl.name.clone(), Value::NativeFunction(nf_id));
+                    }
+                    // If plugin or function not found, silently skip (soft failure)
+                }
             }
         }
         Ok(())
@@ -849,6 +905,22 @@ impl<W: Write> Interpreter<W> {
                 Ok(opal_stdlib::BuiltinResult::Void) => Ok(Value::Null),
                 Err(e) => Err(EvalError::RuntimeError(e)),
             };
+        }
+
+        // Try native functions (from extern blocks)
+        if let Some(Value::NativeFunction(nf_id)) = self.env.get(&func_name).cloned() {
+            let key = self.native_functions[nf_id.0].clone();
+            let parts: Vec<&str> = key.split(':').collect();
+            let (plugin, func) = (parts[0], parts[1]);
+            if let Some(native_fn) = self.plugin_registry.get_function(plugin, func) {
+                // Reborrow: native_fn borrows plugin_registry immutably, writer needs &mut.
+                // Since NativeFunction is behind &, we call it directly — plugin_registry
+                // and writer are disjoint fields so Rust allows this split borrow.
+                return match native_fn(&arg_values, &mut self.writer) {
+                    Ok(v) => Ok(v),
+                    Err(e) => Err(EvalError::RuntimeError(e)),
+                };
+            }
         }
 
         // Try user-defined functions or closures
@@ -1910,5 +1982,53 @@ print(3.0 >= 4)
 "#)
         .unwrap();
         assert_eq!(output, "true\ntrue\ntrue\nfalse");
+    }
+
+    // === Slice 8 tests ===
+    #[test]
+    fn extern_native_function() {
+        let source = r#"
+extern "test"
+  def add_native(a: Int, b: Int) -> Int
+end
+print(add_native(3, 4))
+"#;
+        let program = opal_parser::parse(source).expect("parse error");
+        let mut output = Vec::new();
+        {
+            let mut interp = Interpreter::with_writer(&mut output);
+            // Register a test plugin with an add_native function
+            let mut fns = std::collections::HashMap::new();
+            fns.insert(
+                "add_native".to_string(),
+                Box::new(
+                    |args: &[Value],
+                     _writer: &mut dyn std::io::Write|
+                     -> Result<Value, String> {
+                        match (&args[0], &args[1]) {
+                            (Value::Integer(a), Value::Integer(b)) => Ok(Value::Integer(a + b)),
+                            _ => Err("expected integers".into()),
+                        }
+                    },
+                ) as opal_stdlib::NativeFunction,
+            );
+            interp.register_plugin("test", fns);
+            interp.run(&program).unwrap();
+        }
+        let out = String::from_utf8(output).unwrap().trim_end().to_string();
+        assert_eq!(out, "7");
+    }
+
+    #[test]
+    fn extern_missing_plugin_soft_failure() {
+        // When a plugin is not registered, extern declarations are silently skipped
+        let source = r#"
+extern "nonexistent"
+  def something() -> Null
+end
+print("ok")
+"#;
+        let output = run(source).unwrap();
+        assert_eq!(output, "ok");
     }
 }
