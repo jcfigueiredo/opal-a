@@ -1,0 +1,37 @@
+class Record
+  needs fields: Dict
+  needs source_line: Int
+
+  def get(key)
+    val = .fields.get(key)
+    if val == null
+      None
+    else
+      Some(val)
+    end
+  end
+
+  def require(key)
+    val = .fields.get(key)
+    if val == null
+      return Error(f"missing required field '{key}' on line {.source_line}")
+    end
+    Ok(val)
+  end
+end
+
+def parse_record(raw, line_num)
+  parts = raw.split("|")
+  fields = {:}
+  i = 0
+  while i < parts.length()
+    pair = parts.get(i).split("=")
+    if pair.length() == 2
+      key = pair.get(0).trim()
+      val = pair.get(1).trim()
+      fields = fields.set(key, val)
+    end
+    i = i + 1
+  end
+  Record.new(fields: fields, source_line: line_num)
+end

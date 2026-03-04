@@ -1,0 +1,33 @@
+def count_results(results)
+  ok_count = results.filter(|r| match r
+    case Ok(_)
+      true
+    case Error(_)
+      false
+  end).length()
+
+  err_count = results.length() - ok_count
+  {"ok": ok_count, "errors": err_count, "total": results.length()}
+end
+
+def extract_errors(results)
+  results.filter(|r| match r
+    case Error(_)
+      true
+    case _
+      false
+  end).map(|r| match r
+    case Error(msg)
+      msg
+    case _
+      ""
+  end)
+end
+
+def format_summary(counts, errors)
+  summary = f"Processed: {counts.get("total")} | OK: {counts.get("ok")} | Errors: {counts.get("errors")}"
+  if errors.length() > 0
+    summary = f"{summary} | First error: {errors.get(0)}"
+  end
+  summary
+end

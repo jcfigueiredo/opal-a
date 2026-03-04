@@ -1,0 +1,52 @@
+def validate(record)
+  name_result = record.require("name")
+  match name_result
+    case Error(msg)
+      return Error(msg)
+    case Ok(name)
+      if name.length() == 0
+        return Error(f"empty name on line {record.source_line}")
+      end
+  end
+
+  amount_result = record.require("amount")
+  match amount_result
+    case Error(msg)
+      return Error(msg)
+    case Ok(_)
+      Ok(record)
+  end
+end
+
+def normalize(record)
+  name = record.fields.get("name").to_upper()
+  new_fields = record.fields.set("name", name)
+
+  # Add default category if missing
+  new_fields = match record.get("category")
+    case Some(_)
+      new_fields
+    case None
+      new_fields.set("category", "GENERAL")
+  end
+
+  Record.new(fields: new_fields, source_line: record.source_line)
+end
+
+def enrich(record, tax_rate)
+  amount = record.fields.get("amount")
+  tax = amount + " +tax"
+  new_fields = record.fields.set("tax_info", f"{amount} @ {tax_rate}%")
+  Record.new(fields: new_fields, source_line: record.source_line)
+end
+
+def process_record(record, tax_rate)
+  match validate(record)
+    case Error(msg)
+      Error(msg)
+    case Ok(valid)
+      normalized = normalize(valid)
+      enriched = enrich(normalized, tax_rate)
+      Ok(enriched)
+  end
+end

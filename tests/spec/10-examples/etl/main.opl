@@ -1,0 +1,30 @@
+# expect: Processed: 4 | OK: 2 | Errors: 2 | First error: missing required field 'amount' on line 2
+import Record.{Record, parse_record}
+import Transforms.{process_record}
+import Report.{count_results, extract_errors, format_summary}
+
+# Simulate raw input data (pipe-delimited key=value pairs)
+raw_data = [
+  "name=Widget | amount=100 | category=hardware",
+  "name=Gadget",
+  "name= | amount=50",
+  "name=Gizmo | amount=200 | category=electronics"
+]
+
+# Parse all records
+records = []
+line = 1
+for raw in raw_data
+  records = records.push(parse_record(raw, line))
+  line = line + 1
+end
+
+# Process each record through the pipeline
+tax_rate = 8
+results = records.map(|r| process_record(r, tax_rate))
+
+# Generate report using pipe chain
+counts = results |> count_results()
+errors = results |> extract_errors()
+summary = format_summary(counts, errors)
+print(summary)
