@@ -1,0 +1,12 @@
+# expect: Build Opal Compiler | 3 bounties | v2: Build Opal Compiler v2
+# Validated project data using models
+
+model Project
+  needs title: String
+  needs bounty_count: Int
+end
+
+p = Project.new(title: "Build Opal Compiler", bounty_count: 3)
+p2 = p.copy(title: "Build Opal Compiler v2")
+
+print(f"{p.title} | {p.bounty_count} bounties | v2: {p2.title}")

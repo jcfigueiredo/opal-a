@@ -1,0 +1,32 @@
+# expect: Alice: :rust, :opal | can claim :rust: true | score: 1000
+# Contributor class with skill checking and protocols
+
+protocol Scorable
+  def score() -> Int
+end
+
+class Contributor implements Scorable
+  needs name: String
+  needs skills: List
+  needs points: Int
+
+  def can_claim(skill)
+    skill in .skills
+  end
+
+  def skill_list()
+    .skills.join(", ")
+  end
+
+  def score()
+    .points
+  end
+end
+
+alice = Contributor.new(name: "Alice", skills: [:rust, :opal], points: 1000)
+
+summary = f"{alice.name}: {alice.skill_list()}"
+can = alice.can_claim(:rust)
+pts = alice.score()
+
+print(f"{summary} | can claim :rust: {can} | score: {pts}")
