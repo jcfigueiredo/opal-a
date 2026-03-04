@@ -66,6 +66,17 @@ pub enum StmtKind {
     },
     /// Raise an error: `raise expr`
     Raise(Expr),
+    /// Actor definition
+    ActorDef {
+        name: String,
+        init: Option<Vec<Stmt>>,
+        receive_cases: Vec<MatchCase>,
+        methods: Vec<Stmt>,
+    },
+    /// Reply from actor receive handler
+    Reply(Expr),
+    /// Instance variable assignment: `.field = expr`
+    InstanceAssign { field: String, value: Expr },
 }
 
 /// An expression
@@ -121,6 +132,10 @@ pub enum ExprKind {
     },
     /// Instance variable access: `.field`
     InstanceVar(String),
+    /// Symbol literal: `:name`
+    Symbol(String),
+    /// Await expression: `await expr`
+    Await(Box<Expr>),
     /// Match expression
     Match {
         subject: Box<Expr>,

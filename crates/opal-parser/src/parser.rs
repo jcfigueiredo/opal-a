@@ -106,6 +106,24 @@ impl<'src> Parser<'src> {
             return self.parse_raise(start);
         }
 
+        // Actor definition
+        if self.check(&Token::Actor) {
+            return self.parse_actor_def(start);
+        }
+
+        // Reply
+        if self.check(&Token::Reply) {
+            return self.parse_reply(start);
+        }
+
+        // Instance variable assignment: .field = expr
+        if self.check(&Token::Dot)
+            && self.peek_ahead(1).is_some_and(|t| matches!(t, Token::Identifier))
+            && self.peek_ahead(2).is_some_and(|t| matches!(t, Token::Eq))
+        {
+            return self.parse_instance_assign(start);
+        }
+
         // Needs declaration (inside class body)
         if self.check(&Token::Needs) {
             return self.parse_needs_decl(start);
@@ -516,6 +534,100 @@ impl<'src> Parser<'src> {
         })
     }
 
+    fn parse_actor_def(&mut self, start: Span) -> Result<Stmt, ParseError> {
+        self.advance(); // consume 'actor'
+        let name = self.expect_identifier()?;
+        self.expect_newline()?;
+        self.skip_newlines();
+
+        let mut init = None;
+        let mut receive_cases = Vec::new();
+        let mut methods = Vec::new();
+
+        while !self.check(&Token::End) && !self.is_at_end() {
+            if self.check(&Token::Def) {
+                let func = self.parse_function_def()?;
+                // Check if it's init
+                if let StmtKind::FuncDef {
+                    ref name,
+                    ref body,
+                    ..
+                } = func.kind
+                {
+                    if name == "init" {
+                        init = Some(body.clone());
+                    } else {
+                        methods.push(func);
+                    }
+                }
+            } else if self.check(&Token::Receive) {
+                self.advance(); // consume 'receive'
+                self.expect_newline()?;
+                self.skip_newlines();
+                while self.check(&Token::Case) {
+                    self.advance();
+                    let pattern = self.parse_pattern()?;
+                    self.expect_newline()?;
+                    let body = self.parse_block()?;
+                    receive_cases.push(MatchCase { pattern, body });
+                    self.skip_newlines();
+                }
+                self.expect_token(&Token::End, "end")?; // end of receive
+            } else {
+                self.skip_newlines();
+                if self.check(&Token::End) {
+                    break;
+                }
+            }
+            self.skip_newlines();
+        }
+
+        self.expect_token(&Token::End, "end")?;
+        let end = self.previous_span().end;
+        Ok(Stmt {
+            kind: StmtKind::ActorDef {
+                name,
+                init,
+                receive_cases,
+                methods,
+            },
+            span: Span {
+                start: start.start,
+                end,
+            },
+        })
+    }
+
+    fn parse_reply(&mut self, start: Span) -> Result<Stmt, ParseError> {
+        self.advance(); // consume 'reply'
+        let expr = self.parse_expression(0)?;
+        self.expect_statement_end()?;
+        let end = expr.span.end;
+        Ok(Stmt {
+            kind: StmtKind::Reply(expr),
+            span: Span {
+                start: start.start,
+                end,
+            },
+        })
+    }
+
+    fn parse_instance_assign(&mut self, start: Span) -> Result<Stmt, ParseError> {
+        self.advance(); // consume '.'
+        let field = self.expect_identifier()?;
+        self.expect_token(&Token::Eq, "=")?;
+        let value = self.parse_expression(0)?;
+        self.expect_statement_end()?;
+        let end = value.span.end;
+        Ok(Stmt {
+            kind: StmtKind::InstanceAssign { field, value },
+            span: Span {
+                start: start.start,
+                end,
+            },
+        })
+    }
+
     fn parse_match_expression(&mut self) -> Result<Expr, ParseError> {
         let start = self.current_span();
         self.advance(); // consume 'match'
@@ -548,6 +660,18 @@ impl<'src> Parser<'src> {
     }
 
     fn parse_pattern(&mut self) -> Result<Pattern, ParseError> {
+        // Symbol pattern: :name
+        if self.check(&Token::Symbol) {
+            let text = self.extract_text(&self.current_span());
+            let name = text[1..].to_string();
+            let span = self.current_span();
+            self.advance();
+            return Ok(Pattern::Literal(Expr {
+                kind: ExprKind::Symbol(name),
+                span,
+            }));
+        }
+
         // Wildcard: _
         if self.peek_is_identifier() {
             let name = self.extract_text(&self.current_span());
@@ -621,6 +745,18 @@ impl<'src> Parser<'src> {
     fn parse_unary(&mut self) -> Result<Expr, ParseError> {
         let start = self.current_span();
 
+        if self.check(&Token::Await) {
+            self.advance();
+            let operand = self.parse_unary()?;
+            let span = Span {
+                start: start.start,
+                end: operand.span.end,
+            };
+            return Ok(Expr {
+                kind: ExprKind::Await(Box::new(operand)),
+                span,
+            });
+        }
         if self.check(&Token::Minus) {
             self.advance();
             let operand = self.parse_unary()?;
@@ -802,6 +938,16 @@ impl<'src> Parser<'src> {
                         start: span.start,
                         end,
                     },
+                })
+            }
+            // Symbol literal: :name
+            Some(Token::Symbol) => {
+                let text = self.extract_text(&span);
+                let name = text[1..].to_string(); // strip leading ':'
+                self.advance();
+                Ok(Expr {
+                    kind: ExprKind::Symbol(name),
+                    span,
                 })
             }
             // Instance variable: .field (at start of expression, not after another expr)
