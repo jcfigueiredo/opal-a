@@ -1119,6 +1119,47 @@ impl<W: Write> Interpreter<W> {
                 ("None", Value::Null) if sub_patterns.is_empty() => Some(vec![]),
                 _ => None,
             },
+            Pattern::List(element_patterns, rest_pattern) => {
+                if let Value::List(items) = value {
+                    if let Some(rest) = rest_pattern {
+                        // [head, ... | tail] pattern — need at least as many items as element patterns
+                        if items.len() < element_patterns.len() {
+                            return None;
+                        }
+                        let mut all_bindings = vec![];
+                        for (pat, val) in element_patterns.iter().zip(items.iter()) {
+                            match self.match_pattern(pat, val) {
+                                Some(bindings) => all_bindings.extend(bindings),
+                                None => return None,
+                            }
+                        }
+                        // Rest gets the remaining elements
+                        let tail = Value::List(items[element_patterns.len()..].to_vec());
+                        match self.match_pattern(rest, &tail) {
+                            Some(bindings) => {
+                                all_bindings.extend(bindings);
+                                Some(all_bindings)
+                            }
+                            None => None,
+                        }
+                    } else {
+                        // Exact match — must have same number of elements
+                        if items.len() != element_patterns.len() {
+                            return None;
+                        }
+                        let mut all_bindings = vec![];
+                        for (pat, val) in element_patterns.iter().zip(items.iter()) {
+                            match self.match_pattern(pat, val) {
+                                Some(bindings) => all_bindings.extend(bindings),
+                                None => return None,
+                            }
+                        }
+                        Some(all_bindings)
+                    }
+                } else {
+                    None
+                }
+            }
             Pattern::Literal(expr) => {
                 // Compare literal values
                 match &expr.kind {

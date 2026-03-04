@@ -8,20 +8,20 @@ random = Room.new()
 logger = Logger.new()
 
 # Join rooms
-r1 = await general.send(Ok("Alice"))
+r1 = await general.send([:join, "Alice"])
 log_entry(logger, "general", "Alice joins")
 
-r2 = await general.send(Ok("Bob"))
+r2 = await general.send([:join, "Bob"])
 log_entry(logger, "general", "Bob joins")
 
-r3 = await random.send(Ok("Alice"))
+r3 = await random.send([:join, "Alice"])
 log_entry(logger, "random", "Alice joins")
 
-r4 = await random.send(Ok("Bob"))
+r4 = await random.send([:join, "Bob"])
 log_entry(logger, "random", "Bob joins")
 
 # Try duplicate join
-dup = await general.send(Ok("Alice"))
+dup = await general.send([:join, "Alice"])
 match dup
   case Error(msg)
     log_entry(logger, "general", f"rejected: {msg}")

@@ -5,8 +5,7 @@ actor Room
   end
 
   receive
-    case Ok(user)
-      # Join: add user if not already a member
+    case [:join, user]
       already = .members.filter(|m| m == user)
       if already.length() > 0
         reply Error(f"{user} already in room")
@@ -14,9 +13,8 @@ actor Room
         .members = .members.push(user)
         reply Ok(f"{user} joined")
       end
-    case Some(entry)
-      # Post: add message to history
-      .history = .history.push(entry)
+    case [:post, user, text]
+      .history = .history.push(f"{user}: {text}")
       reply Ok(:posted)
     case :members
       reply .members
@@ -35,7 +33,7 @@ def post(room, user, text)
   if is_member.length() == 0
     return Error(f"{user} is not a member")
   end
-  await room.send(Some(f"{user}: {text}"))
+  await room.send([:post, user, text])
 end
 
 def format_history(room)

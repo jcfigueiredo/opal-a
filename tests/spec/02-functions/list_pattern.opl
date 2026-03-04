@@ -1,0 +1,23 @@
+# expect: add(3, 5) = 8 | head: 1, tail: [2, 3] | empty
+r1 = match [:add, 3, 5]
+  case [:add, a, b]
+    f"add({a}, {b}) = {a + b}"
+  case _
+    "unknown"
+end
+
+r2 = match [1, 2, 3]
+  case [head | tail]
+    f"head: {head}, tail: {tail}"
+  case _
+    "no match"
+end
+
+r3 = match []
+  case []
+    "empty"
+  case _
+    "not empty"
+end
+
+print(f"{r1} | {r2} | {r3}")

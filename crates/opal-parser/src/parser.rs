@@ -937,6 +937,36 @@ impl<'src> Parser<'src> {
     }
 
     fn parse_pattern(&mut self) -> Result<Pattern, ParseError> {
+        // List pattern: [a, b, c] or [head | tail]
+        if self.check(&Token::LBracket) {
+            self.advance();
+            self.skip_newlines();
+            let mut elements = Vec::new();
+            let mut rest = None;
+            if !self.check(&Token::RBracket) {
+                loop {
+                    self.skip_newlines();
+                    elements.push(self.parse_pattern()?);
+                    self.skip_newlines();
+                    // Check for | rest syntax: [head | tail]
+                    if self.check(&Token::Bar) {
+                        self.advance();
+                        self.skip_newlines();
+                        rest = Some(Box::new(self.parse_pattern()?));
+                        self.skip_newlines();
+                        break;
+                    }
+                    if !self.check(&Token::Comma) {
+                        break;
+                    }
+                    self.advance();
+                }
+            }
+            self.skip_newlines();
+            self.expect_token(&Token::RBracket, "]")?;
+            return Ok(Pattern::List(elements, rest));
+        }
+
         // Symbol pattern: :name
         if self.check(&Token::Symbol) {
             let text = self.extract_text(&self.current_span());

@@ -193,6 +193,8 @@ pub enum Pattern {
     Literal(Expr),
     /// Constructor pattern: `Ok(x)`, `Error(msg)`, `Some(v)`
     Constructor(String, Vec<Pattern>),
+    /// List pattern: `[a, b, c]` or `[head | tail]`
+    List(Vec<Pattern>, Option<Box<Pattern>>),
     /// Wildcard: `_`
     Wildcard,
 }
