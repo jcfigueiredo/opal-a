@@ -1,0 +1,15 @@
+# expect: Build Opal Compiler | version 2 | Alice and Bob | olleh
+# Parallel assignment, string methods, null-safe access
+
+title, version = "Build Opal Compiler", 2
+lead = "Alice"
+colead = "Bob"
+
+# String operations
+reversed = "hello".reverse()
+
+# Null-safe access on optional data
+metadata = null
+safe_value = metadata?.description ?? "no description"
+
+print(f"{title} | version {version} | {lead} and {colead} | {reversed}")

@@ -1,0 +1,16 @@
+# expect: true | false | true | [:opal, :rust]
+# Skill tag membership and type aliases
+
+type SkillTag = :rust | :opal | :design | :docs | :testing
+
+alice_skills = [:opal, :rust, :testing]
+
+has_rust = :rust in alice_skills
+has_go = :go in alice_skills
+rust_is_valid = :rust is SkillTag
+
+# Find matching skills from a required set
+required = [:opal, :rust]
+matched = [s for s in alice_skills if s in required]
+
+print(f"{has_rust} | {has_go} | {rust_is_valid} | {matched}")
