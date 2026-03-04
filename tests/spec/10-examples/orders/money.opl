@@ -2,17 +2,9 @@ class Money
   needs amount: Float
   needs currency: String
 
-  def get_amount()
-    .amount
-  end
-
-  def get_currency()
-    .currency
-  end
-
   def add(other)
-    requires .currency == other.get_currency(), "currency mismatch"
-    Money.new(amount: .amount + other.get_amount(), currency: .currency)
+    requires .currency == other.currency, "currency mismatch"
+    Money.new(amount: .amount + other.amount, currency: .currency)
   end
 
   def multiply(factor)

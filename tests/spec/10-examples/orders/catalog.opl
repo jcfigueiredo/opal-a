@@ -1,0 +1,4 @@
+class Product
+  needs name: String
+  needs price: Float
+end

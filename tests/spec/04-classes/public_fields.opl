@@ -1,0 +1,8 @@
+# expect: Alice is 30
+class Person
+  needs name: String
+  needs age: Int
+end
+
+p = Person.new(name: "Alice", age: 30)
+print(f"{p.name} is {p.age}")

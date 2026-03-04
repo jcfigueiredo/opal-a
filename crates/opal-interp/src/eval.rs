@@ -860,9 +860,37 @@ impl<W: Write> Interpreter<W> {
                 }
             }
 
-            ExprKind::MemberAccess { .. } => Err(EvalError::TypeError(
-                "bare member access not supported — use method call syntax".into(),
-            )),
+            ExprKind::MemberAccess { object, field } => {
+                let obj = self.eval_expr(object)?;
+                match &obj {
+                    Value::Instance(id) => {
+                        let instance = &self.instances[id.0];
+                        if let Some(val) = instance.fields.get(field) {
+                            Ok(val.clone())
+                        } else {
+                            Err(EvalError::UndefinedVariable(format!(
+                                "instance has no field '{}'",
+                                field
+                            )))
+                        }
+                    }
+                    Value::Module(id) => {
+                        let module = &self.modules[id.0];
+                        if let Some(val) = module.bindings.get(field) {
+                            Ok(val.clone())
+                        } else {
+                            Err(EvalError::UndefinedVariable(format!(
+                                "module has no member '{}'",
+                                field
+                            )))
+                        }
+                    }
+                    _ => Err(EvalError::TypeError(format!(
+                        "cannot access field '{}' on this value",
+                        field
+                    ))),
+                }
+            }
 
             ExprKind::Match { subject, cases } => {
                 let val = self.eval_expr(subject)?;

@@ -1,22 +1,11 @@
+import Catalog.{Product}
+
 class OrderLine
-  needs product: String
+  needs product: Product
   needs quantity: Int
-  needs unit_price: Float
-
-  def get_product()
-    .product
-  end
-
-  def get_quantity()
-    .quantity
-  end
-
-  def get_unit_price()
-    .unit_price
-  end
 
   def line_total()
-    .quantity * .unit_price
+    .quantity * .product.price
   end
 end
 
@@ -25,22 +14,6 @@ class Order
   needs lines: List
   needs status: Symbol
   needs discount: Float
-
-  def get_id()
-    .id
-  end
-
-  def get_lines()
-    .lines
-  end
-
-  def get_status()
-    .status
-  end
-
-  def get_discount()
-    .discount
-  end
 
   def subtotal()
     .lines.reduce(0.0) do |acc, line|
@@ -53,22 +26,17 @@ class Order
     sub - (sub * .discount)
   end
 
-  def line_count()
-    .lines.length()
-  end
-
   def summary()
     f"Order({.id}): {.lines.length()} items, {.status}"
   end
 end
 
 def validate_order(order)
-  lines = order.get_lines()
-  if lines.length() == 0
+  if order.lines.length() == 0
     return Error("order must have at least one line")
   end
 
-  negatives = lines.filter(|l| l.get_quantity() < 1)
+  negatives = order.lines.filter(|l| l.quantity < 1)
   if negatives.length() > 0
     return Error("all quantities must be positive")
   end
@@ -77,7 +45,7 @@ def validate_order(order)
 end
 
 def apply_status(order, new_status)
-  current = order.get_status()
+  current = order.status
 
   allowed = match current
     case :draft
@@ -96,9 +64,9 @@ def apply_status(order, new_status)
   end
 
   Ok(Order.new(
-    id: order.get_id(),
-    lines: order.get_lines(),
+    id: order.id,
+    lines: order.lines,
     status: new_status,
-    discount: order.get_discount()
+    discount: order.discount
   ))
 end

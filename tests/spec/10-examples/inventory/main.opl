@@ -3,11 +3,11 @@ import Warehouse.{make_catalog}
 
 catalog = make_catalog()
 
-premium = catalog.filter(|p| p.get_price() > 20.0)
-premium_names = premium.map(|p| p.get_name())
+premium = catalog.filter(|p| p.price > 20.0)
+premium_names = premium.map(|p| p.name)
 
 total = catalog.reduce(0.0) do |acc, p|
-  acc + p.get_price()
+  acc + p.price
 end
 
 print(f"Inventory: {catalog.length()} products | Premium: {premium_names} | Total: ${total}")
