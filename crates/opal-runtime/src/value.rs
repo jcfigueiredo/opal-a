@@ -52,6 +52,14 @@ pub enum Value {
     Macro(MacroId),
     /// Protocol (ID into interpreter's protocol table)
     Protocol(ProtocolId),
+    /// Type object (returned by typeof)
+    Type(TypeInfo),
+    /// Enum variant value
+    EnumVariant {
+        enum_id: EnumId,
+        variant_index: usize,
+        fields: Vec<Value>,
+    },
     /// Dict: ordered key-value pairs
     Dict(Vec<(String, Value)>),
     /// Range: start..end (exclusive) or start...end (inclusive)
@@ -102,6 +110,35 @@ pub struct MacroId(pub usize);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProtocolId(pub usize);
 
+/// Opaque ID for an enum definition
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EnumId(pub usize);
+
+/// Built-in type identifiers
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BuiltinType {
+    Int,
+    Float,
+    String,
+    Bool,
+    Null,
+    Symbol,
+    List,
+    Dict,
+    Range,
+    Fn,
+}
+
+/// Runtime type information
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TypeInfo {
+    Builtin(BuiltinType),
+    Class(ClassId),
+    Protocol(ProtocolId),
+    Enum(EnumId),
+    EnumVariant(EnumId, usize),
+}
+
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -143,6 +180,38 @@ impl fmt::Display for Value {
             Value::NativeFunction(id) => write!(f, "<native fn #{}>", id.0),
             Value::Macro(id) => write!(f, "<macro #{}>", id.0),
             Value::Protocol(id) => write!(f, "<protocol #{}>", id.0),
+            Value::Type(info) => {
+                match info {
+                    TypeInfo::Builtin(b) => write!(f, "{}", match b {
+                        BuiltinType::Int => "Int",
+                        BuiltinType::Float => "Float",
+                        BuiltinType::String => "String",
+                        BuiltinType::Bool => "Bool",
+                        BuiltinType::Null => "Null",
+                        BuiltinType::Symbol => "Symbol",
+                        BuiltinType::List => "List",
+                        BuiltinType::Dict => "Dict",
+                        BuiltinType::Range => "Range",
+                        BuiltinType::Fn => "Fn",
+                    }),
+                    TypeInfo::Class(id) => write!(f, "<type class #{}>", id.0),
+                    TypeInfo::Protocol(id) => write!(f, "<type protocol #{}>", id.0),
+                    TypeInfo::Enum(id) => write!(f, "<type enum #{}>", id.0),
+                    TypeInfo::EnumVariant(id, v) => write!(f, "<type enum #{} variant {}>", id.0, v),
+                }
+            }
+            Value::EnumVariant { enum_id, variant_index, fields } => {
+                write!(f, "<enum #{}.{}", enum_id.0, variant_index)?;
+                if !fields.is_empty() {
+                    write!(f, "(")?;
+                    for (i, v) in fields.iter().enumerate() {
+                        if i > 0 { write!(f, ", ")?; }
+                        write!(f, "{}", v)?;
+                    }
+                    write!(f, ")")?;
+                }
+                write!(f, ">")
+            }
             Value::Dict(entries) => {
                 write!(f, "{{")?;
                 for (i, (key, value)) in entries.iter().enumerate() {

@@ -7,6 +7,6 @@ pub use closure::ClosureId;
 pub use env::Environment;
 pub use function::FunctionId;
 pub use value::{
-    ActorDefId, ActorId, AstId, ClassId, InstanceId, MacroId, ModuleId, NativeFunctionId,
-    NativeObjectId, ProtocolId, Value,
+    ActorDefId, ActorId, AstId, BuiltinType, ClassId, EnumId, InstanceId, MacroId, ModuleId,
+    NativeFunctionId, NativeObjectId, ProtocolId, TypeInfo, Value,
 };
