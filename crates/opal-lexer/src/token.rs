@@ -350,6 +350,14 @@ pub enum Token {
     // === Operators ===
     #[token("**")]
     DoubleStar,
+    #[token("+=")]
+    PlusEq,
+    #[token("-=")]
+    MinusEq,
+    #[token("*=")]
+    StarEq,
+    #[token("/=")]
+    SlashEq,
     #[token("+")]
     Plus,
     #[token("-")]

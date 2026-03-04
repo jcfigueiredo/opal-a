@@ -443,6 +443,13 @@ impl<W: Write> Interpreter<W> {
                 let val = self.eval_expr(value)?;
                 self.env.assign(name.clone(), val);
             }
+            StmtKind::CompoundAssign { name, op, value } => {
+                let current = self.env.get(name).cloned()
+                    .ok_or_else(|| EvalError::UndefinedVariable(name.clone()))?;
+                let rhs = self.eval_expr(value)?;
+                let result = eval_binary_op(*op, current, rhs)?;
+                self.env.assign(name.clone(), result);
+            }
             StmtKind::Let { name, value } => {
                 let val = self.eval_expr(value)?;
                 self.env.set(name.clone(), val);
@@ -1263,6 +1270,11 @@ impl<W: Write> Interpreter<W> {
             StmtKind::Return(Some(expr)) => StmtKind::Return(Some(self.substitute_expr(expr))),
             StmtKind::Assign { name, value } => StmtKind::Assign {
                 name: name.clone(),
+                value: self.substitute_expr(value),
+            },
+            StmtKind::CompoundAssign { name, op, value } => StmtKind::CompoundAssign {
+                name: name.clone(),
+                op: *op,
                 value: self.substitute_expr(value),
             },
             StmtKind::Let { name, value } => StmtKind::Let {
@@ -3992,5 +4004,17 @@ print("hi" is NumOrStr)"#).unwrap(), "true");
             run("class Foo\n  needs x: Int\n  needs y: String\nend\nf = Foo.new(x: 1, y: \"a\")\nprint(typeof(f).fields)").unwrap(),
             "[[:x, Int], [:y, String]]"
         );
+    }
+
+    #[test]
+    fn compound_assign_plus() {
+        assert_eq!(run("x = 10\nx += 5\nprint(x)").unwrap(), "15");
+    }
+
+    #[test]
+    fn compound_assign_all_ops() {
+        assert_eq!(run("x = 10\nx -= 3\nprint(x)").unwrap(), "7");
+        assert_eq!(run("x = 5\nx *= 4\nprint(x)").unwrap(), "20");
+        assert_eq!(run("x = 20\nx /= 4\nprint(x)").unwrap(), "5");
     }
 }

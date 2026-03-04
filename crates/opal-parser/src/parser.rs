@@ -199,6 +199,41 @@ impl<'src> Parser<'src> {
         // Try to parse an expression — could be expression statement or assignment
         let expr = self.parse_expression(0)?;
 
+        // Check for compound assignment operators (+=, -=, *=, /=)
+        let compound_op = if self.check(&Token::PlusEq) {
+            Some(BinOp::Add)
+        } else if self.check(&Token::MinusEq) {
+            Some(BinOp::Sub)
+        } else if self.check(&Token::StarEq) {
+            Some(BinOp::Mul)
+        } else if self.check(&Token::SlashEq) {
+            Some(BinOp::Div)
+        } else {
+            None
+        };
+
+        if let Some(op) = compound_op {
+            if let ExprKind::Identifier(name) = expr.kind {
+                self.advance(); // consume compound operator
+                let value = self.parse_expression(0)?;
+                self.expect_statement_end()?;
+                let span = Span {
+                    start: start.start,
+                    end: value.span.end,
+                };
+                return Ok(Stmt {
+                    kind: StmtKind::CompoundAssign { name, op, value },
+                    span,
+                });
+            } else {
+                return Err(ParseError::UnexpectedToken {
+                    found: self.peek().cloned().unwrap_or(Token::Newline),
+                    expected: "compound assignment target must be an identifier".into(),
+                    span: self.current_span(),
+                });
+            }
+        }
+
         if self.check(&Token::Eq) {
             // This is an assignment
             if let ExprKind::Identifier(name) = expr.kind {

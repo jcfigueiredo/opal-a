@@ -19,6 +19,8 @@ pub enum StmtKind {
     Expr(Expr),
     /// Variable assignment: `name = expr`
     Assign { name: String, value: Expr },
+    /// Compound assignment: `name += expr`, `name -= expr`, etc.
+    CompoundAssign { name: String, op: BinOp, value: Expr },
     /// Let binding: `let name = expr`
     Let { name: String, value: Expr },
     /// Function definition: `def name(params) -> ReturnType ... end`
