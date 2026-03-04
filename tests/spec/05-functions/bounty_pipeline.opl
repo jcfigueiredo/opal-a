@@ -1,0 +1,20 @@
+# expect: [750.0, 500.0, 300.0]
+# Pipe operator for bounty processing pipelines
+
+rewards = [300.0, 50.0, 750.0, 25.0, 500.0, 10.0]
+
+def above_minimum(list)
+  list.filter(|r| r >= 100.0)
+end
+
+def sort_descending(list)
+  list.sort(|a, b| if a > b then -1 else 1 end)
+end
+
+def top_three(list)
+  list.take(3)
+end
+
+result = rewards |> above_minimum |> sort_descending |> top_three
+
+print(result)
