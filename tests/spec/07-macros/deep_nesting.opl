@@ -1,0 +1,26 @@
+# expect: age: must be 18+
+macro base_guard(cond, msg)
+  ast
+    if not ($cond)
+      raise $msg
+    end
+  end
+end
+
+macro named_guard(name, cond, msg)
+  ast
+    @base_guard $cond, f"{$name}: {$msg}"
+  end
+end
+
+macro field_guard(field, cond, msg)
+  ast
+    @named_guard $field, $cond, $msg
+  end
+end
+
+try
+  @field_guard "age", 15 >= 18, "must be 18+"
+catch as e
+  print(e)
+end

@@ -957,6 +957,38 @@ impl<W: Write> Interpreter<W> {
                 field: field.clone(),
                 value: self.substitute_expr(value),
             },
+            StmtKind::MacroInvoke { name, args, block } => StmtKind::MacroInvoke {
+                name: name.clone(),
+                args: args.iter().map(|a| self.substitute_expr(a)).collect(),
+                block: block
+                    .as_ref()
+                    .map(|b| self.substitute_splices(b)),
+            },
+            StmtKind::TryCatch {
+                body,
+                catches,
+                ensure,
+            } => StmtKind::TryCatch {
+                body: self.substitute_splices(body),
+                catches: catches
+                    .iter()
+                    .map(|c| opal_parser::CatchClause {
+                        error_type: c.error_type.clone(),
+                        var_name: c.var_name.clone(),
+                        body: self.substitute_splices(&c.body),
+                    })
+                    .collect(),
+                ensure: ensure.as_ref().map(|b| self.substitute_splices(b)),
+            },
+            StmtKind::For { var, iterable, body } => StmtKind::For {
+                var: var.clone(),
+                iterable: self.substitute_expr(iterable),
+                body: self.substitute_splices(body),
+            },
+            StmtKind::While { condition, body } => StmtKind::While {
+                condition: self.substitute_expr(condition),
+                body: self.substitute_splices(body),
+            },
             other => other.clone(),
         };
         Stmt {
