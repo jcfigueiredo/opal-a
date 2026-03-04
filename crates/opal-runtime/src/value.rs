@@ -34,7 +34,15 @@ pub enum Value {
     Error(Box<Value>),
     /// Option Some variant
     Some(Box<Value>),
+    /// Symbol: `:name`
+    Symbol(String),
+    /// Actor instance
+    Actor(ActorId),
 }
+
+/// Opaque ID for an actor
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ActorId(pub usize);
 
 /// Opaque ID for a class
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -80,6 +88,8 @@ impl fmt::Display for Value {
             Value::Ok(v) => write!(f, "Ok({})", v),
             Value::Error(v) => write!(f, "Error({})", v),
             Value::Some(v) => write!(f, "Some({})", v),
+            Value::Symbol(s) => write!(f, ":{}", s),
+            Value::Actor(id) => write!(f, "<actor #{}>", id.0),
         }
     }
 }

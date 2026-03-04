@@ -3,7 +3,9 @@ use std::io::Write;
 use std::collections::HashMap;
 
 use opal_parser::ast::*;
-use opal_runtime::{ClassId, ClosureId, Environment, FunctionId, InstanceId, ModuleId, Value};
+use opal_runtime::{
+    ActorId, ClassId, ClosureId, Environment, FunctionId, InstanceId, ModuleId, Value,
+};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -18,6 +20,8 @@ pub enum EvalError {
     Return(Value),
     #[error("{0}")]
     Raise(Value),
+    #[error("reply")]
+    Reply(Value),
 }
 
 /// A stored user-defined function
@@ -60,6 +64,22 @@ struct StoredModule {
     bindings: HashMap<String, Value>,
 }
 
+/// A stored actor definition
+#[derive(Clone)]
+struct StoredActorDef {
+    #[allow(dead_code)]
+    name: String,
+    init: Option<Vec<Stmt>>,
+    receive_cases: Vec<MatchCase>,
+}
+
+/// A stored actor instance
+#[derive(Clone)]
+struct StoredActorInstance {
+    def_idx: usize,
+    fields: HashMap<String, Value>,
+}
+
 pub struct Interpreter<W: Write> {
     env: Environment,
     writer: W,
@@ -68,8 +88,12 @@ pub struct Interpreter<W: Write> {
     classes: Vec<StoredClass>,
     instances: Vec<StoredInstance>,
     modules: Vec<StoredModule>,
+    actor_defs: Vec<StoredActorDef>,
+    actors: Vec<StoredActorInstance>,
     /// Current `self` instance for method calls
     current_self: Option<InstanceId>,
+    /// Current actor for receive handlers
+    current_actor: Option<ActorId>,
 }
 
 impl Interpreter<std::io::Stdout> {
@@ -82,7 +106,10 @@ impl Interpreter<std::io::Stdout> {
             classes: Vec::new(),
             instances: Vec::new(),
             modules: Vec::new(),
+            actor_defs: Vec::new(),
+            actors: Vec::new(),
             current_self: None,
+            current_actor: None,
         }
     }
 }
@@ -97,7 +124,10 @@ impl<W: Write> Interpreter<W> {
             classes: Vec::new(),
             instances: Vec::new(),
             modules: Vec::new(),
+            actor_defs: Vec::new(),
+            actors: Vec::new(),
             current_self: None,
+            current_actor: None,
         }
     }
 
@@ -310,6 +340,42 @@ impl<W: Write> Interpreter<W> {
                 let val = self.eval_expr(expr)?;
                 return Err(EvalError::Raise(val));
             }
+            StmtKind::ActorDef {
+                name,
+                init,
+                receive_cases,
+                ..
+            } => {
+                let def_idx = self.actor_defs.len();
+                self.actor_defs.push(StoredActorDef {
+                    name: name.clone(),
+                    init: init.clone(),
+                    receive_cases: receive_cases.clone(),
+                });
+                // Store a class-like value that supports .new()
+                self.env
+                    .set(name.clone(), Value::Class(ClassId(1000 + def_idx)));
+                // Use a convention: ClassId >= 1000 means actor def
+            }
+            StmtKind::Reply(expr) => {
+                let val = self.eval_expr(expr)?;
+                return Err(EvalError::Reply(val));
+            }
+            StmtKind::InstanceAssign { field, value } => {
+                let val = self.eval_expr(value)?;
+                // Write to current actor or instance
+                if let Some(actor_id) = self.current_actor {
+                    self.actors[actor_id.0].fields.insert(field.clone(), val);
+                } else if let Some(instance_id) = self.current_self {
+                    self.instances[instance_id.0]
+                        .fields
+                        .insert(field.clone(), val);
+                } else {
+                    return Err(EvalError::RuntimeError(
+                        "instance variable assignment outside of instance/actor context".into(),
+                    ));
+                }
+            }
         }
         Ok(())
     }
@@ -340,6 +406,13 @@ impl<W: Write> Interpreter<W> {
                     }
                 }
                 Ok(Value::String(result))
+            }
+
+            ExprKind::Symbol(name) => Ok(Value::Symbol(name.clone())),
+
+            ExprKind::Await(inner) => {
+                // Synchronous actors: await is a passthrough
+                self.eval_expr(inner)
             }
 
             ExprKind::List(elements) => {
@@ -403,6 +476,14 @@ impl<W: Write> Interpreter<W> {
             ExprKind::Grouped(inner) => self.eval_expr(inner),
 
             ExprKind::InstanceVar(field) => {
+                // Check actor first, then instance
+                if let Some(actor_id) = self.current_actor {
+                    return self.actors[actor_id.0]
+                        .fields
+                        .get(field)
+                        .cloned()
+                        .ok_or_else(|| EvalError::UndefinedVariable(format!(".{}", field)));
+                }
                 let instance_id = self
                     .current_self
                     .ok_or_else(|| EvalError::RuntimeError("no self in scope".into()))?;
@@ -487,6 +568,10 @@ impl<W: Write> Interpreter<W> {
                     },
                     ExprKind::Null => match value {
                         Value::Null => Some(vec![]),
+                        _ => None,
+                    },
+                    ExprKind::Symbol(s) => match value {
+                        Value::Symbol(v) if v == s => Some(vec![]),
                         _ => None,
                     },
                     _ => None,
@@ -676,6 +761,69 @@ impl<W: Write> Interpreter<W> {
                     "{}.{}",
                     module.name, method
                 )));
+            }
+
+            // Actor .new() — ClassId >= 1000 convention
+            (Value::Class(class_id), "new") if class_id.0 >= 1000 => {
+                let def_idx = class_id.0 - 1000;
+                let def = self.actor_defs[def_idx].clone();
+                let actor_id = ActorId(self.actors.len());
+                self.actors.push(StoredActorInstance {
+                    def_idx,
+                    fields: HashMap::new(),
+                });
+                // Run init if present
+                if let Some(init_body) = &def.init {
+                    let prev_actor = self.current_actor;
+                    self.current_actor = Some(actor_id);
+                    self.env.push_scope();
+                    let result = self.eval_block(init_body);
+                    self.env.pop_scope();
+                    self.current_actor = prev_actor;
+                    result?;
+                }
+                return Ok(Value::Actor(actor_id));
+            }
+
+            // Actor .send(:msg)
+            (Value::Actor(actor_id), "send") => {
+                if args.len() != 1 {
+                    return Err(EvalError::TypeError(
+                        "send() takes exactly 1 argument".into(),
+                    ));
+                }
+                let msg = args[0].clone();
+                let def_idx = self.actors[actor_id.0].def_idx;
+                let cases = self.actor_defs[def_idx].receive_cases.clone();
+
+                let prev_actor = self.current_actor;
+                self.current_actor = Some(*actor_id);
+                self.env.push_scope();
+
+                let mut reply_val = Value::Null;
+                for case in &cases {
+                    if let Some(bindings) = self.match_pattern(&case.pattern, &msg) {
+                        for (name, val) in bindings {
+                            self.env.set(name, val);
+                        }
+                        match self.eval_block(&case.body) {
+                            Ok(_) => {}
+                            Err(EvalError::Reply(val)) => {
+                                reply_val = val;
+                            }
+                            Err(e) => {
+                                self.env.pop_scope();
+                                self.current_actor = prev_actor;
+                                return Err(e);
+                            }
+                        }
+                        break;
+                    }
+                }
+
+                self.env.pop_scope();
+                self.current_actor = prev_actor;
+                return Ok(reply_val);
             }
 
             // Class methods
@@ -1332,5 +1480,74 @@ end
 "#)
         .unwrap();
         assert!(output.starts_with("Result: 3.33"));
+    }
+
+    // === Slice 6: Actor tests ===
+
+    #[test]
+    fn symbol_literal() {
+        let output = run("print(:hello)").unwrap();
+        assert_eq!(output, ":hello");
+    }
+
+    #[test]
+    fn match_symbol() {
+        let output = run(r#"
+match :ok
+  case :ok
+    print("matched ok")
+  case :error
+    print("matched error")
+end
+"#)
+        .unwrap();
+        assert_eq!(output, "matched ok");
+    }
+
+    #[test]
+    fn actor_counter() {
+        let output = run(r#"
+actor Counter
+  def init()
+    .count = 0
+  end
+
+  receive
+    case :increment
+      .count = .count + 1
+    case :get
+      reply .count
+  end
+end
+
+counter = Counter.new()
+counter.send(:increment)
+counter.send(:increment)
+print(await counter.send(:get))
+"#)
+        .unwrap();
+        assert_eq!(output, "2");
+    }
+
+    #[test]
+    fn instance_variable_assignment() {
+        let output = run(r#"
+class Mutable
+  needs value: Int
+
+  def set(v)
+    .value = v
+  end
+
+  def get()
+    .value
+  end
+end
+m = Mutable.new(value: 1)
+m.set(42)
+print(m.get())
+"#)
+        .unwrap();
+        assert_eq!(output, "42");
     }
 }

@@ -118,7 +118,9 @@ impl<'src> Parser<'src> {
 
         // Instance variable assignment: .field = expr
         if self.check(&Token::Dot)
-            && self.peek_ahead(1).is_some_and(|t| matches!(t, Token::Identifier))
+            && self
+                .peek_ahead(1)
+                .is_some_and(|t| matches!(t, Token::Identifier))
             && self.peek_ahead(2).is_some_and(|t| matches!(t, Token::Eq))
         {
             return self.parse_instance_assign(start);
@@ -549,9 +551,7 @@ impl<'src> Parser<'src> {
                 let func = self.parse_function_def()?;
                 // Check if it's init
                 if let StmtKind::FuncDef {
-                    ref name,
-                    ref body,
-                    ..
+                    ref name, ref body, ..
                 } = func.kind
                 {
                     if name == "init" {
@@ -822,9 +822,9 @@ impl<'src> Parser<'src> {
                     span,
                 };
             } else if self.check(&Token::Dot) {
-                // Member access: expr.field
+                // Member access: expr.field (allows keywords like 'send' as method names)
                 self.advance();
-                let field = self.expect_identifier()?;
+                let field = self.expect_method_name()?;
                 let span = Span {
                     start: expr.span.start,
                     end: self.previous_span().end,
@@ -1366,6 +1366,33 @@ impl<'src> Parser<'src> {
                     expected: "identifier".to_string(),
                 }),
             }
+        }
+    }
+
+    /// Like expect_identifier but also accepts keyword tokens as method names
+    fn expect_method_name(&mut self) -> Result<String, ParseError> {
+        // Accept identifiers and keywords that might be used as method names
+        let text = self.extract_text(&self.current_span());
+        match self.peek() {
+            Some(
+                Token::Identifier
+                | Token::Send
+                | Token::Receive
+                | Token::Type
+                | Token::Match
+                | Token::Is,
+            ) => {
+                self.advance();
+                Ok(text)
+            }
+            Some(tok) => Err(ParseError::UnexpectedToken {
+                found: tok.clone(),
+                expected: "method name".to_string(),
+                span: self.current_span(),
+            }),
+            None => Err(ParseError::UnexpectedEof {
+                expected: "method name".to_string(),
+            }),
         }
     }
 
