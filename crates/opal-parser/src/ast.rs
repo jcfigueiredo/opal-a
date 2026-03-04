@@ -101,6 +101,12 @@ pub enum StmtKind {
         annotations: Vec<Annotation>,
         statement: Box<Stmt>,
     },
+    /// Index assignment: `expr[expr] = expr`
+    IndexAssign {
+        object: Expr,
+        index: Expr,
+        value: Expr,
+    },
     /// Type alias: `type Name = TypeExpr`
     TypeAlias { name: String, definition: TypeExpr },
     /// Enum definition
@@ -200,6 +206,11 @@ pub enum ExprKind {
         start: Box<Expr>,
         end: Box<Expr>,
         inclusive: bool,
+    },
+    /// Index access: `expr[expr]`
+    Index {
+        object: Box<Expr>,
+        index: Box<Expr>,
     },
 }
 

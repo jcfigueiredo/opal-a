@@ -248,6 +248,22 @@ impl<'src> Parser<'src> {
                     kind: StmtKind::Assign { name, value },
                     span,
                 });
+            } else if let ExprKind::Index { object, index } = expr.kind {
+                self.advance(); // consume =
+                let value = self.parse_expression(0)?;
+                self.expect_statement_end()?;
+                let span = Span {
+                    start: start.start,
+                    end: value.span.end,
+                };
+                return Ok(Stmt {
+                    kind: StmtKind::IndexAssign {
+                        object: *object,
+                        index: *index,
+                        value,
+                    },
+                    span,
+                });
             } else {
                 return Err(ParseError::UnexpectedToken {
                     found: Token::Eq,
@@ -1570,6 +1586,22 @@ impl<'src> Parser<'src> {
                     kind: ExprKind::MemberAccess {
                         object: Box::new(expr),
                         field,
+                    },
+                    span,
+                };
+            } else if self.check(&Token::LBracket) {
+                // Index access: expr[index]
+                self.advance(); // consume '['
+                let index = self.parse_expression(0)?;
+                self.expect_token(&Token::RBracket, "]")?;
+                let span = Span {
+                    start: expr.span.start,
+                    end: self.previous_span().end,
+                };
+                expr = Expr {
+                    kind: ExprKind::Index {
+                        object: Box::new(expr),
+                        index: Box::new(index),
                     },
                     span,
                 };

@@ -451,6 +451,56 @@ impl<W: Write> Interpreter<W> {
                 let result = eval_binary_op(*op, current, rhs)?;
                 self.env.assign(name.clone(), result);
             }
+            StmtKind::IndexAssign {
+                object,
+                index,
+                value,
+            } => {
+                let idx = self.eval_expr(index)?;
+                let val = self.eval_expr(value)?;
+                if let ExprKind::Identifier(name) = &object.kind {
+                    let mut obj = self
+                        .env
+                        .get(name)
+                        .cloned()
+                        .ok_or_else(|| EvalError::UndefinedVariable(name.clone()))?;
+                    match (&mut obj, &idx) {
+                        (Value::List(items), Value::Integer(i)) => {
+                            let i = if *i < 0 {
+                                items.len() as i64 + i
+                            } else {
+                                *i
+                            } as usize;
+                            if i < items.len() {
+                                items[i] = val;
+                            } else {
+                                return Err(EvalError::RuntimeError(format!(
+                                    "index {} out of bounds for list of length {}",
+                                    i,
+                                    items.len()
+                                )));
+                            }
+                        }
+                        (Value::Dict(entries), Value::String(key)) => {
+                            if let Some(entry) = entries.iter_mut().find(|(k, _)| k == key) {
+                                entry.1 = val;
+                            } else {
+                                entries.push((key.clone(), val));
+                            }
+                        }
+                        _ => {
+                            return Err(EvalError::TypeError(
+                                "invalid index assignment".into(),
+                            ));
+                        }
+                    }
+                    self.env.assign(name.clone(), obj);
+                } else {
+                    return Err(EvalError::TypeError(
+                        "index assignment target must be a variable".into(),
+                    ));
+                }
+            }
             StmtKind::Let { name, value } => {
                 let val = self.eval_expr(value)?;
                 self.env.set(name.clone(), val);
@@ -1107,6 +1157,38 @@ impl<W: Write> Interpreter<W> {
                 }
             }
 
+            ExprKind::Index { object, index } => {
+                let obj = self.eval_expr(object)?;
+                let idx = self.eval_expr(index)?;
+                match (&obj, &idx) {
+                    (Value::List(items), Value::Integer(i)) => {
+                        let i = if *i < 0 {
+                            items.len() as i64 + i
+                        } else {
+                            *i
+                        } as usize;
+                        Ok(items.get(i).cloned().unwrap_or(Value::Null))
+                    }
+                    (Value::Dict(entries), Value::String(key)) => Ok(entries
+                        .iter()
+                        .find(|(k, _)| k == key)
+                        .map(|(_, v)| v.clone())
+                        .unwrap_or(Value::Null)),
+                    (Value::String(s), Value::Integer(i)) => {
+                        let i = if *i < 0 {
+                            s.len() as i64 + i
+                        } else {
+                            *i
+                        } as usize;
+                        Ok(s.chars()
+                            .nth(i)
+                            .map(|c| Value::String(c.to_string()))
+                            .unwrap_or(Value::Null))
+                    }
+                    _ => Err(EvalError::TypeError("invalid index operation".into())),
+                }
+            }
+
             ExprKind::MemberAccess { object, field } => {
                 let obj = self.eval_expr(object)?;
                 match &obj {
@@ -1290,6 +1372,15 @@ impl<W: Write> Interpreter<W> {
                 field: field.clone(),
                 value: self.substitute_expr(value),
             },
+            StmtKind::IndexAssign {
+                object,
+                index,
+                value,
+            } => StmtKind::IndexAssign {
+                object: self.substitute_expr(object),
+                index: self.substitute_expr(index),
+                value: self.substitute_expr(value),
+            },
             StmtKind::MacroInvoke { name, args, block } => StmtKind::MacroInvoke {
                 name: name.clone(),
                 args: args.iter().map(|a| self.substitute_expr(a)).collect(),
@@ -1389,6 +1480,13 @@ impl<W: Write> Interpreter<W> {
                 kind: ExprKind::MemberAccess {
                     object: Box::new(self.substitute_expr(object)),
                     field: field.clone(),
+                },
+                span: expr.span,
+            },
+            ExprKind::Index { object, index } => Expr {
+                kind: ExprKind::Index {
+                    object: Box::new(self.substitute_expr(object)),
+                    index: Box::new(self.substitute_expr(index)),
                 },
                 span: expr.span,
             },
@@ -4052,6 +4150,29 @@ print("hi" is NumOrStr)"#).unwrap(), "true");
         assert_eq!(
             run("def greet(name, greeting = 'Hello')\n  f\"{greeting}, {name}!\"\nend\nprint(greet('World', 'Hi'))").unwrap(),
             "Hi, World!"
+        );
+    }
+
+    #[test]
+    fn list_index() {
+        assert_eq!(run("l = [10, 20, 30]\nprint(l[1])").unwrap(), "20");
+    }
+
+    #[test]
+    fn list_negative_index() {
+        assert_eq!(run("l = [10, 20, 30]\nprint(l[-1])").unwrap(), "30");
+    }
+
+    #[test]
+    fn string_index() {
+        assert_eq!(run(r#"print("hello"[0])"#).unwrap(), "h");
+    }
+
+    #[test]
+    fn list_index_assign() {
+        assert_eq!(
+            run("l = [1, 2, 3]\nl[0] = 99\nprint(l[0])").unwrap(),
+            "99"
         );
     }
 }
