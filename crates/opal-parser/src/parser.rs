@@ -668,6 +668,14 @@ impl<'src> Parser<'src> {
     }
 
     fn parse_try_catch(&mut self, start: Span) -> Result<Stmt, ParseError> {
+        let expr = self.parse_try_catch_expr(start)?;
+        Ok(Stmt {
+            span: expr.span,
+            kind: StmtKind::Expr(expr),
+        })
+    }
+
+    fn parse_try_catch_expr(&mut self, start: Span) -> Result<Expr, ParseError> {
         self.advance(); // consume 'try'
         self.expect_newline()?;
         let body = self.parse_block()?;
@@ -713,8 +721,8 @@ impl<'src> Parser<'src> {
 
         self.expect_token(&Token::End, "end")?;
         let end = self.previous_span().end;
-        Ok(Stmt {
-            kind: StmtKind::TryCatch {
+        Ok(Expr {
+            kind: ExprKind::TryCatch {
                 body,
                 catches,
                 ensure,
@@ -1230,6 +1238,7 @@ impl<'src> Parser<'src> {
             }
             Some(Token::If) => self.parse_if_expression(),
             Some(Token::Match) => self.parse_match_expression(),
+            Some(Token::Try) => self.parse_try_catch_expr(span),
             Some(Token::LParen) => {
                 self.advance();
                 let expr = self.parse_expression(0)?;
@@ -2268,7 +2277,19 @@ mod tests {
     #[test]
     fn parse_try_catch() {
         let prog = parse("try\n  print(1)\ncatch as e\n  print(e)\nend");
-        assert!(matches!(prog.statements[0].kind, StmtKind::TryCatch { .. }));
+        // try/catch is now an expression (wrapped in StmtKind::Expr)
+        match &prog.statements[0].kind {
+            StmtKind::Expr(expr) => {
+                assert!(matches!(expr.kind, ExprKind::TryCatch { .. }));
+            }
+            _ => panic!("expected try/catch expression"),
+        }
+    }
+
+    #[test]
+    fn parse_try_as_expression() {
+        let prog = parse("x = try\n  42\ncatch as e\n  0\nend");
+        assert!(matches!(prog.statements[0].kind, StmtKind::Assign { .. }));
     }
 
     #[test]

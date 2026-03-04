@@ -63,12 +63,6 @@ pub enum StmtKind {
         condition: Expr,
         message: Option<Expr>,
     },
-    /// Try/catch/ensure
-    TryCatch {
-        body: Vec<Stmt>,
-        catches: Vec<CatchClause>,
-        ensure: Option<Vec<Stmt>>,
-    },
     /// Raise an error: `raise expr`
     Raise(Expr),
     /// Actor definition
@@ -166,6 +160,12 @@ pub enum ExprKind {
     Match {
         subject: Box<Expr>,
         cases: Vec<MatchCase>,
+    },
+    /// Try/catch expression: `try ... catch as e ... end`
+    TryCatch {
+        body: Vec<Stmt>,
+        catches: Vec<CatchClause>,
+        ensure: Option<Vec<Stmt>>,
     },
     /// Dict literal: `{key: value, ...}` or `{:}` for empty
     Dict(Vec<(Expr, Expr)>),

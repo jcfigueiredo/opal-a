@@ -528,44 +528,6 @@ impl<W: Write> Interpreter<W> {
                     return Err(EvalError::Raise(msg));
                 }
             }
-            StmtKind::TryCatch {
-                body,
-                catches,
-                ensure,
-            } => {
-                let result = self.eval_block(body);
-
-                match result {
-                    Err(EvalError::Raise(val)) => {
-                        // Use first matching catch (for now, all catches match)
-                        if let Some(catch) = catches.first() {
-                            self.env.push_scope();
-                            if let Some(var) = &catch.var_name {
-                                self.env.set(var.clone(), val.clone());
-                            }
-                            self.eval_block(&catch.body)?;
-                            self.env.pop_scope();
-                        } else {
-                            // Re-raise if no catch matched
-                            if let Some(ensure_body) = ensure {
-                                self.eval_block(ensure_body)?;
-                            }
-                            return Err(EvalError::Raise(val));
-                        }
-                    }
-                    Err(e) => {
-                        if let Some(ensure_body) = ensure {
-                            self.eval_block(ensure_body)?;
-                        }
-                        return Err(e);
-                    }
-                    Ok(_) => {}
-                }
-
-                if let Some(ensure_body) = ensure {
-                    self.eval_block(ensure_body)?;
-                }
-            }
             StmtKind::Raise(expr) => {
                 let val = self.eval_expr(expr)?;
                 return Err(EvalError::Raise(val));
@@ -908,6 +870,45 @@ impl<W: Write> Interpreter<W> {
                 }
                 Ok(Value::Null) // no match
             }
+
+            ExprKind::TryCatch {
+                body,
+                catches,
+                ensure,
+            } => {
+                let result = self.eval_block(body);
+
+                let value = match result {
+                    Err(EvalError::Raise(val)) => {
+                        if let Some(catch) = catches.first() {
+                            self.env.push_scope();
+                            if let Some(var) = &catch.var_name {
+                                self.env.set(var.clone(), val.clone());
+                            }
+                            let catch_result = self.eval_block(&catch.body);
+                            self.env.pop_scope();
+                            catch_result?
+                        } else {
+                            if let Some(ensure_body) = ensure {
+                                self.eval_block(ensure_body)?;
+                            }
+                            return Err(EvalError::Raise(val));
+                        }
+                    }
+                    Err(e) => {
+                        if let Some(ensure_body) = ensure {
+                            self.eval_block(ensure_body)?;
+                        }
+                        return Err(e);
+                    }
+                    Ok(v) => v,
+                };
+
+                if let Some(ensure_body) = ensure {
+                    self.eval_block(ensure_body)?;
+                }
+                Ok(value)
+            }
         }
     }
 
@@ -963,22 +964,6 @@ impl<W: Write> Interpreter<W> {
                 block: block
                     .as_ref()
                     .map(|b| self.substitute_splices(b)),
-            },
-            StmtKind::TryCatch {
-                body,
-                catches,
-                ensure,
-            } => StmtKind::TryCatch {
-                body: self.substitute_splices(body),
-                catches: catches
-                    .iter()
-                    .map(|c| opal_parser::CatchClause {
-                        error_type: c.error_type.clone(),
-                        var_name: c.var_name.clone(),
-                        body: self.substitute_splices(&c.body),
-                    })
-                    .collect(),
-                ensure: ensure.as_ref().map(|b| self.substitute_splices(b)),
             },
             StmtKind::For { var, iterable, body } => StmtKind::For {
                 var: var.clone(),
@@ -1083,6 +1068,25 @@ impl<W: Write> Interpreter<W> {
                 kind: ExprKind::List(
                     items.iter().map(|e| self.substitute_expr(e)).collect(),
                 ),
+                span: expr.span,
+            },
+            ExprKind::TryCatch {
+                body,
+                catches,
+                ensure,
+            } => Expr {
+                kind: ExprKind::TryCatch {
+                    body: self.substitute_splices(body),
+                    catches: catches
+                        .iter()
+                        .map(|c| opal_parser::CatchClause {
+                            error_type: c.error_type.clone(),
+                            var_name: c.var_name.clone(),
+                            body: self.substitute_splices(&c.body),
+                        })
+                        .collect(),
+                    ensure: ensure.as_ref().map(|b| self.substitute_splices(b)),
+                },
                 span: expr.span,
             },
             _ => expr.clone(),
