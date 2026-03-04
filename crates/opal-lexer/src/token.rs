@@ -36,6 +36,111 @@ fn lex_triple_single_string(lex: &mut logos::Lexer<Token>) -> Result<(), ()> {
     }
 }
 
+/// Callback to lex f-strings with double quotes: `f"... {expr} ..."`
+/// Tracks brace depth so quotes inside interpolations don't end the string.
+fn lex_fstring_double(lex: &mut logos::Lexer<Token>) -> Result<(), ()> {
+    let remainder = lex.remainder();
+    let bytes = remainder.as_bytes();
+    let mut i = 0;
+    let mut depth = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\\' if depth == 0 => {
+                i += 2; // skip escaped char
+            }
+            b'"' if depth == 0 => {
+                lex.bump(i + 1);
+                return Ok(());
+            }
+            b'{' => {
+                depth += 1;
+                i += 1;
+            }
+            b'}' => {
+                depth -= 1;
+                i += 1;
+            }
+            b'"' if depth > 0 => {
+                // quote inside interpolation — skip string literal
+                i += 1;
+                while i < bytes.len() && bytes[i] != b'"' {
+                    if bytes[i] == b'\\' {
+                        i += 1;
+                    }
+                    i += 1;
+                }
+                i += 1; // skip closing quote
+            }
+            b'\'' if depth > 0 => {
+                // single-quoted string inside interpolation
+                i += 1;
+                while i < bytes.len() && bytes[i] != b'\'' {
+                    if bytes[i] == b'\\' {
+                        i += 1;
+                    }
+                    i += 1;
+                }
+                i += 1;
+            }
+            _ => {
+                i += 1;
+            }
+        }
+    }
+    Err(())
+}
+
+/// Callback to lex f-strings with single quotes: `f'... {expr} ...'`
+fn lex_fstring_single(lex: &mut logos::Lexer<Token>) -> Result<(), ()> {
+    let remainder = lex.remainder();
+    let bytes = remainder.as_bytes();
+    let mut i = 0;
+    let mut depth = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\\' if depth == 0 => {
+                i += 2;
+            }
+            b'\'' if depth == 0 => {
+                lex.bump(i + 1);
+                return Ok(());
+            }
+            b'{' => {
+                depth += 1;
+                i += 1;
+            }
+            b'}' => {
+                depth -= 1;
+                i += 1;
+            }
+            b'\'' if depth > 0 => {
+                i += 1;
+                while i < bytes.len() && bytes[i] != b'\'' {
+                    if bytes[i] == b'\\' {
+                        i += 1;
+                    }
+                    i += 1;
+                }
+                i += 1;
+            }
+            b'"' if depth > 0 => {
+                i += 1;
+                while i < bytes.len() && bytes[i] != b'"' {
+                    if bytes[i] == b'\\' {
+                        i += 1;
+                    }
+                    i += 1;
+                }
+                i += 1;
+            }
+            _ => {
+                i += 1;
+            }
+        }
+    }
+    Err(())
+}
+
 /// Byte offset span in source code
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Span {
@@ -214,12 +319,11 @@ pub enum Token {
     SingleString,
 
     // === F-strings ===
-    // Note: f-string parsing is complex (nested expressions inside {}).
-    // The lexer emits the raw token; the parser handles interpolation.
-    #[regex(r#"f"([^"\\]|\\.)*""#)]
+    // Uses callbacks to track brace depth, allowing quotes inside {expr}.
+    #[token(r#"f""#, lex_fstring_double)]
     FString,
 
-    #[regex(r"f'([^'\\]|\\.)*'")]
+    #[token("f'", lex_fstring_single)]
     FSingleString,
 
     // === R-strings ===

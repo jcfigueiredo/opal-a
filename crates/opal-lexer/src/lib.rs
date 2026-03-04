@@ -106,6 +106,28 @@ mod tests {
     }
 
     #[test]
+    fn lex_fstring_with_nested_double_quotes() {
+        let tokens = lex(r#"f"value: {d.get("key")}""#).unwrap();
+        assert_eq!(tokens.len(), 1);
+        assert!(matches!(tokens[0].token, Token::FString));
+    }
+
+    #[test]
+    fn lex_fstring_with_nested_single_quotes() {
+        let tokens = lex(r#"f"value: {d.get('key')}""#).unwrap();
+        assert_eq!(tokens.len(), 1);
+        assert!(matches!(tokens[0].token, Token::FString));
+    }
+
+    #[test]
+    fn lex_fsingle_with_nested_quotes() {
+        let input = "f'value: {d.get(\"key\")}'";
+        let tokens = lex(input).unwrap();
+        assert_eq!(tokens.len(), 1);
+        assert!(matches!(tokens[0].token, Token::FSingleString));
+    }
+
+    #[test]
     fn lex_integer() {
         let tokens = lex("42").unwrap();
         assert_eq!(tokens[0].token, Token::Integer(42));

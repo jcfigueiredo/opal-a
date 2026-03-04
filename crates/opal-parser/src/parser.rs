@@ -1569,18 +1569,39 @@ impl<'src> Parser<'src> {
                     current_literal.clear();
                 }
                 // Collect the expression text until matching '}'
+                // Track string literals so braces inside strings aren't counted.
                 let mut expr_text = String::new();
                 let mut depth = 1;
-                for c in chars.by_ref() {
-                    if c == '{' {
+                while let Some(&c) = chars.peek() {
+                    if c == '"' || c == '\'' {
+                        // Skip string literal inside interpolation
+                        let q = c;
+                        expr_text.push(chars.next().unwrap());
+                        while let Some(&sc) = chars.peek() {
+                            expr_text.push(chars.next().unwrap());
+                            if sc == '\\' {
+                                // skip escaped char
+                                if let Some(&esc) = chars.peek() {
+                                    expr_text.push(chars.next().unwrap());
+                                    let _ = esc;
+                                }
+                            } else if sc == q {
+                                break;
+                            }
+                        }
+                    } else if c == '{' {
                         depth += 1;
+                        expr_text.push(chars.next().unwrap());
                     } else if c == '}' {
                         depth -= 1;
                         if depth == 0 {
+                            chars.next(); // consume closing '}'
                             break;
                         }
+                        expr_text.push(chars.next().unwrap());
+                    } else {
+                        expr_text.push(chars.next().unwrap());
                     }
-                    expr_text.push(c);
                 }
                 if depth != 0 {
                     return Err(ParseError::InvalidFString {
@@ -1890,6 +1911,23 @@ mod tests {
     fn parse_fstring() {
         let prog = parse(r#"print(f"Hello, {name}!")"#);
         assert_eq!(prog.statements.len(), 1);
+    }
+
+    #[test]
+    fn parse_fstring_nested_quotes() {
+        let prog = parse(r#"print(f"val: {d.get("key")}")"#);
+        assert_eq!(prog.statements.len(), 1);
+        // Should parse as a call with one f-string arg
+        match &prog.statements[0].kind {
+            StmtKind::Expr(expr) => match &expr.kind {
+                ExprKind::Call { args, .. } => {
+                    assert_eq!(args.len(), 1);
+                    assert!(matches!(args[0].value.kind, ExprKind::FString(_)));
+                }
+                _ => panic!("expected call"),
+            },
+            _ => panic!("expected expression"),
+        }
     }
 
     #[test]
