@@ -1283,6 +1283,11 @@ impl<W: Write> Interpreter<W> {
                             let val = self.eval_expr(e)?;
                             result.push_str(&self.format_value(&val));
                         }
+                        FStringPart::FormattedExpr { expr, spec } => {
+                            let val = self.eval_expr(expr)?;
+                            let formatted = self.format_value(&val);
+                            result.push_str(&Self::apply_format_spec(&formatted, &val, spec));
+                        }
                     }
                 }
                 Ok(Value::String(result))
@@ -1921,6 +1926,10 @@ impl<W: Write> Interpreter<W> {
                         .map(|part| match part {
                             FStringPart::Literal(s) => FStringPart::Literal(s.clone()),
                             FStringPart::Expr(e) => FStringPart::Expr(self.substitute_expr(e)),
+                            FStringPart::FormattedExpr { expr, spec } => FStringPart::FormattedExpr {
+                                expr: self.substitute_expr(expr),
+                                spec: spec.clone(),
+                            },
                         })
                         .collect(),
                 ),
@@ -3811,6 +3820,36 @@ impl<W: Write> Interpreter<W> {
         Ok(Value::Null)
     }
 
+    /// Apply a format specifier to a value's string representation
+    fn apply_format_spec(formatted: &str, val: &Value, spec: &str) -> String {
+        // :.N or :.Nf — decimal places for floats
+        if spec.starts_with('.') {
+            let num_str = spec[1..].trim_end_matches('f');
+            if let Ok(precision) = num_str.parse::<usize>() {
+                let f = match val {
+                    Value::Float(f) => *f,
+                    Value::Integer(n) => *n as f64,
+                    _ => return formatted.to_string(),
+                };
+                return format!("{:.prec$}", f, prec = precision);
+            }
+        }
+        // :>N — right-align to N chars (pad with spaces on left)
+        if spec.starts_with('>') {
+            if let Ok(width) = spec[1..].parse::<usize>() {
+                return format!("{:>width$}", formatted, width = width);
+            }
+        }
+        // :<N — left-align to N chars (pad with spaces on right)
+        if spec.starts_with('<') {
+            if let Ok(width) = spec[1..].parse::<usize>() {
+                return format!("{:<width$}", formatted, width = width);
+            }
+        }
+        // Unknown spec — return as-is
+        formatted.to_string()
+    }
+
     /// Call a value (closure or function) with the given args
     fn call_value(&mut self, val: Value, named_args: Vec<(Option<String>, Value)>) -> Result<Value, EvalError> {
         let args: Vec<Value> = named_args.into_iter().map(|(_, v)| v).collect();
@@ -5201,6 +5240,29 @@ Email.new(address: "invalid")
 "#);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("validation failed"));
+    }
+
+    #[test]
+    fn fstring_format_decimal() {
+        let output = run(r#"
+pi = 3.14159
+print(f"{pi:.2}")
+"#).unwrap();
+        assert_eq!(output, "3.14");
+    }
+
+    #[test]
+    fn fstring_format_right_align() {
+        let output = run(r#"
+print(f"{'hi':>5}")
+"#).unwrap();
+        assert_eq!(output, "   hi");
+    }
+
+    #[test]
+    fn fstring_format_left_align() {
+        let output = run("s = \"hi\"\nprint(f\"{s:<5}|\")").unwrap();
+        assert_eq!(output, "hi   |");
     }
 
     #[test]

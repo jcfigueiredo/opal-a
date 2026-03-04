@@ -2376,8 +2376,12 @@ impl<'src> Parser<'src> {
                 }
                 // Collect the expression text until matching '}'
                 // Track string literals so braces inside strings aren't counted.
+                // Also detect ':' at top level for format specifiers.
                 let mut expr_text = String::new();
+                let mut format_spec: Option<String> = None;
                 let mut depth = 1;
+                let mut paren_depth = 0;
+                let mut bracket_depth = 0;
                 while let Some(&c) = chars.peek() {
                     if c == '"' || c == '\'' {
                         // Skip string literal inside interpolation
@@ -2395,6 +2399,32 @@ impl<'src> Parser<'src> {
                                 break;
                             }
                         }
+                    } else if c == ':' && depth == 1 && paren_depth == 0 && bracket_depth == 0 {
+                        // Format specifier — consume ':' and read until '}'
+                        chars.next(); // consume ':'
+                        let mut spec = String::new();
+                        while let Some(&sc) = chars.peek() {
+                            if sc == '}' {
+                                depth -= 1;
+                                chars.next(); // consume '}'
+                                break;
+                            }
+                            spec.push(chars.next().unwrap());
+                        }
+                        format_spec = Some(spec);
+                        break;
+                    } else if c == '(' {
+                        paren_depth += 1;
+                        expr_text.push(chars.next().unwrap());
+                    } else if c == ')' {
+                        paren_depth -= 1;
+                        expr_text.push(chars.next().unwrap());
+                    } else if c == '[' {
+                        bracket_depth += 1;
+                        expr_text.push(chars.next().unwrap());
+                    } else if c == ']' {
+                        bracket_depth -= 1;
+                        expr_text.push(chars.next().unwrap());
                     } else if c == '{' {
                         depth += 1;
                         expr_text.push(chars.next().unwrap());
@@ -2409,7 +2439,7 @@ impl<'src> Parser<'src> {
                         expr_text.push(chars.next().unwrap());
                     }
                 }
-                if depth != 0 {
+                if depth != 0 && format_spec.is_none() {
                     return Err(ParseError::InvalidFString {
                         message: "unmatched '{' in f-string".into(),
                         span,
@@ -2423,7 +2453,11 @@ impl<'src> Parser<'src> {
                     })?;
                 let mut inner_parser = Parser::new(&expr_text, inner_tokens);
                 let expr = inner_parser.parse_expression(0)?;
-                parts.push(FStringPart::Expr(expr));
+                if let Some(spec) = format_spec {
+                    parts.push(FStringPart::FormattedExpr { expr, spec });
+                } else {
+                    parts.push(FStringPart::Expr(expr));
+                }
             } else if ch == '\\' {
                 // Escape sequence
                 if let Some(next) = chars.next() {

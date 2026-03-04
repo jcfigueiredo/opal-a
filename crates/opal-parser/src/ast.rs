@@ -347,6 +347,8 @@ pub struct ModelNeedsDecl {
 pub enum FStringPart {
     Literal(String),
     Expr(Expr),
+    /// Expression with format specifier: `{expr:.2}`, `{expr:>10}`, `{expr:<10}`
+    FormattedExpr { expr: Expr, spec: String },
 }
 
 #[derive(Debug, Clone)]
