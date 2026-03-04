@@ -1,0 +1,14 @@
+# expect: area: 78.5 | area: 30.0
+enum Shape
+  Circle(radius: Float)
+  Rectangle(width: Float, height: Float)
+end
+def area(s)
+  match s
+    case Shape.Circle(r)
+      3.14 * r * r
+    case Shape.Rectangle(w, h)
+      w * h
+  end
+end
+print(f"area: {area(Shape.Circle(5.0))} | area: {area(Shape.Rectangle(10.0, 3.0))}")

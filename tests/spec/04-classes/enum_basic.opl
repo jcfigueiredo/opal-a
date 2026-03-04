@@ -1,0 +1,12 @@
+# expect: Direction.North | Shape.Circle(5.0) | true
+enum Direction
+  North
+  South
+end
+enum Shape
+  Circle(radius: Float)
+  Rectangle(width: Float, height: Float)
+end
+d = Direction.North
+s = Shape.Circle(5.0)
+print(f"{d} | {s} | {d is Direction}")

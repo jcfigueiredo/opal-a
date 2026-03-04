@@ -96,6 +96,13 @@ pub enum StmtKind {
     },
     /// Type alias: `type Name = TypeExpr`
     TypeAlias { name: String, definition: TypeExpr },
+    /// Enum definition
+    EnumDef {
+        name: String,
+        variants: Vec<EnumVariantDef>,
+        methods: Vec<Stmt>,
+        implements: Vec<String>,
+    },
     /// Extern FFI declaration: `extern "lib" ... end`
     ExternDef {
         lib_name: String,
@@ -205,6 +212,8 @@ pub enum Pattern {
     List(Vec<Pattern>, Option<Box<Pattern>>),
     /// Wildcard: `_`
     Wildcard,
+    /// Enum variant pattern: `Shape.Circle(r)`
+    EnumVariant(String, String, Vec<Pattern>),
 }
 
 /// A catch clause in try/catch
@@ -277,6 +286,13 @@ pub struct Param {
     pub name: String,
     pub type_annotation: Option<String>,
     pub default: Option<Expr>,
+}
+
+/// An enum variant definition
+#[derive(Debug, Clone)]
+pub struct EnumVariantDef {
+    pub name: String,
+    pub fields: Vec<NeedsDecl>,
 }
 
 /// A type expression used in type aliases

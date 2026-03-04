@@ -637,6 +637,43 @@ impl<W: Write> Interpreter<W> {
             StmtKind::TypeAlias { name, definition } => {
                 self.type_aliases.insert(name.clone(), definition.clone());
             }
+            StmtKind::EnumDef {
+                name,
+                variants,
+                methods,
+                ..
+            } => {
+                let enum_id = EnumId(self.enums.len());
+                let stored_variants: Vec<StoredEnumVariant> = variants
+                    .iter()
+                    .map(|v| StoredEnumVariant {
+                        name: v.name.clone(),
+                        fields: v.fields.iter().map(|f| (f.name.clone(), f.type_annotation.clone())).collect(),
+                    })
+                    .collect();
+                let stored_methods: Vec<StoredFunction> = methods
+                    .iter()
+                    .filter_map(|m| {
+                        if let StmtKind::FuncDef { name, params, body, .. } = &m.kind {
+                            Some(StoredFunction {
+                                name: name.clone(),
+                                params: params.iter().map(|p| p.name.clone()).collect(),
+                                param_types: params.iter().map(|p| p.type_annotation.clone()).collect(),
+                                body: body.clone(),
+                                captured_env: None,
+                            })
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                self.enums.push(StoredEnum {
+                    name: name.clone(),
+                    variants: stored_variants,
+                    methods: stored_methods,
+                });
+                self.env.set(name.clone(), Value::Type(TypeInfo::Enum(enum_id)));
+            }
             StmtKind::ExportBlock(_) => {
                 // Export blocks are metadata; no runtime effect for now
             }
@@ -984,6 +1021,28 @@ impl<W: Write> Interpreter<W> {
                             )))
                         }
                     }
+                    Value::Type(TypeInfo::Enum(enum_id)) => {
+                        let e = &self.enums[enum_id.0].clone();
+                        // Check if field is a variant name
+                        if let Some((vi, variant)) = e.variants.iter().enumerate().find(|(_, v)| v.name == *field) {
+                            if variant.fields.is_empty() {
+                                // Singleton variant — return directly
+                                return Ok(Value::EnumVariant {
+                                    enum_id: *enum_id,
+                                    variant_index: vi,
+                                    fields: vec![],
+                                });
+                            } else {
+                                // Data-carrying variant — return a Type so call_method can construct
+                                return Ok(Value::Type(TypeInfo::EnumVariant(*enum_id, vi)));
+                            }
+                        }
+                        // Fall through to Type methods (.name, .fields)
+                        match field.as_str() {
+                            "name" => Ok(Value::String(e.name.clone())),
+                            _ => Err(EvalError::TypeError(format!("enum '{}' has no variant or field '{}'", e.name, field))),
+                        }
+                    }
                     Value::Type(info) => {
                         match field.as_str() {
                             "name" => Ok(Value::String(self.type_info_name(info))),
@@ -1321,6 +1380,31 @@ impl<W: Write> Interpreter<W> {
                     None
                 }
             }
+            Pattern::EnumVariant(enum_name, variant_name, sub_patterns) => {
+                if let Value::EnumVariant { enum_id, variant_index, fields } = value {
+                    let e = &self.enums[enum_id.0];
+                    if e.name != *enum_name {
+                        return None;
+                    }
+                    let v = &e.variants[*variant_index];
+                    if v.name != *variant_name {
+                        return None;
+                    }
+                    if sub_patterns.len() != fields.len() {
+                        return None;
+                    }
+                    let mut all_bindings = vec![];
+                    for (pat, val) in sub_patterns.iter().zip(fields.iter()) {
+                        match self.match_pattern(pat, val) {
+                            Some(bindings) => all_bindings.extend(bindings),
+                            None => return None,
+                        }
+                    }
+                    Some(all_bindings)
+                } else {
+                    None
+                }
+            }
             Pattern::Literal(expr) => {
                 // Compare literal values
                 match &expr.kind {
@@ -1413,6 +1497,13 @@ impl<W: Write> Interpreter<W> {
                 return Ok(Value::Type(type_info));
             }
             _ => {}
+        }
+
+        // Intercept print/println to use format_value for proper display
+        if func_name == "print" || func_name == "println" {
+            let output: Vec<String> = arg_values.iter().map(|v| self.format_value(v)).collect();
+            writeln!(self.writer, "{}", output.join(" ")).ok();
+            return Ok(Value::Null);
         }
 
         // Try stdlib builtins
@@ -1917,6 +2008,52 @@ impl<W: Write> Interpreter<W> {
                 }
             }
 
+            // Enum variant construction: EnumName.Variant(args)
+            (Value::Type(TypeInfo::Enum(enum_id)), _) => {
+                let e = self.enums[enum_id.0].clone();
+                if let Some((vi, variant)) = e.variants.iter().enumerate().find(|(_, v)| v.name == method) {
+                    if variant.fields.is_empty() && args.is_empty() {
+                        return Ok(Value::EnumVariant {
+                            enum_id: *enum_id,
+                            variant_index: vi,
+                            fields: vec![],
+                        });
+                    }
+                    if args.len() != variant.fields.len() {
+                        return Err(EvalError::TypeError(format!(
+                            "{}.{}() expected {} arguments, got {}",
+                            e.name, variant.name, variant.fields.len(), args.len()
+                        )));
+                    }
+                    return Ok(Value::EnumVariant {
+                        enum_id: *enum_id,
+                        variant_index: vi,
+                        fields: args,
+                    });
+                }
+                return Err(EvalError::TypeError(format!("enum '{}' has no variant '{}'", e.name, method)));
+            }
+            // Enum variant method calls
+            (Value::EnumVariant { enum_id, .. }, _) => {
+                let e = self.enums[enum_id.0].clone();
+                if let Some(func) = e.methods.iter().find(|m| m.name == method) {
+                    let func = func.clone();
+                    // Bind `self` to the enum variant value
+                    self.env.push_scope();
+                    self.env.set("self".to_string(), obj.clone());
+                    for (param_name, arg_val) in func.params.iter().zip(args) {
+                        self.env.set(param_name.clone(), arg_val);
+                    }
+                    let result = self.eval_block(&func.body);
+                    self.env.pop_scope();
+                    return match result {
+                        Ok(val) => Ok(val),
+                        Err(EvalError::Return(val)) => Ok(val),
+                        Err(e) => Err(e),
+                    };
+                }
+                return Err(EvalError::TypeError(format!("enum '{}' has no method '{}'", e.name, method)));
+            }
             // Type methods
             (Value::Type(info), _) => {
                 match method {
@@ -2230,8 +2367,8 @@ impl<W: Write> Interpreter<W> {
                 let inst = &self.instances[id.0];
                 TypeInfo::Class(inst.class_id)
             }
-            Value::EnumVariant { enum_id, variant_index, .. } => {
-                TypeInfo::EnumVariant(*enum_id, *variant_index)
+            Value::EnumVariant { enum_id, .. } => {
+                TypeInfo::Enum(*enum_id)
             }
             _ => TypeInfo::Builtin(BuiltinType::Fn),
         }
@@ -2277,6 +2414,10 @@ impl<W: Write> Interpreter<W> {
                 let inst = &self.instances[id.0];
                 let class = &self.classes[inst.class_id.0];
                 format!("<{} instance>", class.name)
+            }
+            Value::List(items) => {
+                let parts: Vec<String> = items.iter().map(|v| self.format_value(v)).collect();
+                format!("[{}]", parts.join(", "))
             }
             other => other.to_string(),
         }
@@ -3545,6 +3686,47 @@ print(L.greet())
     fn type_alias_symbol_set() {
         assert_eq!(run("type Status = :ok | :error\nprint(:ok is Status)").unwrap(), "true");
         assert_eq!(run("type Status = :ok | :error\nprint(:unknown is Status)").unwrap(), "false");
+    }
+
+    // === enum tests ===
+    #[test]
+    fn enum_singleton() {
+        assert_eq!(
+            run("enum Dir\n  North\n  South\nend\nprint(Dir.North)").unwrap(),
+            "Dir.North"
+        );
+    }
+
+    #[test]
+    fn enum_data_variant() {
+        assert_eq!(
+            run("enum Shape\n  Circle(r: Float)\nend\nprint(Shape.Circle(5.0))").unwrap(),
+            "Shape.Circle(5.0)"
+        );
+    }
+
+    #[test]
+    fn enum_pattern_match() {
+        assert_eq!(
+            run("enum Shape\n  Circle(r: Float)\n  Rect(w: Float, h: Float)\nend\ns = Shape.Rect(3.0, 4.0)\nresult = match s\n  case Shape.Circle(r)\n    r\n  case Shape.Rect(w, h)\n    w * h\nend\nprint(result)").unwrap(),
+            "12.0"
+        );
+    }
+
+    #[test]
+    fn enum_is_check() {
+        assert_eq!(
+            run("enum Dir\n  N\n  S\nend\nd = Dir.N\nprint(d is Dir)").unwrap(),
+            "true"
+        );
+    }
+
+    #[test]
+    fn enum_typeof() {
+        assert_eq!(
+            run("enum Color\n  Red\n  Blue\nend\nc = Color.Red\nprint(typeof(c).name)").unwrap(),
+            "Color"
+        );
     }
 
     #[test]

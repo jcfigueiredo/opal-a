@@ -141,6 +141,11 @@ impl<'src> Parser<'src> {
             return self.parse_type_alias(start);
         }
 
+        // Enum definition
+        if self.check(&Token::Enum) {
+            return self.parse_enum_def(start);
+        }
+
         // Actor definition
         if self.check(&Token::Actor) {
             return self.parse_actor_def(start);
@@ -361,6 +366,94 @@ impl<'src> Parser<'src> {
                 start: start.start,
                 end,
             },
+        })
+    }
+
+    fn parse_enum_def(&mut self, start: Span) -> Result<Stmt, ParseError> {
+        self.advance(); // consume 'enum'
+        let name = self.expect_identifier()?;
+
+        // Parse optional: implements Protocol1, Protocol2
+        let mut implements = Vec::new();
+        if self.check(&Token::Implements) {
+            self.advance();
+            loop {
+                implements.push(self.expect_identifier()?);
+                if !self.check(&Token::Comma) {
+                    break;
+                }
+                self.advance();
+            }
+        }
+
+        self.expect_newline()?;
+        self.skip_newlines();
+
+        let mut variants = Vec::new();
+        let mut methods = Vec::new();
+
+        while !self.check(&Token::End) {
+            // Method definition
+            if self.check(&Token::Def) {
+                methods.push(self.parse_function_def()?);
+                self.skip_newlines();
+                continue;
+            }
+
+            // Variant: Name or Name(field: Type, ...)
+            if self.peek_is_identifier() {
+                let variant_name = self.extract_text(&self.current_span());
+                self.advance();
+
+                let mut fields = Vec::new();
+                if self.check(&Token::LParen) {
+                    self.advance();
+                    if !self.check(&Token::RParen) {
+                        loop {
+                            let field_name = self.expect_identifier()?;
+                            let type_ann = if self.check(&Token::Colon) {
+                                self.advance();
+                                Some(self.expect_identifier()?)
+                            } else {
+                                None
+                            };
+                            fields.push(NeedsDecl {
+                                name: field_name,
+                                type_annotation: type_ann,
+                            });
+                            if !self.check(&Token::Comma) {
+                                break;
+                            }
+                            self.advance();
+                        }
+                    }
+                    self.expect_token(&Token::RParen, ")")?;
+                }
+
+                variants.push(EnumVariantDef {
+                    name: variant_name,
+                    fields,
+                });
+                self.expect_newline()?;
+                self.skip_newlines();
+                continue;
+            }
+
+            break;
+        }
+
+        let end = self.current_span().end;
+        self.expect_token(&Token::End, "end")?;
+        self.expect_newline()?;
+
+        Ok(Stmt {
+            kind: StmtKind::EnumDef {
+                name,
+                variants,
+                methods,
+                implements,
+            },
+            span: Span { start: start.start, end },
         })
     }
 
@@ -1185,6 +1278,27 @@ impl<'src> Parser<'src> {
             let name = self.extract_text(&self.current_span());
             self.advance();
 
+            // Enum variant pattern: Name.Variant or Name.Variant(patterns)
+            if self.check(&Token::Dot) {
+                self.advance(); // consume '.'
+                let variant_name = self.expect_identifier()?;
+                let mut sub_patterns = Vec::new();
+                if self.check(&Token::LParen) {
+                    self.advance();
+                    if !self.check(&Token::RParen) {
+                        loop {
+                            sub_patterns.push(self.parse_pattern()?);
+                            if !self.check(&Token::Comma) {
+                                break;
+                            }
+                            self.advance();
+                        }
+                    }
+                    self.expect_token(&Token::RParen, ")")?;
+                }
+                return Ok(Pattern::EnumVariant(name, variant_name, sub_patterns));
+            }
+
             // Constructor: Name(patterns)
             if self.check(&Token::LParen) {
                 self.advance();
@@ -1425,6 +1539,13 @@ impl<'src> Parser<'src> {
                 self.advance();
                 Ok(Expr {
                     kind: ExprKind::Identifier(name),
+                    span,
+                })
+            }
+            Some(Token::SelfKw) => {
+                self.advance();
+                Ok(Expr {
+                    kind: ExprKind::Identifier("self".to_string()),
                     span,
                 })
             }
