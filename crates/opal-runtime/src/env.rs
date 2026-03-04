@@ -54,6 +54,13 @@ impl Environment {
         }
     }
 
+    /// Create a deep copy of this environment for closure capture
+    pub fn snapshot(&self) -> Self {
+        Self {
+            scopes: self.scopes.clone(),
+        }
+    }
+
     /// Get all bindings in the current (innermost) scope
     pub fn current_scope_bindings(&self) -> HashMap<String, Value> {
         self.scopes.last().cloned().unwrap_or_default()

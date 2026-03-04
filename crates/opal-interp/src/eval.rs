@@ -39,6 +39,7 @@ struct StoredFunction {
 struct StoredClosure {
     params: Vec<String>,
     body: Vec<Stmt>,
+    captured_env: Environment,
 }
 
 /// A stored class definition
@@ -595,6 +596,7 @@ impl<W: Write> Interpreter<W> {
                 self.closures.push(StoredClosure {
                     params: params.clone(),
                     body: body.clone(),
+                    captured_env: self.env.snapshot(),
                 });
                 Ok(Value::Closure(id))
             }
@@ -1677,13 +1679,18 @@ impl<W: Write> Interpreter<W> {
     fn call_closure(&mut self, id: ClosureId, arg_values: Vec<Value>) -> Result<Value, EvalError> {
         let stored = self.closures[id.0].clone();
 
+        // Save current env, switch to captured env
+        let saved_env = std::mem::replace(&mut self.env, stored.captured_env.clone());
+
         self.env.push_scope();
         for (param_name, arg_val) in stored.params.iter().zip(arg_values) {
             self.env.set(String::clone(param_name), arg_val);
         }
 
         let result = self.eval_block(&stored.body);
-        self.env.pop_scope();
+
+        // Restore original env
+        self.env = saved_env;
 
         match result {
             Ok(val) => Ok(val),
@@ -2612,5 +2619,19 @@ serve(app, __PORT__)
     fn string_chars() {
         let output = run(r#"print("abc".chars())"#).unwrap();
         assert_eq!(output, "[a, b, c]");
+    }
+
+    // === Closure environment capture ===
+
+    #[test]
+    fn closure_captures_env() {
+        let output = run("x = 10\nf = |n| n + x\nprint(f(5))").unwrap();
+        assert_eq!(output, "15");
+    }
+
+    #[test]
+    fn closure_captures_at_creation() {
+        let output = run("x = 10\nf = |n| n + x\nx = 99\nprint(f(5))").unwrap();
+        assert_eq!(output, "15"); // captures x=10 at creation, not x=99
     }
 }
