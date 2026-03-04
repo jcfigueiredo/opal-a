@@ -52,7 +52,12 @@ fn main() {
             let program = match opal_parser::parse(&source) {
                 Ok(p) => p,
                 Err(e) => {
-                    eprintln!("ParseError: {}", e);
+                    eprintln!(
+                        "{}:{}: {}",
+                        file.display(),
+                        format_error_location(&e, &source),
+                        e,
+                    );
                     process::exit(1);
                 }
             };
@@ -129,6 +134,18 @@ fn main() {
             );
             process::exit(1);
         }
+    }
+}
+
+fn format_error_location(err: &opal_parser::ParseError, source: &str) -> String {
+    match err {
+        opal_parser::ParseError::UnexpectedToken { span, .. }
+        | opal_parser::ParseError::InvalidFString { span, .. }
+        | opal_parser::ParseError::LexError { span, .. } => {
+            let (line, col) = opal_lexer::source_location(source, span.start);
+            format!("{}:{}", line, col)
+        }
+        opal_parser::ParseError::UnexpectedEof { .. } => "end of file".to_string(),
     }
 }
 

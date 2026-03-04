@@ -59,6 +59,25 @@ impl std::fmt::Display for LexError {
 
 impl std::error::Error for LexError {}
 
+/// Convert a byte offset in source code to a (line, column) pair.
+/// Both line and column are 1-based.
+pub fn source_location(source: &str, offset: usize) -> (usize, usize) {
+    let mut line = 1;
+    let mut col = 1;
+    for (i, ch) in source.char_indices() {
+        if i >= offset {
+            break;
+        }
+        if ch == '\n' {
+            line += 1;
+            col = 1;
+        } else {
+            col += 1;
+        }
+    }
+    (line, col)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -128,5 +147,12 @@ mod tests {
         assert_eq!(tokens[0].token, Token::Identifier);
         assert_eq!(tokens[1].token, Token::Newline);
         assert_eq!(tokens[2].token, Token::Identifier);
+    }
+
+    #[test]
+    fn source_location_basic() {
+        assert_eq!(source_location("hello\nworld", 0), (1, 1));
+        assert_eq!(source_location("hello\nworld", 6), (2, 1));
+        assert_eq!(source_location("hello\nworld", 8), (2, 3));
     }
 }
