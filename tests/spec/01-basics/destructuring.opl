@@ -1,0 +1,11 @@
+# expect: 1 | [2, 3] | :a:1 :b:2
+[head | tail] = [1, 2, 3]
+r1 = f"{head} | {tail}"
+
+pairs = [[":a", 1], [":b", 2]]
+results = []
+for [k, v] in pairs
+  results = results.push(f"{k}:{v}")
+end
+r2 = results.join(" ")
+print(f"{r1} | {r2}")

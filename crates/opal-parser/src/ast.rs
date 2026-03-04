@@ -32,9 +32,10 @@ pub enum StmtKind {
     },
     /// Return statement: `return expr`
     Return(Option<Expr>),
-    /// For loop: `for x in expr ... end`
+    /// For loop: `for x in expr ... end` or `for [a, b] in expr ... end`
     For {
         var: String,
+        pattern: Option<Pattern>,
         iterable: Expr,
         body: Vec<Stmt>,
     },
@@ -130,6 +131,8 @@ pub enum StmtKind {
         names: Vec<String>,
         values: Vec<Expr>,
     },
+    /// Destructure assignment: `[a, b] = list` or `[head | tail] = list`
+    DestructureAssign { pattern: Pattern, value: Expr },
 }
 
 /// An expression

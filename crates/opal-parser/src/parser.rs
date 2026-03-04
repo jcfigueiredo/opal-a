@@ -200,6 +200,28 @@ impl<'src> Parser<'src> {
             return self.parse_needs_decl(start);
         }
 
+        // Destructuring assignment: [a, b] = expr or [head | tail] = expr
+        if self.check(&Token::LBracket) {
+            let saved_pos = self.pos;
+            if let Ok(pattern) = self.parse_pattern() {
+                if self.check(&Token::Eq) {
+                    self.advance(); // consume =
+                    let value = self.parse_expression(0)?;
+                    self.expect_statement_end()?;
+                    let span = Span {
+                        start: start.start,
+                        end: value.span.end,
+                    };
+                    return Ok(Stmt {
+                        kind: StmtKind::DestructureAssign { pattern, value },
+                        span,
+                    });
+                }
+            }
+            // Not a destructuring assignment — restore position and fall through
+            self.pos = saved_pos;
+        }
+
         // Try to parse an expression — could be expression statement or assignment
         let expr = self.parse_expression(0)?;
 
@@ -442,7 +464,13 @@ impl<'src> Parser<'src> {
 
     fn parse_for_loop(&mut self, start: Span) -> Result<Stmt, ParseError> {
         self.advance(); // consume 'for'
-        let var = self.expect_identifier()?;
+        // Check for destructuring pattern: for [a, b] in ...
+        let (var, pattern) = if self.check(&Token::LBracket) {
+            let pat = self.parse_pattern()?;
+            ("_".to_string(), Some(pat))
+        } else {
+            (self.expect_identifier()?, None)
+        };
         self.expect_token(&Token::In, "in")?;
         let iterable = self.parse_expression(0)?;
         self.expect_newline()?;
@@ -452,6 +480,7 @@ impl<'src> Parser<'src> {
         Ok(Stmt {
             kind: StmtKind::For {
                 var,
+                pattern,
                 iterable,
                 body,
             },

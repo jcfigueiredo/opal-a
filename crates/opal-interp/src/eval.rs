@@ -516,6 +516,17 @@ impl<W: Write> Interpreter<W> {
                         .map_err(|msg| EvalError::RuntimeError(msg))?;
                 }
             }
+            StmtKind::DestructureAssign { pattern, value } => {
+                let val = self.eval_expr(value)?;
+                if let Some(bindings) = self.match_pattern(pattern, &val) {
+                    for (name, bound_val) in bindings {
+                        self.env.assign(name, bound_val)
+                            .map_err(|msg| EvalError::RuntimeError(msg))?;
+                    }
+                } else {
+                    return Err(EvalError::RuntimeError("destructuring pattern did not match".into()));
+                }
+            }
             StmtKind::Let { name, value } => {
                 let val = self.eval_expr(value)?;
                 self.env.set_frozen(name.clone(), val);
@@ -565,6 +576,7 @@ impl<W: Write> Interpreter<W> {
             }
             StmtKind::For {
                 var,
+                pattern,
                 iterable,
                 body,
             } => {
@@ -573,7 +585,15 @@ impl<W: Write> Interpreter<W> {
                     Value::List(items) => {
                         for item in items {
                             self.env.push_scope();
-                            self.env.set(var.clone(), item);
+                            if let Some(pat) = pattern {
+                                if let Some(bindings) = self.match_pattern(pat, &item) {
+                                    for (name, val) in bindings {
+                                        self.env.set(name, val);
+                                    }
+                                }
+                            } else {
+                                self.env.set(var.clone(), item);
+                            }
                             let result = self.eval_block(body);
                             self.env.pop_scope();
                             match result {
@@ -1509,8 +1529,9 @@ impl<W: Write> Interpreter<W> {
                     .as_ref()
                     .map(|b| self.substitute_splices(b)),
             },
-            StmtKind::For { var, iterable, body } => StmtKind::For {
+            StmtKind::For { var, pattern, iterable, body } => StmtKind::For {
                 var: var.clone(),
+                pattern: pattern.clone(),
                 iterable: self.substitute_expr(iterable),
                 body: self.substitute_splices(body),
             },
