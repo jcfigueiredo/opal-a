@@ -1,0 +1,10 @@
+# expect: [1, 2, 3] | [3, 2, 1] | 2 | true | false | 4 | 1 2 3
+list = [3, 1, 2]
+r1 = list.sort()
+r2 = list.sort().reverse()
+r3 = [1, 2, 3, 4].find(|x| x > 1)
+r4 = [1, 2, 3].any(|x| x > 2)
+r5 = [1, 2, 3].all(|x| x > 2)
+r6 = [[1, 2], [3, 4]].flatten().length()
+r7 = [1, 2, 3].join(" ")
+print(f"{r1} | {r2} | {r3} | {r4} | {r5} | {r6} | {r7}")
