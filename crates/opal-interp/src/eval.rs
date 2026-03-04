@@ -692,11 +692,15 @@ impl<W: Write> Interpreter<W> {
             ExprKind::Bool(b) => Ok(Value::Bool(*b)),
             ExprKind::Null => Ok(Value::Null),
 
-            ExprKind::Identifier(name) => self
-                .env
-                .get(name)
-                .cloned()
-                .ok_or_else(|| EvalError::UndefinedVariable(name.clone())),
+            ExprKind::Identifier(name) => {
+                if name == "None" {
+                    return Ok(Value::Null);
+                }
+                self.env
+                    .get(name)
+                    .cloned()
+                    .ok_or_else(|| EvalError::UndefinedVariable(name.clone()))
+            }
 
             ExprKind::FString(parts) => {
                 let mut result = String::new();
