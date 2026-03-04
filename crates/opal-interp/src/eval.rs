@@ -3,9 +3,10 @@ use std::io::Write;
 use std::collections::HashMap;
 
 use opal_parser::ast::*;
+#[allow(unused_imports)]
 use opal_runtime::{
-    ActorDefId, ActorId, AstId, ClassId, ClosureId, Environment, FunctionId, InstanceId, MacroId,
-    ModuleId, NativeFunctionId, NativeObjectId, ProtocolId, Value,
+    ActorDefId, ActorId, AstId, BuiltinType, ClassId, ClosureId, EnumId, Environment, FunctionId,
+    InstanceId, MacroId, ModuleId, NativeFunctionId, NativeObjectId, ProtocolId, TypeInfo, Value,
 };
 use thiserror::Error;
 
@@ -107,6 +108,23 @@ struct StoredActorInstance {
     fields: HashMap<String, Value>,
 }
 
+/// A stored enum definition
+#[derive(Clone)]
+#[allow(dead_code)]
+struct StoredEnum {
+    name: String,
+    variants: Vec<StoredEnumVariant>,
+    methods: Vec<StoredFunction>,
+}
+
+/// A stored enum variant
+#[derive(Clone)]
+#[allow(dead_code)]
+struct StoredEnumVariant {
+    name: String,
+    fields: Vec<(String, Option<String>)>,
+}
+
 pub struct Interpreter<W: Write> {
     env: Environment,
     writer: W,
@@ -125,6 +143,7 @@ pub struct Interpreter<W: Write> {
     loading_module: bool,
     macros: Vec<StoredMacro>,
     protocols: Vec<StoredProtocol>,
+    enums: Vec<StoredEnum>,
     ast_nodes: Vec<Vec<Stmt>>,
     /// Registry of FFI plugins
     plugin_registry: opal_stdlib::PluginRegistry,
@@ -153,6 +172,7 @@ impl Interpreter<std::io::Stdout> {
             loading_module: false,
             macros: Vec::new(),
             protocols: Vec::new(),
+            enums: Vec::new(),
             ast_nodes: Vec::new(),
             plugin_registry: opal_stdlib::PluginRegistry::new(),
             native_objects: Vec::new(),
@@ -185,6 +205,7 @@ impl<W: Write> Interpreter<W> {
             loading_module: false,
             macros: Vec::new(),
             protocols: Vec::new(),
+            enums: Vec::new(),
             ast_nodes: Vec::new(),
             plugin_registry: opal_stdlib::PluginRegistry::new(),
             native_objects: Vec::new(),
@@ -771,7 +792,7 @@ impl<W: Write> Interpreter<W> {
                         FStringPart::Literal(s) => result.push_str(s),
                         FStringPart::Expr(e) => {
                             let val = self.eval_expr(e)?;
-                            result.push_str(&val.to_string());
+                            result.push_str(&self.format_value(&val));
                         }
                     }
                 }
@@ -945,6 +966,27 @@ impl<W: Write> Interpreter<W> {
                                 "module has no member '{}'",
                                 field
                             )))
+                        }
+                    }
+                    Value::Type(info) => {
+                        match field.as_str() {
+                            "name" => Ok(Value::String(self.type_info_name(info))),
+                            "fields" => {
+                                match info {
+                                    TypeInfo::Class(id) => {
+                                        let class = &self.classes[id.0];
+                                        let field_list: Vec<Value> = class.needs.iter().map(|(name, type_ann)| {
+                                            Value::List(vec![
+                                                Value::Symbol(name.clone()),
+                                                Value::String(type_ann.clone().unwrap_or_else(|| "Any".to_string())),
+                                            ])
+                                        }).collect();
+                                        Ok(Value::List(field_list))
+                                    }
+                                    _ => Ok(Value::List(vec![])),
+                                }
+                            }
+                            _ => Err(EvalError::TypeError(format!("Type has no field '{}'", field))),
                         }
                     }
                     _ => Err(EvalError::TypeError(format!(
@@ -1335,7 +1377,7 @@ impl<W: Write> Interpreter<W> {
             arg_values.push(self.eval_expr(&arg.value)?);
         }
 
-        // Builtin constructors: Ok(), Error(), Some()
+        // Builtin constructors and functions
         match func_name.as_str() {
             "Ok" if arg_values.len() == 1 => {
                 return Ok(Value::Ok(Box::new(arg_values.into_iter().next().unwrap())));
@@ -1349,6 +1391,10 @@ impl<W: Write> Interpreter<W> {
                 return Ok(Value::Some(Box::new(
                     arg_values.into_iter().next().unwrap(),
                 )));
+            }
+            "typeof" if arg_values.len() == 1 => {
+                let type_info = self.value_type_info(&arg_values[0]);
+                return Ok(Value::Type(type_info));
             }
             _ => {}
         }
@@ -1855,6 +1901,32 @@ impl<W: Write> Interpreter<W> {
                 }
             }
 
+            // Type methods
+            (Value::Type(info), _) => {
+                match method {
+                    "name" => {
+                        let name = self.type_info_name(info);
+                        Ok(Value::String(name))
+                    }
+                    "fields" => {
+                        match info {
+                            TypeInfo::Class(id) => {
+                                let class = &self.classes[id.0];
+                                let field_list: Vec<Value> = class.needs.iter().map(|(name, type_ann)| {
+                                    Value::List(vec![
+                                        Value::Symbol(name.clone()),
+                                        Value::String(type_ann.clone().unwrap_or_else(|| "Any".to_string())),
+                                    ])
+                                }).collect();
+                                Ok(Value::List(field_list))
+                            }
+                            _ => Ok(Value::List(vec![])),
+                        }
+                    }
+                    _ => Err(EvalError::RuntimeError(format!("Type has no method '{}'", method))),
+                }
+            }
+
             _ => Err(EvalError::TypeError(format!(
                 "no method '{}' on {:?}",
                 method, obj
@@ -2071,6 +2143,76 @@ impl<W: Write> Interpreter<W> {
                 .all(|req| class.methods.iter().any(|m| m.name == *req))
         } else {
             false
+        }
+    }
+
+    fn value_type_info(&self, value: &Value) -> TypeInfo {
+        match value {
+            Value::Integer(_) => TypeInfo::Builtin(BuiltinType::Int),
+            Value::Float(_) => TypeInfo::Builtin(BuiltinType::Float),
+            Value::String(_) => TypeInfo::Builtin(BuiltinType::String),
+            Value::Bool(_) => TypeInfo::Builtin(BuiltinType::Bool),
+            Value::Null => TypeInfo::Builtin(BuiltinType::Null),
+            Value::Symbol(_) => TypeInfo::Builtin(BuiltinType::Symbol),
+            Value::List(_) => TypeInfo::Builtin(BuiltinType::List),
+            Value::Dict(_) => TypeInfo::Builtin(BuiltinType::Dict),
+            Value::Range { .. } => TypeInfo::Builtin(BuiltinType::Range),
+            Value::Function(_) | Value::MultiFunction(_) | Value::Closure(_) | Value::NativeFunction(_) => {
+                TypeInfo::Builtin(BuiltinType::Fn)
+            }
+            Value::Instance(id) => {
+                let inst = &self.instances[id.0];
+                TypeInfo::Class(inst.class_id)
+            }
+            Value::EnumVariant { enum_id, variant_index, .. } => {
+                TypeInfo::EnumVariant(*enum_id, *variant_index)
+            }
+            _ => TypeInfo::Builtin(BuiltinType::Fn),
+        }
+    }
+
+    fn type_info_name(&self, info: &TypeInfo) -> String {
+        match info {
+            TypeInfo::Builtin(b) => match b {
+                BuiltinType::Int => "Int",
+                BuiltinType::Float => "Float",
+                BuiltinType::String => "String",
+                BuiltinType::Bool => "Bool",
+                BuiltinType::Null => "Null",
+                BuiltinType::Symbol => "Symbol",
+                BuiltinType::List => "List",
+                BuiltinType::Dict => "Dict",
+                BuiltinType::Range => "Range",
+                BuiltinType::Fn => "Fn",
+            }.to_string(),
+            TypeInfo::Class(id) => self.classes[id.0].name.clone(),
+            TypeInfo::Protocol(id) => self.protocols[id.0].name.clone(),
+            TypeInfo::Enum(id) => self.enums[id.0].name.clone(),
+            TypeInfo::EnumVariant(id, vi) => {
+                format!("{}.{}", self.enums[id.0].name, self.enums[id.0].variants[*vi].name)
+            }
+        }
+    }
+
+    fn format_value(&self, value: &Value) -> String {
+        match value {
+            Value::Type(info) => self.type_info_name(info),
+            Value::EnumVariant { enum_id, variant_index, fields } => {
+                let e = &self.enums[enum_id.0];
+                let v = &e.variants[*variant_index];
+                if fields.is_empty() {
+                    format!("{}.{}", e.name, v.name)
+                } else {
+                    let args: Vec<String> = fields.iter().map(|f| self.format_value(f)).collect();
+                    format!("{}.{}({})", e.name, v.name, args.join(", "))
+                }
+            }
+            Value::Instance(id) => {
+                let inst = &self.instances[id.0];
+                let class = &self.classes[inst.class_id.0];
+                format!("<{} instance>", class.name)
+            }
+            other => other.to_string(),
         }
     }
 
@@ -2438,6 +2580,12 @@ fn values_equal(a: &Value, b: &Value) -> bool {
         (Value::Bool(a), Value::Bool(b)) => a == b,
         (Value::Symbol(a), Value::Symbol(b)) => a == b,
         (Value::Null, Value::Null) => true,
+        (Value::Type(a), Value::Type(b)) => a == b,
+        (Value::EnumVariant { enum_id: a_id, variant_index: a_vi, fields: a_f },
+         Value::EnumVariant { enum_id: b_id, variant_index: b_vi, fields: b_f }) => {
+            a_id == b_id && a_vi == b_vi && a_f.len() == b_f.len() &&
+            a_f.iter().zip(b_f.iter()).all(|(a, b)| values_equal(a, b))
+        }
         _ => false,
     }
 }
@@ -3271,5 +3419,37 @@ print(L.greet())
 "#)
         .unwrap();
         assert_eq!(output, "hello");
+    }
+
+    // === typeof tests ===
+    #[test]
+    fn typeof_builtin() {
+        assert_eq!(run(r#"print(typeof(42).name)"#).unwrap(), "Int");
+        assert_eq!(run(r#"print(typeof("hi").name)"#).unwrap(), "String");
+        assert_eq!(run(r#"print(typeof(true).name)"#).unwrap(), "Bool");
+        assert_eq!(run(r#"print(typeof(null).name)"#).unwrap(), "Null");
+        assert_eq!(run(r#"print(typeof(:ok).name)"#).unwrap(), "Symbol");
+    }
+
+    #[test]
+    fn typeof_equality() {
+        assert_eq!(run(r#"print(typeof(1) == typeof(2))"#).unwrap(), "true");
+        assert_eq!(run(r#"print(typeof(1) == typeof("hi"))"#).unwrap(), "false");
+    }
+
+    #[test]
+    fn typeof_class() {
+        assert_eq!(
+            run("class Foo\n  needs x: Int\nend\nf = Foo.new(x: 1)\nprint(typeof(f).name)").unwrap(),
+            "Foo"
+        );
+    }
+
+    #[test]
+    fn typeof_fields() {
+        assert_eq!(
+            run("class Foo\n  needs x: Int\n  needs y: String\nend\nf = Foo.new(x: 1, y: \"a\")\nprint(typeof(f).fields)").unwrap(),
+            "[[:x, Int], [:y, String]]"
+        );
     }
 }

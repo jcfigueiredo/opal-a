@@ -1,0 +1,2 @@
+# expect: Int | Float | String | Bool | Null | Symbol | List | Dict | Fn
+print(f"{typeof(42).name} | {typeof(3.14).name} | {typeof('hi').name} | {typeof(true).name} | {typeof(null).name} | {typeof(:ok).name} | {typeof([1]).name} | {typeof({:}).name} | {typeof(|x| x).name}")
