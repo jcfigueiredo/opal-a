@@ -1,3 +1,4 @@
 .worktrees/
 /target
 **/*.rs.bk
+zed-opal-extension/
