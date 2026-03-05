@@ -1,19 +1,30 @@
 {
   "name": "opal-language",
   "displayName": "Opal Language",
-  "description": "Syntax highlighting for the Opal programming language",
-  "version": "0.1.0",
+  "description": "Syntax highlighting and LSP support for the Opal programming language",
+  "version": "0.2.0",
   "publisher": "claudio",
   "engines": {
     "vscode": "^1.75.0"
   },
-  "categories": ["Programming Languages"],
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:opal"
+  ],
+  "main": "./extension.js",
   "contributes": {
     "languages": [
       {
         "id": "opal",
-        "aliases": ["Opal", "opal"],
-        "extensions": [".opl"],
+        "aliases": [
+          "Opal",
+          "opal"
+        ],
+        "extensions": [
+          ".opl"
+        ],
         "configuration": "./language-configuration.json"
       }
     ],
@@ -24,5 +35,8 @@
         "path": "./syntaxes/opal.tmLanguage.json"
       }
     ]
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
   }
 }
