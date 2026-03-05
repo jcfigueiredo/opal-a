@@ -1,0 +1,30 @@
+{
+  "comments": {
+    "lineComment": "#",
+    "blockComment": ["###", "###"]
+  },
+  "brackets": [
+    ["(", ")"],
+    ["[", "]"],
+    ["{", "}"]
+  ],
+  "autoClosingPairs": [
+    { "open": "(", "close": ")" },
+    { "open": "[", "close": "]" },
+    { "open": "{", "close": "}" },
+    { "open": "\"", "close": "\"", "notIn": ["string", "comment"] },
+    { "open": "'", "close": "'", "notIn": ["string", "comment"] }
+  ],
+  "surroundingPairs": [
+    ["(", ")"],
+    ["[", "]"],
+    ["{", "}"],
+    ["\"", "\""],
+    ["'", "'"]
+  ],
+  "indentationRules": {
+    "increaseIndentPattern": "^\\s*(def|class|module|protocol|enum|model|actor|if|elsif|else|for|while|match|case|try|catch|ensure|do|receive|macro|on|extern|implements)\\b",
+    "decreaseIndentPattern": "^\\s*(end|elsif|else|catch|ensure)\\b"
+  },
+  "wordPattern": "[a-zA-Z_][a-zA-Z0-9_]*!?"
+}

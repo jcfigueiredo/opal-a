@@ -1,0 +1,28 @@
+{
+  "name": "opal-language",
+  "displayName": "Opal Language",
+  "description": "Syntax highlighting for the Opal programming language",
+  "version": "0.1.0",
+  "publisher": "claudio",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": ["Programming Languages"],
+  "contributes": {
+    "languages": [
+      {
+        "id": "opal",
+        "aliases": ["Opal", "opal"],
+        "extensions": [".opl"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "opal",
+        "scopeName": "source.opal",
+        "path": "./syntaxes/opal.tmLanguage.json"
+      }
+    ]
+  }
+}
