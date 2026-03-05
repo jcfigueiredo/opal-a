@@ -27,6 +27,20 @@ rm -rf "$EXT_DIR"
 # Copy extension (can't symlink — Cursor needs real files)
 cp -r "$EXT_SRC" "$EXT_DIR"
 
+# Install node_modules for LSP client
+echo "Installing dependencies..."
+(cd "$EXT_DIR" && pnpm install --silent 2>/dev/null) || {
+    echo "Warning: pnpm install failed. LSP features won't work."
+    echo "Run manually: cd $EXT_DIR && pnpm install"
+}
+
+# Build LSP if not already built
+LSP_BIN="$OPAL_ROOT/target/release/opal-lsp"
+if [ ! -f "$LSP_BIN" ]; then
+    echo "Building opal-lsp (release)..."
+    (cd "$OPAL_ROOT" && cargo build --release -p opal-lsp)
+fi
+
 echo ""
 echo "Done! Restart Cursor to pick up the Opal extension."
-echo "Open any .opl file — it should show 'Opal' with syntax highlighting."
+echo "Open any .opl file — syntax highlighting + go-to-definition should work."
