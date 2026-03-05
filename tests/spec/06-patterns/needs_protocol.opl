@@ -1,0 +1,40 @@
+# expect: saved bounty | BountyRepo.new() — 'store' must implement Storage
+# Protocol validation on needs at construction time
+
+protocol Storage
+  def save(record) -> String
+end
+
+class MemoryStore implements Storage
+  def save(record)
+    f"saved {record}"
+  end
+end
+
+class NotAStore
+  def something()
+    "nope"
+  end
+end
+
+class BountyRepo
+  needs store: Storage
+
+  def persist(item)
+    .store.save(item)
+  end
+end
+
+# Conforming — works
+repo = BountyRepo.new(store: MemoryStore.new())
+result1 = repo.persist("bounty")
+
+# Non-conforming — error
+result2 = try
+  BountyRepo.new(store: NotAStore.new())
+  "no error"
+catch as e
+  e
+end
+
+print(f"{result1} | {result2}")

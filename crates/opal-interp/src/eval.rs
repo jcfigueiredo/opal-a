@@ -3004,14 +3004,14 @@ impl<W: Write> Interpreter<W> {
                 let mut fields = HashMap::new();
 
                 // Match named args to needs declarations
-                for (need_name, _type_ann, default) in &class.needs {
+                for (need_name, type_ann, default) in &class.needs {
                     // Try named arg first
                     let value = named_args
                         .iter()
                         .find(|(name, _)| name.as_deref() == Some(need_name.as_str()))
                         .map(|(_, v)| v.clone());
-                    if let Some(val) = value {
-                        fields.insert(need_name.clone(), val);
+                    let val = if let Some(val) = value {
+                        val
                     } else {
                         // Try positional
                         let idx = class
@@ -3020,17 +3020,37 @@ impl<W: Write> Interpreter<W> {
                             .position(|(n, _, _)| n == need_name)
                             .unwrap();
                         if idx < args.len() {
-                            fields.insert(need_name.clone(), args[idx].clone());
+                            args[idx].clone()
                         } else if let Some(default_expr) = default {
-                            let val = self.eval_expr(default_expr)?;
-                            fields.insert(need_name.clone(), val);
+                            self.eval_expr(default_expr)?
                         } else {
                             return Err(EvalError::TypeError(format!(
                                 "missing required field '{}' in .new()",
                                 need_name
                             )));
                         }
+                    };
+
+                    // Protocol conformance check
+                    if let Some(type_name) = type_ann {
+                        if let Some(Value::Protocol(_proto_id)) = self.env.get(type_name).cloned() {
+                            let conforms = match &val {
+                                Value::Instance(iid) => {
+                                    let inst_class_id = self.instances[iid.0].class_id;
+                                    self.class_implements_protocol(inst_class_id, type_name)
+                                }
+                                _ => true,
+                            };
+                            if !conforms {
+                                return Err(EvalError::Raise(Value::String(format!(
+                                    "{}.new() — '{}' must implement {}",
+                                    class.name, need_name, type_name
+                                ))));
+                            }
+                        }
                     }
+
+                    fields.insert(need_name.clone(), val);
                 }
 
                 let instance_id = InstanceId(self.instances.len());
