@@ -24,6 +24,13 @@ module.exports = grammar({
       $.let_binding,
       $.function_definition,
       $.return_statement,
+      $.class_definition,
+      $.protocol_definition,
+      $.module_definition,
+      $.enum_definition,
+      $.model_definition,
+      $.needs_declaration,
+      $.instance_assign,
       $.expression_statement,
     ),
 
@@ -62,6 +69,8 @@ module.exports = grammar({
       $.unary_expression,
       $.grouped_expression,
       $.if_expression,
+      $.instance_variable,
+      $.member_access,
     ),
 
     call: $ => prec(2, seq(
@@ -184,6 +193,99 @@ module.exports = grammar({
       'else',
       optional(field('body', $.body)),
     ),
+
+    // Classes, protocols, modules, enums, models
+    class_definition: $ => seq(
+      'class',
+      field('name', $.identifier),
+      optional($.implements_clause),
+      repeat(choice(
+        $.needs_declaration,
+        $.function_definition,
+      )),
+      'end',
+    ),
+
+    implements_clause: $ => seq(
+      'implements',
+      $.identifier,
+      repeat(seq(',', $.identifier)),
+    ),
+
+    needs_declaration: $ => seq(
+      'needs',
+      field('name', $.identifier),
+      optional(seq(':', field('type', $.type_annotation))),
+      optional(seq('=', field('default', $._expression))),
+    ),
+
+    protocol_definition: $ => seq(
+      'protocol',
+      field('name', $.identifier),
+      repeat($.protocol_method),
+      'end',
+    ),
+
+    protocol_method: $ => seq(
+      'def',
+      field('name', $.identifier),
+      optional(field('params', $.parameters)),
+      optional(seq('->', $.return_type)),
+    ),
+
+    module_definition: $ => seq(
+      'module',
+      field('name', $.identifier),
+      optional(field('body', $.body)),
+      'end',
+    ),
+
+    enum_definition: $ => seq(
+      'enum',
+      field('name', $.identifier),
+      repeat($.enum_variant),
+      repeat($.function_definition),
+      'end',
+    ),
+
+    enum_variant: $ => seq(
+      field('name', $.identifier),
+      optional($.enum_fields),
+    ),
+
+    enum_fields: $ => seq(
+      '(',
+      $.enum_field,
+      repeat(seq(',', $.enum_field)),
+      ')',
+    ),
+
+    enum_field: $ => seq(
+      field('name', $.identifier),
+      optional(seq(':', field('type', $.type_annotation))),
+    ),
+
+    model_definition: $ => seq(
+      'model',
+      field('name', $.identifier),
+      repeat($.needs_declaration),
+      repeat($.function_definition),
+      'end',
+    ),
+
+    instance_assign: $ => seq(
+      $.instance_variable,
+      '=',
+      field('value', $._expression),
+    ),
+
+    instance_variable: $ => seq('.', $.identifier),
+
+    member_access: $ => prec(3, seq(
+      field('object', $._expression),
+      '.',
+      field('field', $.identifier),
+    )),
 
     // Literals
     identifier: $ => /[a-zA-Z_][a-zA-Z0-9_]*!?/,

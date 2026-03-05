@@ -1,0 +1,98 @@
+================
+Class with needs and method
+================
+
+class Bounty
+  needs title: String
+  needs amount: Float
+
+  def display()
+    print(.title)
+  end
+end
+
+---
+
+(source_file
+  (class_definition
+    (identifier)
+    (needs_declaration (identifier) (type_annotation (identifier)))
+    (needs_declaration (identifier) (type_annotation (identifier)))
+    (function_definition
+      (identifier)
+      (parameters)
+      (body (expression_statement (call (identifier) (instance_variable (identifier))))))))
+
+================
+Class implements protocol
+================
+
+class Dog implements Animal
+  needs name: String
+end
+
+---
+
+(source_file
+  (class_definition
+    (identifier)
+    (implements_clause (identifier))
+    (needs_declaration (identifier) (type_annotation (identifier)))))
+
+================
+Enum with variants
+================
+
+enum Color
+  Red
+  Green
+  Blue(intensity: Float)
+end
+
+---
+
+(source_file
+  (enum_definition
+    (identifier)
+    (enum_variant (identifier))
+    (enum_variant (identifier))
+    (enum_variant (identifier) (enum_fields (enum_field (identifier) (type_annotation (identifier)))))))
+
+================
+Protocol
+================
+
+protocol Scorable
+  def score() -> Int
+end
+
+---
+
+(source_file
+  (protocol_definition
+    (identifier)
+    (protocol_method
+      (identifier)
+      (parameters)
+      (return_type (identifier)))))
+
+================
+Module
+================
+
+module Utils
+  def helper()
+    42
+  end
+end
+
+---
+
+(source_file
+  (module_definition
+    (identifier)
+    (body
+      (function_definition
+        (identifier)
+        (parameters)
+        (body (expression_statement (integer)))))))
