@@ -1,19 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Setup or update the Opal dev extension for Zed.
+# Setup or update the Opal extension for Zed.
 #
-# This creates an extension directory that Zed can load via:
-#   Cmd+Shift+P → "zed: install dev extension" → select the extension dir
+# Compiles the tree-sitter grammar to WASM using Zed's WASI SDK,
+# then installs it directly into Zed's extension directory.
 #
-# Re-run this script after changing the grammar or queries to update.
+# Re-run this script after changing grammar.js, scanner.c, or query files.
+# Restart Zed (or reload) to pick up changes.
 
 OPAL_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-EXT_DIR="$OPAL_ROOT/zed-opal-extension"
 TS_DIR="$OPAL_ROOT/tree-sitter-opal"
+ZED_EXT_DIR="$HOME/Library/Application Support/Zed/extensions"
+WASI_SDK="$ZED_EXT_DIR/build/wasi-sdk"
+EXT_INSTALLED="$ZED_EXT_DIR/installed/opal"
 
 echo "Opal root: $OPAL_ROOT"
-echo "Extension dir: $EXT_DIR"
 
 # Verify tree-sitter-opal exists
 if [ ! -f "$TS_DIR/grammar.js" ]; then
@@ -21,17 +23,59 @@ if [ ! -f "$TS_DIR/grammar.js" ]; then
     exit 1
 fi
 
-# Create extension structure
-mkdir -p "$EXT_DIR/grammars/opal"
-mkdir -p "$EXT_DIR/languages/opal"
+# Verify Zed's WASI SDK exists
+if [ ! -f "$WASI_SDK/bin/clang" ]; then
+    echo "Error: Zed's WASI SDK not found at $WASI_SDK"
+    echo "Open Zed and install any extension first (this downloads the SDK)."
+    exit 1
+fi
+
+# Step 1: Regenerate parser.c from grammar.js
+echo "Regenerating parser..."
+(cd "$TS_DIR" && pnpm install --silent 2>/dev/null && pnpm run generate 2>&1) || {
+    echo "Error: Could not regenerate parser."
+    echo "  cd $TS_DIR && pnpm install && pnpm run generate"
+    exit 1
+}
+
+if [ ! -f "$TS_DIR/src/parser.c" ]; then
+    echo "Error: src/parser.c not found after generation"
+    exit 1
+fi
+
+# Step 2: Compile to WASM using Zed's WASI SDK
+echo "Compiling grammar to WASM..."
+CC="$WASI_SDK/bin/clang"
+SYSROOT="$WASI_SDK/share/wasi-sysroot"
+TMPDIR=$(mktemp -d)
+
+"$CC" --sysroot="$SYSROOT" --target=wasm32-wasip1 -O2 -c -I "$TS_DIR/src" \
+    "$TS_DIR/src/parser.c" -o "$TMPDIR/parser.o"
+
+"$CC" --sysroot="$SYSROOT" --target=wasm32-wasip1 -O2 -c -I "$TS_DIR/src" \
+    "$TS_DIR/src/scanner.c" -o "$TMPDIR/scanner.o"
+
+"$WASI_SDK/bin/wasm-ld" --no-entry --export-dynamic \
+    -L "$SYSROOT/lib/wasm32-wasip1" -lc \
+    -o "$TMPDIR/opal.wasm" "$TMPDIR/parser.o" "$TMPDIR/scanner.o"
+
+echo "  WASM size: $(du -h "$TMPDIR/opal.wasm" | cut -f1)"
+
+# Step 3: Install into Zed's extensions directory
+echo "Installing extension..."
+mkdir -p "$EXT_INSTALLED/grammars" "$EXT_INSTALLED/languages/opal"
+
+cp "$TMPDIR/opal.wasm" "$EXT_INSTALLED/grammars/opal.wasm"
+rm -rf "$TMPDIR"
 
 # extension.toml
-cat > "$EXT_DIR/extension.toml" << 'TOML'
+cat > "$EXT_INSTALLED/extension.toml" << 'TOML'
 id = "opal"
 name = "Opal"
 version = "0.1.0"
 schema_version = 1
-description = "Opal language support: syntax highlighting and LSP."
+description = "Opal language support: syntax highlighting."
+repository = "https://github.com/jcfigueiredo/opal-a"
 authors = ["Claudio"]
 
 [grammars.opal]
@@ -40,7 +84,7 @@ rev = "main"
 TOML
 
 # Language config
-cat > "$EXT_DIR/languages/opal/config.toml" << 'TOML'
+cat > "$EXT_INSTALLED/languages/opal/config.toml" << 'TOML'
 name = "Opal"
 grammar = "opal"
 path_suffixes = ["opl"]
@@ -58,12 +102,11 @@ word_characters = ["!"]
 TOML
 
 # Copy query files
-echo "Copying query files..."
-cp "$TS_DIR/queries/highlights.scm" "$EXT_DIR/languages/opal/highlights.scm"
-cp "$TS_DIR/queries/indents.scm" "$EXT_DIR/languages/opal/indents.scm"
+cp "$TS_DIR/queries/highlights.scm" "$EXT_INSTALLED/languages/opal/highlights.scm"
+cp "$TS_DIR/queries/indents.scm" "$EXT_INSTALLED/languages/opal/indents.scm"
 
-# Create outline query from locals (Zed uses outline.scm for symbol outline)
-cat > "$EXT_DIR/languages/opal/outline.scm" << 'SCM'
+# Outline query for Zed's symbol outline
+cat > "$EXT_INSTALLED/languages/opal/outline.scm" << 'SCM'
 (function_definition name: (identifier) @name) @item
 (class_definition name: (identifier) @name) @item
 (module_definition name: (identifier) @name) @item
@@ -75,56 +118,60 @@ cat > "$EXT_DIR/languages/opal/outline.scm" << 'SCM'
 (type_alias name: (identifier) @name) @item
 SCM
 
-# Regenerate parser (generates src/parser.c which is gitignored)
-echo "Regenerating parser..."
-(cd "$TS_DIR" && pnpm install --silent 2>/dev/null && pnpm run generate 2>&1) || {
-    echo "Warning: Could not regenerate parser. If src/parser.c is missing, run:"
-    echo "  cd $TS_DIR && pnpm install && pnpm run generate"
+# Step 4: Update Zed's extension index
+echo "Updating extension index..."
+python3 << 'PY'
+import json, os
+
+index_path = os.path.expanduser("~/Library/Application Support/Zed/extensions/index.json")
+with open(index_path) as f:
+    index = json.load(f)
+
+index["extensions"]["opal"] = {
+    "manifest": {
+        "id": "opal",
+        "name": "Opal",
+        "version": "0.1.0",
+        "schema_version": 1,
+        "description": "Opal language support: syntax highlighting.",
+        "repository": "https://github.com/jcfigueiredo/opal-a",
+        "authors": ["Claudio"],
+        "lib": {"kind": None, "version": None},
+        "themes": [],
+        "icon_themes": [],
+        "languages": ["languages/opal"],
+        "grammars": {
+            "opal": {
+                "repository": "https://github.com/jcfigueiredo/opal-a",
+                "rev": "main",
+                "path": None
+            }
+        },
+        "language_servers": {},
+        "context_servers": {},
+        "agent_servers": {},
+        "slash_commands": {},
+        "snippets": None,
+        "capabilities": []
+    },
+    "dev": False
 }
 
-# Verify parser.c exists (Zed needs it to compile the grammar)
-if [ ! -f "$TS_DIR/src/parser.c" ]; then
-    echo "Error: src/parser.c not found. Run: cd $TS_DIR && pnpm install && pnpm run generate"
-    exit 1
-fi
+index["languages"]["Opal"] = {
+    "extension": "opal",
+    "path": "languages/opal",
+    "matcher": {
+        "path_suffixes": ["opl"],
+        "first_line_pattern": None
+    },
+    "hidden": False,
+    "grammar": "opal"
+}
 
-# Symlink grammar source files into the extension's grammar dir
-# Zed dev extensions compile from source — it needs the tree-sitter files
-echo "Linking grammar source..."
-for f in grammar.js tree-sitter.json package.json; do
-    ln -sf "$TS_DIR/$f" "$EXT_DIR/grammars/opal/$f"
-done
-
-# Link src/ directory (parser.c, scanner.c, etc.)
-ln -sfn "$TS_DIR/src" "$EXT_DIR/grammars/opal/src"
-
-# Build LSP if not already built
-LSP_BIN="$OPAL_ROOT/target/release/opal-lsp"
-if [ ! -f "$LSP_BIN" ]; then
-    echo "Building opal-lsp (release)..."
-    (cd "$OPAL_ROOT" && cargo build --release -p opal-lsp)
-fi
+with open(index_path, "w") as f:
+    json.dump(index, f, indent=2)
+PY
 
 echo ""
-echo "Done! Extension ready at: $EXT_DIR"
-echo ""
-echo "To install in Zed:"
-echo "  1. Open Zed"
-echo "  2. Cmd+Shift+P → 'zed: install dev extension'"
-echo "  3. Select: $EXT_DIR"
-echo ""
-echo "To configure the LSP, add to ~/.config/zed/settings.json:"
-echo ""
-echo '  "lsp": {'
-echo '    "opal-lsp": {'
-echo "      \"binary\": { \"path\": \"$LSP_BIN\" }"
-echo '    }'
-echo '  },'
-echo '  "languages": {'
-echo '    "Opal": {'
-echo '      "language_servers": ["opal-lsp"]'
-echo '    }'
-echo '  }'
-echo ""
-echo "After grammar changes, re-run this script then"
-echo "Cmd+Shift+P → 'zed: rebuild extension' in Zed."
+echo "Done! Restart Zed to pick up the Opal extension."
+echo "Open any .opl file — it should show 'Opal' in the status bar."
