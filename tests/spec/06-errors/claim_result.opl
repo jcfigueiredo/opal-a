@@ -1,0 +1,25 @@
+# expect: claimed! | Error: insufficient skill
+# Result types for bounty claim outcomes
+
+def claim_bounty(has_skill, reward)
+  if not has_skill
+    return Error("insufficient skill")
+  end
+  Ok(reward)
+end
+
+r1 = match claim_bounty(true, 500.0)
+  case Ok(amount)
+    "claimed!"
+  case Error(msg)
+    f"Error: {msg}"
+end
+
+r2 = match claim_bounty(false, 500.0)
+  case Ok(amount)
+    "claimed!"
+  case Error(msg)
+    f"Error: {msg}"
+end
+
+print(f"{r1} | {r2}")

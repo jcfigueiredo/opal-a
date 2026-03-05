@@ -1,0 +1,32 @@
+# expect: processed 3 claims | total: 1000.0
+# Actor-based bounty claim processor
+
+actor ClaimProcessor
+  def init()
+    .total = 0.0
+    .count = 0
+  end
+
+  receive
+    case :add_500
+      .total = .total + 500.0
+      .count = .count + 1
+    case :add_250
+      .total = .total + 250.0
+      .count = .count + 1
+    case :get_total
+      reply .total
+    case :get_count
+      reply .count
+  end
+end
+
+proc = ClaimProcessor.new()
+proc.send(:add_500)
+proc.send(:add_250)
+proc.send(:add_250)
+
+count = await proc.send(:get_count)
+total = await proc.send(:get_total)
+
+print(f"processed {count} claims | total: {total}")

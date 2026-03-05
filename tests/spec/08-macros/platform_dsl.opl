@@ -1,0 +1,14 @@
+# expect: unless works
+# Metaprogramming: macros and AST evaluation
+
+macro unless(cond, body)
+  ast
+    if not $cond
+      $body
+    end
+  end
+end
+
+@unless false
+  print("unless works")
+end
