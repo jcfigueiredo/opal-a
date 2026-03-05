@@ -1,0 +1,25 @@
+# expect: 750.0
+# Actor dependency injection with needs
+
+actor AwardProcessor
+  needs rate: Float
+
+  def init()
+    .total = 0.0
+  end
+
+  receive
+    case :process_100
+      .total = .total + (100.0 * .rate)
+    case :process_200
+      .total = .total + (200.0 * .rate)
+    case :get_total
+      reply .total
+  end
+end
+
+proc = AwardProcessor.new(rate: 2.5)
+proc.send(:process_100)
+proc.send(:process_200)
+total = await proc.send(:get_total)
+print(total)

@@ -1373,12 +1373,19 @@ impl<'src> Parser<'src> {
         self.expect_newline()?;
         self.skip_newlines();
 
+        let mut needs = Vec::new();
         let mut init = None;
         let mut receive_cases = Vec::new();
         let mut methods = Vec::new();
 
         while !self.check(&Token::End) && !self.is_at_end() {
-            if self.check(&Token::Def) {
+            if self.check(&Token::Needs) {
+                let stmt = self.parse_needs_decl(self.current_span())?;
+                if let StmtKind::NeedsDecl(decl) = stmt.kind {
+                    needs.push(decl);
+                }
+                self.skip_newlines();
+            } else if self.check(&Token::Def) {
                 let func = self.parse_function_def()?;
                 // Check if it's init
                 if let StmtKind::FuncDef {
@@ -1418,6 +1425,7 @@ impl<'src> Parser<'src> {
         Ok(Stmt {
             kind: StmtKind::ActorDef {
                 name,
+                needs,
                 init,
                 receive_cases,
                 methods,

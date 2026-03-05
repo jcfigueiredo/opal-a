@@ -115,6 +115,7 @@ struct StoredMacro {
 struct StoredActorDef {
     #[allow(dead_code)]
     name: String,
+    needs: Vec<(String, Option<String>, Option<Expr>)>,
     init: Option<Vec<Stmt>>,
     receive_cases: Vec<MatchCase>,
 }
@@ -998,6 +999,7 @@ impl<W: Write> Interpreter<W> {
             }
             StmtKind::ActorDef {
                 name,
+                needs,
                 init,
                 receive_cases,
                 ..
@@ -1005,6 +1007,7 @@ impl<W: Write> Interpreter<W> {
                 let def_idx = self.actor_defs.len();
                 self.actor_defs.push(StoredActorDef {
                     name: name.clone(),
+                    needs: needs.iter().map(|n| (n.name.clone(), n.type_annotation.clone(), n.default.clone())).collect(),
                     init: init.clone(),
                     receive_cases: receive_cases.clone(),
                 });
@@ -2913,9 +2916,33 @@ impl<W: Write> Interpreter<W> {
                 let def_idx = def_id.0;
                 let def = self.actor_defs[def_idx].clone();
                 let actor_id = ActorId(self.actors.len());
+
+                // Resolve needs
+                let mut fields = HashMap::new();
+                for (need_name, _type_ann, default) in &def.needs {
+                    let value = named_args.iter()
+                        .find(|(name, _)| name.as_deref() == Some(need_name.as_str()))
+                        .map(|(_, v)| v.clone());
+                    if let Some(val) = value {
+                        fields.insert(need_name.clone(), val);
+                    } else if let Some(default_expr) = default {
+                        let val = self.eval_expr(default_expr)?;
+                        fields.insert(need_name.clone(), val);
+                    } else {
+                        let idx = def.needs.iter().position(|(n, _, _)| n == need_name).unwrap();
+                        if idx < args.len() {
+                            fields.insert(need_name.clone(), args[idx].clone());
+                        } else {
+                            return Err(EvalError::TypeError(format!(
+                                "missing required field '{}' in actor .new()", need_name
+                            )));
+                        }
+                    }
+                }
+
                 self.actors.push(StoredActorInstance {
                     def_idx,
-                    fields: HashMap::new(),
+                    fields,
                 });
                 // Run init if present
                 if let Some(init_body) = &def.init {

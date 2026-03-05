@@ -78,6 +78,7 @@ pub enum StmtKind {
     /// Actor definition
     ActorDef {
         name: String,
+        needs: Vec<NeedsDecl>,
         init: Option<Vec<Stmt>>,
         receive_cases: Vec<MatchCase>,
         methods: Vec<Stmt>,
