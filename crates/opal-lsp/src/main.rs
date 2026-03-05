@@ -6,6 +6,7 @@ use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
 
 mod diagnostics;
+mod goto_def;
 mod symbols;
 
 #[derive(Debug)]
@@ -36,6 +37,7 @@ impl LanguageServer for OpalBackend {
                     TextDocumentSyncKind::FULL,
                 )),
                 document_symbol_provider: Some(OneOf::Left(true)),
+                definition_provider: Some(OneOf::Left(true)),
                 ..Default::default()
             },
             ..Default::default()
@@ -89,6 +91,34 @@ impl LanguageServer for OpalBackend {
 
         let syms = symbols::document_symbols(&program, source);
         Ok(Some(DocumentSymbolResponse::Nested(syms)))
+    }
+
+    async fn goto_definition(
+        &self,
+        params: GotoDefinitionParams,
+    ) -> Result<Option<GotoDefinitionResponse>> {
+        let uri = params.text_document_position_params.text_document.uri;
+        let position = params.text_document_position_params.position;
+
+        let docs = self.documents.lock().unwrap();
+        let Some(source) = docs.get(&uri) else {
+            return Ok(None);
+        };
+
+        let Ok(program) = opal_parser::parse(source) else {
+            return Ok(None);
+        };
+
+        match goto_def::goto_definition(&program, source, position) {
+            Some(range) => {
+                let location = Location {
+                    uri,
+                    range,
+                };
+                Ok(Some(GotoDefinitionResponse::Scalar(location)))
+            }
+            None => Ok(None),
+        }
     }
 }
 
