@@ -1,0 +1,30 @@
+================
+For loop
+================
+
+for item in list
+  print(item)
+end
+
+---
+
+(source_file
+  (for_loop
+    (identifier)
+    (identifier)
+    (body (expression_statement (call (identifier) (identifier))))))
+
+================
+While loop
+================
+
+while x > 0
+  x -= 1
+end
+
+---
+
+(source_file
+  (while_loop
+    (binary_expression (identifier) (integer))
+    (body (compound_assignment (identifier) (integer)))))

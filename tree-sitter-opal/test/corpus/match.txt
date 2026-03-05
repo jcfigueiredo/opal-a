@@ -1,0 +1,22 @@
+================
+Match with cases
+================
+
+match status
+  case :ok
+    "good"
+  case :error
+    "bad"
+  case _
+    "unknown"
+end
+
+---
+
+(source_file
+  (expression_statement
+    (match_expression
+      (identifier)
+      (match_case (pattern (symbol)) (body (expression_statement (string))))
+      (match_case (pattern (symbol)) (body (expression_statement (string))))
+      (match_case (pattern (wildcard)) (body (expression_statement (string)))))))

@@ -1,0 +1,51 @@
+================
+Inline closure
+================
+
+nums.map(|x| x * 2)
+
+---
+
+(source_file
+  (expression_statement
+    (call
+      (member_access (identifier) (identifier))
+      (closure (closure_params (identifier)) (binary_expression (identifier) (integer))))))
+
+================
+Block closure
+================
+
+nums.each() do |n|
+  print(n)
+end
+
+---
+
+(source_file
+  (expression_statement
+    (block_closure_call
+      (call (member_access (identifier) (identifier)))
+      (block_closure (closure_params (identifier)) (body (expression_statement (call (identifier) (identifier))))))))
+
+================
+List literal
+================
+
+items = [1, 2, 3]
+
+---
+
+(source_file
+  (assignment (identifier) (list (integer) (integer) (integer))))
+
+================
+Dict literal
+================
+
+config = {name: "opal", version: 1}
+
+---
+
+(source_file
+  (assignment (identifier) (dict (dict_entry (identifier) (string)) (dict_entry (identifier) (integer)))))

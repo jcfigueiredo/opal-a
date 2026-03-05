@@ -13,6 +13,9 @@ module.exports = grammar({
 
   conflicts: $ => [
     [$.parameter, $._expression],
+    [$.pattern, $.constructor_pattern],
+    [$.pattern, $.closure_params],
+    [$.list_pattern, $.or_pattern],
   ],
 
   rules: {
@@ -31,6 +34,10 @@ module.exports = grammar({
       $.model_definition,
       $.needs_declaration,
       $.instance_assign,
+      $.for_loop,
+      $.while_loop,
+      $.break_statement,
+      $.next_statement,
       $.expression_statement,
     ),
 
@@ -71,6 +78,13 @@ module.exports = grammar({
       $.if_expression,
       $.instance_variable,
       $.member_access,
+      $.match_expression,
+      $.closure,
+      $.block_closure_call,
+      $.list,
+      $.dict,
+      $.list_comprehension,
+      $.self,
     ),
 
     call: $ => prec(2, seq(
@@ -155,17 +169,17 @@ module.exports = grammar({
       optional(seq('=', field('default', $._expression))),
     ),
 
-    return_type: $ => seq(
+    return_type: $ => prec.left(seq(
       $.identifier,
       optional(seq('[', $.type_annotation, repeat(seq(',', $.type_annotation)), ']')),
       optional('?'),
-    ),
+    )),
 
-    type_annotation: $ => seq(
+    type_annotation: $ => prec.left(seq(
       $.identifier,
       optional(seq('[', $.type_annotation, repeat(seq(',', $.type_annotation)), ']')),
       optional('?'),
-    ),
+    )),
 
     return_statement: $ => prec.right(seq('return', optional($._expression))),
 
@@ -286,6 +300,144 @@ module.exports = grammar({
       '.',
       field('field', $.identifier),
     )),
+
+    // Loops
+    for_loop: $ => seq(
+      'for',
+      field('var', choice($.identifier, $.destructure_pattern)),
+      'in',
+      field('iterable', $._expression),
+      field('body', $.body),
+      'end',
+    ),
+
+    while_loop: $ => seq(
+      'while',
+      field('condition', $._expression),
+      field('body', $.body),
+      'end',
+    ),
+
+    break_statement: $ => 'break',
+    next_statement: $ => 'next',
+
+    destructure_pattern: $ => seq(
+      '[',
+      $.identifier,
+      repeat(seq(',', $.identifier)),
+      optional(seq('|', $.identifier)),
+      ']',
+    ),
+
+    // Match/case
+    match_expression: $ => prec(-1, seq(
+      'match',
+      field('subject', $._expression),
+      repeat1($.match_case),
+      'end',
+    )),
+
+    match_case: $ => seq(
+      'case',
+      field('pattern', $.pattern),
+      optional(seq('if', field('guard', $._expression))),
+      optional(field('body', $.body)),
+    ),
+
+    pattern: $ => choice(
+      $.wildcard,
+      $.symbol,
+      $.integer,
+      $.float,
+      $.string,
+      $.true,
+      $.false,
+      $.null,
+      $.constructor_pattern,
+      $.list_pattern,
+      $.or_pattern,
+      $.identifier,
+    ),
+
+    wildcard: $ => '_',
+
+    constructor_pattern: $ => seq(
+      $.identifier,
+      '(',
+      optional(seq($.pattern, repeat(seq(',', $.pattern)))),
+      ')',
+    ),
+
+    list_pattern: $ => seq(
+      '[',
+      optional(seq($.pattern, repeat(seq(',', $.pattern)))),
+      optional(seq('|', $.pattern)),
+      ']',
+    ),
+
+    or_pattern: $ => prec.left(seq($.pattern, '|', $.pattern)),
+
+    // Closures
+    closure: $ => prec(-2, seq(
+      '|',
+      optional($.closure_params),
+      '|',
+      $._expression,
+    )),
+
+    block_closure: $ => seq(
+      'do',
+      optional(seq('|', optional($.closure_params), '|')),
+      optional($.body),
+      'end',
+    ),
+
+    block_closure_call: $ => prec(1, seq(
+      $.call,
+      $.block_closure,
+    )),
+
+    closure_params: $ => seq(
+      $.identifier,
+      repeat(seq(',', $.identifier)),
+    ),
+
+    // Collections
+    list: $ => seq(
+      '[',
+      optional(seq($._expression, repeat(seq(',', $._expression)), optional(','))),
+      ']',
+    ),
+
+    dict: $ => seq(
+      '{',
+      choice(
+        seq(':', '}'),
+        seq(
+          optional(seq($.dict_entry, repeat(seq(',', $.dict_entry)), optional(','))),
+          '}',
+        ),
+      ),
+    ),
+
+    dict_entry: $ => seq(
+      field('key', $._expression),
+      ':',
+      field('value', $._expression),
+    ),
+
+    list_comprehension: $ => seq(
+      '[',
+      $._expression,
+      'for',
+      $.identifier,
+      'in',
+      $._expression,
+      optional(seq('if', $._expression)),
+      ']',
+    ),
+
+    self: $ => 'self',
 
     // Literals
     identifier: $ => /[a-zA-Z_][a-zA-Z0-9_]*!?/,
