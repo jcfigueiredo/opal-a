@@ -6,6 +6,7 @@ members = [
     "crates/opal-runtime",
     "crates/opal-stdlib",
     "crates/opal-cli",
+    "crates/opal-lsp",
 ]
 exclude = ["fuzz"]
 resolver = "2"
