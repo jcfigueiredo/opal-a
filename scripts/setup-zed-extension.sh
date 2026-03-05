@@ -77,7 +77,7 @@ SCM
 
 # Regenerate parser (generates src/parser.c which is gitignored)
 echo "Regenerating parser..."
-(cd "$TS_DIR" && pnpm install --silent 2>/dev/null && pnpm run generate --silent 2>/dev/null) || {
+(cd "$TS_DIR" && pnpm install --silent 2>/dev/null && pnpm run generate 2>&1) || {
     echo "Warning: Could not regenerate parser. If src/parser.c is missing, run:"
     echo "  cd $TS_DIR && pnpm install && pnpm run generate"
 }
