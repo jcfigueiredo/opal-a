@@ -27,6 +27,7 @@ module.exports = grammar({
     [$.pattern, $.closure_params],
     [$.list_pattern, $.or_pattern],
     [$._expression, $.catch_clause],
+    [$.closure, $.suffix_if],
   ],
 
   rules: {
@@ -66,6 +67,7 @@ module.exports = grammar({
       $.reply_statement,
       $.extern_definition,
       $.retroactive_impl,
+      $.parallel_assign,
       $.expression_statement,
     ),
 
@@ -118,6 +120,9 @@ module.exports = grammar({
       $.null_safe_access,
       $.cast_expression,
       $.fstring,
+      $.suffix_if,
+      $.ast_block,
+      $.splice,
     ),
 
     call: $ => prec(2, seq(
@@ -389,8 +394,11 @@ module.exports = grammar({
       $.constructor_pattern,
       $.list_pattern,
       $.or_pattern,
+      $.range_pattern,
       $.identifier,
     ),
+
+    range_pattern: $ => seq($.integer, choice('..', '...'), $.integer),
 
     wildcard: $ => '_',
 
@@ -529,7 +537,7 @@ module.exports = grammar({
       repeat(seq(',', $.identifier)),
     ),
 
-    import_statement: $ => prec.left(seq(
+    import_statement: $ => prec.left(5, seq(
       'import',
       $.identifier,
       repeat(seq('.', $.identifier)),
@@ -657,6 +665,31 @@ module.exports = grammar({
       'as',
       $.identifier,
     )),
+
+    // Parallel assignment
+    parallel_assign: $ => seq(
+      $.identifier,
+      repeat1(seq(',', $.identifier)),
+      '=',
+      $._expression,
+      repeat(seq(',', $._expression)),
+    ),
+
+    // Suffix if (inline conditional)
+    suffix_if: $ => prec.right(-2, seq(
+      $._expression,
+      'if',
+      $._expression,
+    )),
+
+    // AST and splice (metaprogramming)
+    ast_block: $ => seq(
+      'ast',
+      optional($.body),
+      'end',
+    ),
+
+    splice: $ => seq('$', $.identifier),
 
     // F-strings
     fstring: $ => choice(
