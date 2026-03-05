@@ -75,6 +75,19 @@ cat > "$EXT_DIR/languages/opal/outline.scm" << 'SCM'
 (type_alias name: (identifier) @name) @item
 SCM
 
+# Regenerate parser (generates src/parser.c which is gitignored)
+echo "Regenerating parser..."
+(cd "$TS_DIR" && pnpm install --silent 2>/dev/null && pnpm run generate --silent 2>/dev/null) || {
+    echo "Warning: Could not regenerate parser. If src/parser.c is missing, run:"
+    echo "  cd $TS_DIR && pnpm install && pnpm run generate"
+}
+
+# Verify parser.c exists (Zed needs it to compile the grammar)
+if [ ! -f "$TS_DIR/src/parser.c" ]; then
+    echo "Error: src/parser.c not found. Run: cd $TS_DIR && pnpm install && pnpm run generate"
+    exit 1
+fi
+
 # Symlink grammar source files into the extension's grammar dir
 # Zed dev extensions compile from source — it needs the tree-sitter files
 echo "Linking grammar source..."
@@ -83,9 +96,7 @@ for f in grammar.js tree-sitter.json package.json; do
 done
 
 # Link src/ directory (parser.c, scanner.c, etc.)
-if [ -d "$TS_DIR/src" ]; then
-    ln -sfn "$TS_DIR/src" "$EXT_DIR/grammars/opal/src"
-fi
+ln -sfn "$TS_DIR/src" "$EXT_DIR/grammars/opal/src"
 
 # Build LSP if not already built
 LSP_BIN="$OPAL_ROOT/target/release/opal-lsp"
