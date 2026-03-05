@@ -1,0 +1,30 @@
+export { Contributor, award_contributor }
+
+import Types.{AwardTier, tier_for}
+
+class Contributor
+  needs name: String
+  needs skills: List
+  needs points: Int
+  needs awards: List
+
+  def can_claim(skill)
+    skill in .skills
+  end
+
+  def total_points()
+    .points
+  end
+end
+
+def award_contributor(contributor, reward_amount)
+  tier = tier_for(reward_amount)
+  new_points = contributor.points + reward_amount
+  new_awards = contributor.awards.push(tier)
+  Contributor.new(
+    name: contributor.name,
+    skills: contributor.skills,
+    points: new_points,
+    awards: new_awards
+  )
+end

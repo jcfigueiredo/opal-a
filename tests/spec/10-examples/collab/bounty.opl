@@ -1,0 +1,35 @@
+export { Bounty, claim_bounty }
+
+class Bounty
+  needs title: String
+  needs reward: Int
+  needs skill: Symbol
+  needs claimer: String
+
+  def is_available()
+    .claimer == ""
+  end
+
+  def summary()
+    if .claimer == ""
+      f"{.title} (${.reward}, needs {.skill})"
+    else
+      f"{.title} -> {.claimer}"
+    end
+  end
+end
+
+def claim_bounty(bounty, contributor_name, contributor_skills)
+  if not bounty.is_available()
+    return Error("already claimed")
+  end
+  if bounty.skill not in contributor_skills
+    return Error(f"needs {bounty.skill} skill")
+  end
+  Ok(Bounty.new(
+    title: bounty.title,
+    reward: bounty.reward,
+    skill: bounty.skill,
+    claimer: contributor_name
+  ))
+end

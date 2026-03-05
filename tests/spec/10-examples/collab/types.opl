@@ -1,0 +1,31 @@
+export { SkillTag, AwardTier, tier_for }
+
+type SkillTag = :rust | :opal | :design | :docs | :testing
+
+enum AwardTier
+  Bronze
+  Silver
+  Gold
+
+  def label()
+    match self
+      case AwardTier.Gold
+        "Gold"
+      case AwardTier.Silver
+        "Silver"
+      case AwardTier.Bronze
+        "Bronze"
+    end
+  end
+end
+
+def tier_for(amount)
+  match amount
+    case n if n >= 500
+      AwardTier.Gold
+    case n if n >= 100
+      AwardTier.Silver
+    case _
+      AwardTier.Bronze
+  end
+end
