@@ -178,6 +178,8 @@ pub struct Interpreter<W: Write> {
     model_classes: HashMap<ClassId, Vec<(String, Expr)>>,
     /// Frozen (immutable) instance IDs (model instances)
     frozen_instances: HashSet<InstanceId>,
+    /// Event handlers: maps event class name to list of (param_name, body)
+    event_handlers: HashMap<String, Vec<(String, Vec<Stmt>)>>,
     /// Per-container DI registrations: instance_id -> (protocol/class name -> value)
     container_registrations: HashMap<InstanceId, HashMap<String, Value>>,
 }
@@ -208,6 +210,7 @@ impl Interpreter<std::io::Stdout> {
             module_loader: None,
             model_classes: HashMap::new(),
             frozen_instances: HashSet::new(),
+            event_handlers: HashMap::new(),
             container_registrations: HashMap::new(),
         };
         interp.register_builtin_enums();
@@ -248,6 +251,7 @@ impl<W: Write> Interpreter<W> {
             module_loader: None,
             model_classes: HashMap::new(),
             frozen_instances: HashSet::new(),
+            event_handlers: HashMap::new(),
             container_registrations: HashMap::new(),
         };
         interp.register_builtin_enums();
@@ -1290,6 +1294,40 @@ impl<W: Write> Interpreter<W> {
                         return Err(EvalError::UndefinedVariable(format!(
                             "type {}", type_name
                         )));
+                    }
+                }
+            }
+            StmtKind::EventDef { name, fields } => {
+                let class_id = ClassId(self.classes.len());
+                self.classes.push(StoredClass {
+                    name: name.clone(),
+                    needs: fields.iter().map(|f| (f.name.clone(), f.type_annotation.clone(), None)).collect(),
+                    methods: vec![],
+                });
+                self.env.set(name.clone(), Value::Class(class_id));
+            }
+            StmtKind::OnHandler { event_name, param, body } => {
+                self.event_handlers
+                    .entry(event_name.clone())
+                    .or_insert_with(Vec::new)
+                    .push((param.clone(), body.clone()));
+            }
+            StmtKind::Emit(expr) => {
+                let val = self.eval_expr(expr)?;
+                let class_name = match &val {
+                    Value::Instance(iid) => {
+                        let class_id = self.instances[iid.0].class_id;
+                        self.classes[class_id.0].name.clone()
+                    }
+                    _ => return Err(EvalError::TypeError("emit requires an instance".into())),
+                };
+                if let Some(handlers) = self.event_handlers.get(&class_name).cloned() {
+                    for (param_name, handler_body) in handlers {
+                        self.env.push_scope();
+                        self.env.set(param_name.clone(), val.clone());
+                        let result = self.eval_block(&handler_body);
+                        self.env.pop_scope();
+                        result?;
                     }
                 }
             }

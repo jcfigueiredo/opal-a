@@ -1,0 +1,18 @@
+# expect: claimed: bounty-1 by alice | log: bounty-1 claimed
+# Domain events with event/emit/on
+
+event BountyClaimed(bounty_id: String, claimer: String)
+
+results = []
+
+on BountyClaimed do |e|
+  results = results.push(f"claimed: {e.bounty_id} by {e.claimer}")
+end
+
+on BountyClaimed do |e|
+  results = results.push(f"log: {e.bounty_id} claimed")
+end
+
+emit BountyClaimed.new(bounty_id: "bounty-1", claimer: "alice")
+
+print(results.join(" | "))

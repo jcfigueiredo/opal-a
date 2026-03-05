@@ -233,7 +233,12 @@ pub enum Token {
     Await,
     #[token("needs")]
     Needs,
-    // event, emit, on — reserved for macro-based self-hosting, not parser keywords
+    #[token("event")]
+    Event,
+    #[token("emit")]
+    Emit,
+    #[token("on")]
+    On,
     #[token("macro")]
     Macro,
     #[token("ast")]

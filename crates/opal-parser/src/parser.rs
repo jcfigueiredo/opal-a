@@ -161,6 +161,29 @@ impl<'src> Parser<'src> {
             return self.parse_retroactive_impl(start);
         }
 
+        // Event definition
+        if self.check(&Token::Event) {
+            return self.parse_event_def(start);
+        }
+
+        // Emit statement
+        if self.check(&Token::Emit) {
+            self.advance(); // consume 'emit'
+            let expr = self.parse_expression(0)?;
+            let end = self.previous_span().end;
+            let stmt = Stmt {
+                kind: StmtKind::Emit(expr),
+                span: Span { start: start.start, end },
+            };
+            self.expect_statement_end()?;
+            return Ok(stmt);
+        }
+
+        // On handler
+        if self.check(&Token::On) {
+            return self.parse_on_handler(start);
+        }
+
         // Actor definition
         if self.check(&Token::Actor) {
             return self.parse_actor_def(start);
@@ -1364,6 +1387,52 @@ impl<'src> Parser<'src> {
                 start: start.start,
                 end,
             },
+        })
+    }
+
+    fn parse_event_def(&mut self, start: Span) -> Result<Stmt, ParseError> {
+        self.advance(); // consume 'event'
+        let name = self.expect_identifier()?;
+        self.expect_token(&Token::LParen, "(")?;
+
+        let mut fields = Vec::new();
+        while !self.check(&Token::RParen) && !self.is_at_end() {
+            let field_name = self.expect_identifier()?;
+            let type_annotation = if self.check(&Token::Colon) {
+                self.advance();
+                Some(self.parse_type_name()?)
+            } else {
+                None
+            };
+            fields.push(NeedsDecl { name: field_name, type_annotation, default: None });
+            if !self.check(&Token::RParen) {
+                self.expect_token(&Token::Comma, ",")?;
+            }
+        }
+        self.expect_token(&Token::RParen, ")")?;
+        self.expect_statement_end()?;
+        let end = self.previous_span().end;
+        Ok(Stmt {
+            kind: StmtKind::EventDef { name, fields },
+            span: Span { start: start.start, end },
+        })
+    }
+
+    fn parse_on_handler(&mut self, start: Span) -> Result<Stmt, ParseError> {
+        self.advance(); // consume 'on'
+        let event_name = self.expect_identifier()?;
+        self.expect_token(&Token::Do, "do")?;
+        self.expect_token(&Token::Bar, "|")?;
+        let param = self.expect_identifier()?;
+        self.expect_token(&Token::Bar, "|")?;
+        self.expect_newline()?;
+        let body = self.parse_block()?;
+        self.expect_token(&Token::End, "end")?;
+        self.expect_statement_end()?;
+        let end = self.previous_span().end;
+        Ok(Stmt {
+            kind: StmtKind::OnHandler { event_name, param, body },
+            span: Span { start: start.start, end },
         })
     }
 

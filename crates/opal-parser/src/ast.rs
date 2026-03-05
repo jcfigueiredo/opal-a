@@ -147,6 +147,19 @@ pub enum StmtKind {
         type_name: String,
         methods: Vec<Stmt>,
     },
+    /// Event definition: `event Name(field: Type, ...)`
+    EventDef {
+        name: String,
+        fields: Vec<NeedsDecl>,
+    },
+    /// Emit statement: `emit expr`
+    Emit(Expr),
+    /// On handler: `on EventType do |param| ... end`
+    OnHandler {
+        event_name: String,
+        param: String,
+        body: Vec<Stmt>,
+    },
 }
 
 /// An expression
