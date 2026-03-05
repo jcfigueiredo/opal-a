@@ -1,0 +1,22 @@
+# expect: [Alice, Carol] | Alice, Carol, Bob
+# Filtering and sorting contributors by score
+
+class Member
+  needs name: String
+  needs score: Int
+end
+
+team = [
+  Member.new(name: "Alice", score: 750),
+  Member.new(name: "Bob", score: 50),
+  Member.new(name: "Carol", score: 250)
+]
+
+# Filter high scorers
+high = team.filter(|m| m.score >= 200).map(|m| m.name)
+
+# Sort by score descending
+sorted = team.sort(|a, b| b.score - a.score)
+sorted_names = sorted.map(|m| m.name).join(", ")
+
+print(f"{high} | {sorted_names}")
