@@ -1,0 +1,15 @@
+# expect: 750.0 | 250.0
+# Module-level dependency injection with needs
+
+module RewardCalculator
+  needs multiplier: Float
+
+  def calculate(base)
+    base * .multiplier
+  end
+end
+
+# Wire module with dependencies
+calc1 = RewardCalculator.new(multiplier: 2.5)
+calc2 = RewardCalculator.new(multiplier: 1.0)
+print(f"{calc1.calculate(300.0)} | {calc2.calculate(250.0)}")

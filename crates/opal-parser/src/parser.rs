@@ -1039,16 +1039,24 @@ impl<'src> Parser<'src> {
         let name = self.expect_identifier()?;
         self.expect_newline()?;
 
+        let mut needs = Vec::new();
         let mut body = Vec::new();
         self.skip_newlines();
         while !self.check(&Token::End) && !self.is_at_end() {
-            body.push(self.parse_statement()?);
+            if self.check(&Token::Needs) {
+                let stmt = self.parse_needs_decl(self.current_span())?;
+                if let StmtKind::NeedsDecl(decl) = stmt.kind {
+                    needs.push(decl);
+                }
+            } else {
+                body.push(self.parse_statement()?);
+            }
             self.skip_newlines();
         }
         self.expect_token(&Token::End, "end")?;
         let end = self.previous_span().end;
         Ok(Stmt {
-            kind: StmtKind::ModuleDef { name, body },
+            kind: StmtKind::ModuleDef { name, needs, body },
             span: Span {
                 start: start.start,
                 end,

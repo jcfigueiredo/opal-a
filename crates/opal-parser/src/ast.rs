@@ -55,7 +55,7 @@ pub enum StmtKind {
         methods: Vec<ProtocolMethod>,
     },
     /// Module definition
-    ModuleDef { name: String, body: Vec<Stmt> },
+    ModuleDef { name: String, needs: Vec<NeedsDecl>, body: Vec<Stmt> },
     // Deprecated: use Import instead
     /// Import: `from X import Y, Z`
     FromImport {

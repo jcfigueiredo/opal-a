@@ -793,22 +793,48 @@ impl<W: Write> Interpreter<W> {
                 });
                 self.env.set(name.clone(), Value::Protocol(proto_id));
             }
-            StmtKind::ModuleDef { name, body } => {
-                // Evaluate body in a new scope, capture bindings
-                self.env.push_scope();
-                for stmt in body {
-                    self.eval_stmt(stmt)?;
-                }
-                // Collect all bindings from the module scope
-                let bindings = self.env.current_scope_bindings();
-                self.env.pop_scope();
+            StmtKind::ModuleDef { name, needs, body } => {
+                if needs.is_empty() {
+                    // Current behavior: evaluate body, capture bindings
+                    self.env.push_scope();
+                    for stmt in body {
+                        self.eval_stmt(stmt)?;
+                    }
+                    // Collect all bindings from the module scope
+                    let bindings = self.env.current_scope_bindings();
+                    self.env.pop_scope();
 
-                let module_id = ModuleId(self.modules.len());
-                self.modules.push(StoredModule {
-                    name: name.clone(),
-                    bindings,
-                });
-                self.env.set(name.clone(), Value::Module(module_id));
+                    let module_id = ModuleId(self.modules.len());
+                    self.modules.push(StoredModule {
+                        name: name.clone(),
+                        bindings,
+                    });
+                    self.env.set(name.clone(), Value::Module(module_id));
+                } else {
+                    // New behavior: treat as class with methods
+                    let mut stored_methods = Vec::new();
+                    for stmt in body {
+                        if let StmtKind::FuncDef { name: mname, params, body: mbody, .. } = &stmt.kind {
+                            stored_methods.push(StoredFunction {
+                                name: mname.clone(),
+                                params: params.iter().map(|p| p.name.clone()).collect(),
+                                param_types: params.iter().map(|p| p.type_annotation.clone()).collect(),
+                                param_defaults: params.iter().map(|p| p.default.clone()).collect(),
+                                body: mbody.clone(),
+                                captured_env: None,
+                                annotations: vec![],
+                                visibility: Visibility::Public,
+                            });
+                        }
+                    }
+                    let class_id = ClassId(self.classes.len());
+                    self.classes.push(StoredClass {
+                        name: name.clone(),
+                        needs: needs.iter().map(|n| (n.name.clone(), n.type_annotation.clone(), n.default.clone())).collect(),
+                        methods: stored_methods,
+                    });
+                    self.env.set(name.clone(), Value::Class(class_id));
+                }
             }
             StmtKind::FromImport { module_path, names } => {
                 let module_val = self
