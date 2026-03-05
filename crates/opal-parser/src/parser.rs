@@ -625,6 +625,7 @@ impl<'src> Parser<'src> {
                             fields.push(NeedsDecl {
                                 name: field_name,
                                 type_annotation: type_ann,
+                                default: None,
                             });
                             if !self.check(&Token::Comma) {
                                 break;
@@ -811,12 +812,19 @@ impl<'src> Parser<'src> {
         } else {
             None
         };
+        let default = if self.check(&Token::Eq) {
+            self.advance();
+            Some(self.parse_expression(0)?)
+        } else {
+            None
+        };
         self.expect_statement_end()?;
         let end = self.previous_span().end;
         Ok(Stmt {
             kind: StmtKind::NeedsDecl(NeedsDecl {
                 name,
                 type_annotation,
+                default,
             }),
             span: Span {
                 start: start.start,

@@ -333,6 +333,7 @@ pub struct ImportItem {
 pub struct NeedsDecl {
     pub name: String,
     pub type_annotation: Option<String>,
+    pub default: Option<Expr>,
 }
 
 /// A `needs` declaration in a model (with optional where validator)

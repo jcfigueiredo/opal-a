@@ -1,0 +1,32 @@
+# expect: ConsoleLogger | CustomLogger
+# needs with default values
+
+class ConsoleLogger
+  def log(msg)
+    "ConsoleLogger"
+  end
+end
+
+class CustomLogger
+  def log(msg)
+    "CustomLogger"
+  end
+end
+
+class BountyService
+  needs logger: Logger = ConsoleLogger.new()
+
+  def who()
+    .logger.log("test")
+  end
+end
+
+# Use default
+svc1 = BountyService.new()
+r1 = svc1.who()
+
+# Override default
+svc2 = BountyService.new(logger: CustomLogger.new())
+r2 = svc2.who()
+
+print(f"{r1} | {r2}")

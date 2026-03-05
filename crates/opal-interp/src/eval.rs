@@ -73,7 +73,7 @@ struct StoredClosure {
 struct StoredClass {
     #[allow(dead_code)]
     name: String,
-    needs: Vec<(String, Option<String>)>,
+    needs: Vec<(String, Option<String>, Option<Expr>)>,
     methods: Vec<StoredFunction>,
 }
 
@@ -758,7 +758,7 @@ impl<W: Write> Interpreter<W> {
                     name: name.clone(),
                     needs: needs
                         .iter()
-                        .map(|n| (n.name.clone(), n.type_annotation.clone()))
+                        .map(|n| (n.name.clone(), n.type_annotation.clone(), n.default.clone()))
                         .collect(),
                     methods: stored_methods,
                 });
@@ -1134,7 +1134,7 @@ impl<W: Write> Interpreter<W> {
                     name: name.clone(),
                     needs: needs
                         .iter()
-                        .map(|n| (n.name.clone(), n.type_annotation.clone()))
+                        .map(|n| (n.name.clone(), n.type_annotation.clone(), None))
                         .collect(),
                     methods: stored_methods,
                 });
@@ -1657,7 +1657,7 @@ impl<W: Write> Interpreter<W> {
                                 match info {
                                     TypeInfo::Class(id) => {
                                         let class = &self.classes[id.0];
-                                        let field_list: Vec<Value> = class.needs.iter().map(|(name, type_ann)| {
+                                        let field_list: Vec<Value> = class.needs.iter().map(|(name, type_ann, _)| {
                                             Value::List(vec![
                                                 Value::Symbol(name.clone()),
                                                 Value::String(type_ann.clone().unwrap_or_else(|| "Any".to_string())),
@@ -2951,7 +2951,7 @@ impl<W: Write> Interpreter<W> {
                 let mut fields = HashMap::new();
 
                 // Match named args to needs declarations
-                for (need_name, _) in &class.needs {
+                for (need_name, _type_ann, default) in &class.needs {
                     // Try named arg first
                     let value = named_args
                         .iter()
@@ -2964,10 +2964,13 @@ impl<W: Write> Interpreter<W> {
                         let idx = class
                             .needs
                             .iter()
-                            .position(|(n, _)| n == need_name)
+                            .position(|(n, _, _)| n == need_name)
                             .unwrap();
                         if idx < args.len() {
                             fields.insert(need_name.clone(), args[idx].clone());
+                        } else if let Some(default_expr) = default {
+                            let val = self.eval_expr(default_expr)?;
+                            fields.insert(need_name.clone(), val);
                         } else {
                             return Err(EvalError::TypeError(format!(
                                 "missing required field '{}' in .new()",
@@ -3015,7 +3018,7 @@ impl<W: Write> Interpreter<W> {
                 if self.model_classes.contains_key(&instance.class_id) {
                     if method == "to_dict" {
                         let entries: Vec<(String, Value)> = class.needs.iter()
-                            .map(|(name, _)| {
+                            .map(|(name, _, _)| {
                                 let val = instance.fields.get(name).cloned().unwrap_or(Value::Null);
                                 (name.clone(), val)
                             })
@@ -3200,7 +3203,7 @@ impl<W: Write> Interpreter<W> {
                         match info {
                             TypeInfo::Class(id) => {
                                 let class = &self.classes[id.0];
-                                let field_list: Vec<Value> = class.needs.iter().map(|(name, type_ann)| {
+                                let field_list: Vec<Value> = class.needs.iter().map(|(name, type_ann, _)| {
                                     Value::List(vec![
                                         Value::Symbol(name.clone()),
                                         Value::String(type_ann.clone().unwrap_or_else(|| "Any".to_string())),
