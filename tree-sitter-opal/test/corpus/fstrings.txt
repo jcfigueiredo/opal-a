@@ -1,0 +1,23 @@
+================
+Simple f-string
+================
+
+name = "world"
+x = f"hello, {name}!"
+
+---
+
+(source_file
+  (assignment (identifier) (string))
+  (assignment (identifier) (fstring (fstring_start_double) (fstring_content) (interpolation (interpolation_start) (identifier) (interpolation_end)) (fstring_content) (fstring_end))))
+
+================
+F-string with expression
+================
+
+x = f"sum: {a + b}"
+
+---
+
+(source_file
+  (assignment (identifier) (fstring (fstring_start_double) (fstring_content) (interpolation (interpolation_start) (binary_expression (identifier) (identifier)) (interpolation_end)) (fstring_end))))

@@ -11,6 +11,16 @@ module.exports = grammar({
 
   word: $ => $.identifier,
 
+  externals: $ => [
+    $.fstring_start_double,
+    $.fstring_start_single,
+    $.fstring_content,
+    $.fstring_end,
+    $.interpolation_start,
+    $.interpolation_end,
+    $.multiline_comment,
+  ],
+
   conflicts: $ => [
     [$.parameter, $._expression],
     [$.pattern, $.constructor_pattern],
@@ -107,6 +117,7 @@ module.exports = grammar({
       $.index_expression,
       $.null_safe_access,
       $.cast_expression,
+      $.fstring,
     ),
 
     call: $ => prec(2, seq(
@@ -647,6 +658,26 @@ module.exports = grammar({
       $.identifier,
     )),
 
+    // F-strings
+    fstring: $ => choice(
+      seq(
+        $.fstring_start_double,
+        repeat(choice($.fstring_content, $.interpolation)),
+        $.fstring_end,
+      ),
+      seq(
+        $.fstring_start_single,
+        repeat(choice($.fstring_content, $.interpolation)),
+        $.fstring_end,
+      ),
+    ),
+
+    interpolation: $ => seq(
+      $.interpolation_start,
+      $._expression,
+      $.interpolation_end,
+    ),
+
     // Literals
     identifier: $ => /[a-zA-Z_][a-zA-Z0-9_]*!?/,
     integer: $ => /[0-9][0-9_]*/,
@@ -662,11 +693,13 @@ module.exports = grammar({
     false: $ => 'false',
     null: $ => 'null',
 
-    comment: $ => token(choice(
-      seq('#', /[^#\n][^\n]*/),
-      seq('#', /\n/),
-      seq('###', /(.|\n)*?/, '###'),
-    )),
+    comment: $ => choice(
+      $.multiline_comment,
+      token(choice(
+        seq('#', /[^#\n][^\n]*/),
+        seq('#', /\n/),
+      )),
+    ),
 
     _terminator: $ => '\n',
   },

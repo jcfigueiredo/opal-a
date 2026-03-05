@@ -361,6 +361,10 @@
         {
           "type": "SYMBOL",
           "name": "cast_expression"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "fstring"
         }
       ]
     },
@@ -3936,6 +3940,86 @@
         ]
       }
     },
+    "fstring": {
+      "type": "CHOICE",
+      "members": [
+        {
+          "type": "SEQ",
+          "members": [
+            {
+              "type": "SYMBOL",
+              "name": "fstring_start_double"
+            },
+            {
+              "type": "REPEAT",
+              "content": {
+                "type": "CHOICE",
+                "members": [
+                  {
+                    "type": "SYMBOL",
+                    "name": "fstring_content"
+                  },
+                  {
+                    "type": "SYMBOL",
+                    "name": "interpolation"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "SYMBOL",
+              "name": "fstring_end"
+            }
+          ]
+        },
+        {
+          "type": "SEQ",
+          "members": [
+            {
+              "type": "SYMBOL",
+              "name": "fstring_start_single"
+            },
+            {
+              "type": "REPEAT",
+              "content": {
+                "type": "CHOICE",
+                "members": [
+                  {
+                    "type": "SYMBOL",
+                    "name": "fstring_content"
+                  },
+                  {
+                    "type": "SYMBOL",
+                    "name": "interpolation"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "SYMBOL",
+              "name": "fstring_end"
+            }
+          ]
+        }
+      ]
+    },
+    "interpolation": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "SYMBOL",
+          "name": "interpolation_start"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "_expression"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "interpolation_end"
+        }
+      ]
+    },
     "identifier": {
       "type": "PATTERN",
       "value": "[a-zA-Z_][a-zA-Z0-9_]*!?"
@@ -4012,55 +4096,47 @@
       "value": "null"
     },
     "comment": {
-      "type": "TOKEN",
-      "content": {
-        "type": "CHOICE",
-        "members": [
-          {
-            "type": "SEQ",
+      "type": "CHOICE",
+      "members": [
+        {
+          "type": "SYMBOL",
+          "name": "multiline_comment"
+        },
+        {
+          "type": "TOKEN",
+          "content": {
+            "type": "CHOICE",
             "members": [
               {
-                "type": "STRING",
-                "value": "#"
+                "type": "SEQ",
+                "members": [
+                  {
+                    "type": "STRING",
+                    "value": "#"
+                  },
+                  {
+                    "type": "PATTERN",
+                    "value": "[^#\\n][^\\n]*"
+                  }
+                ]
               },
               {
-                "type": "PATTERN",
-                "value": "[^#\\n][^\\n]*"
-              }
-            ]
-          },
-          {
-            "type": "SEQ",
-            "members": [
-              {
-                "type": "STRING",
-                "value": "#"
-              },
-              {
-                "type": "PATTERN",
-                "value": "\\n"
-              }
-            ]
-          },
-          {
-            "type": "SEQ",
-            "members": [
-              {
-                "type": "STRING",
-                "value": "###"
-              },
-              {
-                "type": "PATTERN",
-                "value": "(.|\\n)*?"
-              },
-              {
-                "type": "STRING",
-                "value": "###"
+                "type": "SEQ",
+                "members": [
+                  {
+                    "type": "STRING",
+                    "value": "#"
+                  },
+                  {
+                    "type": "PATTERN",
+                    "value": "\\n"
+                  }
+                ]
               }
             ]
           }
-        ]
-      }
+        }
+      ]
     },
     "_terminator": {
       "type": "STRING",
@@ -4100,7 +4176,36 @@
     ]
   ],
   "precedences": [],
-  "externals": [],
+  "externals": [
+    {
+      "type": "SYMBOL",
+      "name": "fstring_start_double"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "fstring_start_single"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "fstring_content"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "fstring_end"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "interpolation_start"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "interpolation_end"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "multiline_comment"
+    }
+  ],
   "inline": [],
   "supertypes": [],
   "reserved": {}
