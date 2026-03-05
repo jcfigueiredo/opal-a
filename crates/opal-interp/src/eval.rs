@@ -178,6 +178,8 @@ pub struct Interpreter<W: Write> {
     model_classes: HashMap<ClassId, Vec<(String, Expr)>>,
     /// Frozen (immutable) instance IDs (model instances)
     frozen_instances: HashSet<InstanceId>,
+    /// Per-container DI registrations: instance_id -> (protocol/class name -> value)
+    container_registrations: HashMap<InstanceId, HashMap<String, Value>>,
 }
 
 impl Interpreter<std::io::Stdout> {
@@ -206,8 +208,10 @@ impl Interpreter<std::io::Stdout> {
             module_loader: None,
             model_classes: HashMap::new(),
             frozen_instances: HashSet::new(),
+            container_registrations: HashMap::new(),
         };
         interp.register_builtin_enums();
+        interp.register_container_class();
         interp
     }
 
@@ -244,8 +248,10 @@ impl<W: Write> Interpreter<W> {
             module_loader: None,
             model_classes: HashMap::new(),
             frozen_instances: HashSet::new(),
+            container_registrations: HashMap::new(),
         };
         interp.register_builtin_enums();
+        interp.register_container_class();
         interp
     }
 
@@ -456,6 +462,17 @@ impl<W: Write> Interpreter<W> {
             }
         }
         Ok(())
+    }
+
+    /// Register the built-in Container class for dependency injection
+    fn register_container_class(&mut self) {
+        let container_class_id = ClassId(self.classes.len());
+        self.classes.push(StoredClass {
+            name: "Container".to_string(),
+            needs: vec![],
+            methods: vec![],
+        });
+        self.env.set("Container".to_string(), Value::Class(container_class_id));
     }
 
     fn eval_stmt(&mut self, stmt: &Stmt) -> Result<(), EvalError> {
@@ -3086,6 +3103,88 @@ impl<W: Write> Interpreter<W> {
             (Value::Instance(instance_id), _) => {
                 let instance = self.instances[instance_id.0].clone();
                 let class = self.classes[instance.class_id.0].clone();
+
+                // Container built-in methods
+                if class.name == "Container" {
+                    match method {
+                        "register" => {
+                            let proto_name = match &args[0] {
+                                Value::Protocol(pid) => self.protocols[pid.0].name.clone(),
+                                Value::Class(cid) => self.classes[cid.0].name.clone(),
+                                _ => return Err(EvalError::TypeError(
+                                    "register() first arg must be a Protocol or Class".into(),
+                                )),
+                            };
+                            self.container_registrations
+                                .entry(*instance_id)
+                                .or_insert_with(HashMap::new)
+                                .insert(proto_name, args[1].clone());
+                            return Ok(Value::Null);
+                        }
+                        "resolve" => {
+                            let (target_class_id, target_class) = match &args[0] {
+                                Value::Class(cid) => (*cid, self.classes[cid.0].clone()),
+                                _ => return Err(EvalError::TypeError(
+                                    "resolve() arg must be a Class".into(),
+                                )),
+                            };
+                            let regs = self
+                                .container_registrations
+                                .get(instance_id)
+                                .cloned()
+                                .unwrap_or_default();
+
+                            let mut fields = HashMap::new();
+                            for (need_name, type_ann, default) in &target_class.needs {
+                                if let Some(type_name) = type_ann {
+                                    if let Some(val) = regs.get(type_name) {
+                                        fields.insert(need_name.clone(), val.clone());
+                                        continue;
+                                    }
+                                }
+                                if let Some(default_expr) = default {
+                                    let val = self.eval_expr(default_expr)?;
+                                    fields.insert(need_name.clone(), val);
+                                    continue;
+                                }
+                                return Err(EvalError::Raise(Value::String(format!(
+                                    "Container cannot resolve '{}' for {}.new() — no registration for {}",
+                                    need_name,
+                                    target_class.name,
+                                    type_ann.as_deref().unwrap_or("unknown")
+                                ))));
+                            }
+
+                            let new_instance_id = InstanceId(self.instances.len());
+                            self.instances.push(StoredInstance {
+                                class_id: target_class_id,
+                                fields,
+                            });
+                            return Ok(Value::Instance(new_instance_id));
+                        }
+                        "resolve_name" => {
+                            let name = match &args[0] {
+                                Value::String(s) => s.clone(),
+                                _ => return Err(EvalError::TypeError(
+                                    "resolve_name() arg must be a String".into(),
+                                )),
+                            };
+                            let regs = self
+                                .container_registrations
+                                .get(instance_id)
+                                .cloned()
+                                .unwrap_or_default();
+                            if let Some(val) = regs.get(&name) {
+                                return Ok(val.clone());
+                            }
+                            return Err(EvalError::Raise(Value::String(format!(
+                                "No registration for {}",
+                                name
+                            ))));
+                        }
+                        _ => {}
+                    }
+                }
 
                 // Auto-methods for model instances
                 if self.model_classes.contains_key(&instance.class_id) {

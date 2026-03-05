@@ -1,0 +1,37 @@
+# expect: saved bounty-1 | No registration for Mailer
+# DI Container with register/resolve
+
+protocol Storage
+  def save(id) -> String
+end
+
+class MemoryStore implements Storage
+  def save(id)
+    f"saved {id}"
+  end
+end
+
+class BountyRepo
+  needs store: Storage
+
+  def persist(id)
+    .store.save(id)
+  end
+end
+
+# Container wires dependencies
+container = Container.new()
+container.register(Storage, MemoryStore.new())
+
+# Resolve fills needs automatically
+repo = container.resolve(BountyRepo)
+part1 = repo.persist("bounty-1")
+
+# Missing registration errors
+part2 = try
+  container.resolve_name("Mailer")
+catch as e
+  e
+end
+
+print(f"{part1} | {part2}")
