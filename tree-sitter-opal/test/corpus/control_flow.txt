@@ -1,0 +1,44 @@
+================
+If else
+================
+
+if x > 0
+  print("positive")
+else
+  print("non-positive")
+end
+
+---
+
+(source_file
+  (expression_statement
+    (if_expression
+      (binary_expression (identifier) (integer))
+      (body (expression_statement (call (identifier) (string))))
+      (else_clause
+        (body (expression_statement (call (identifier) (string))))))))
+
+================
+If elsif else
+================
+
+if x > 10
+  "big"
+elsif x > 0
+  "small"
+else
+  "zero"
+end
+
+---
+
+(source_file
+  (expression_statement
+    (if_expression
+      (binary_expression (identifier) (integer))
+      (body (expression_statement (string)))
+      (elsif_clause
+        (binary_expression (identifier) (integer))
+        (body (expression_statement (string))))
+      (else_clause
+        (body (expression_statement (string)))))))

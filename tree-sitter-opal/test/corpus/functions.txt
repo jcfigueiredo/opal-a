@@ -1,0 +1,50 @@
+================
+Simple function
+================
+
+def greet(name)
+  print(name)
+end
+
+---
+
+(source_file
+  (function_definition
+    (identifier)
+    (parameters (parameter (identifier)))
+    (body (expression_statement (call (identifier) (identifier))))))
+
+================
+Typed function with return
+================
+
+def add(a: Int, b: Int) -> Int
+  return a + b
+end
+
+---
+
+(source_file
+  (function_definition
+    (identifier)
+    (parameters
+      (parameter (identifier) (type_annotation (identifier)))
+      (parameter (identifier) (type_annotation (identifier))))
+    (return_type (identifier))
+    (body (return_statement (binary_expression (identifier) (identifier))))))
+
+================
+Function with default parameter
+================
+
+def greet(name = "world")
+  print(name)
+end
+
+---
+
+(source_file
+  (function_definition
+    (identifier)
+    (parameters (parameter (identifier) (string)))
+    (body (expression_statement (call (identifier) (identifier))))))

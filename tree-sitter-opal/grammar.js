@@ -12,6 +12,7 @@ module.exports = grammar({
   word: $ => $.identifier,
 
   conflicts: $ => [
+    [$.parameter, $._expression],
   ],
 
   rules: {
@@ -21,6 +22,8 @@ module.exports = grammar({
       $.assignment,
       $.compound_assignment,
       $.let_binding,
+      $.function_definition,
+      $.return_statement,
       $.expression_statement,
     ),
 
@@ -58,6 +61,7 @@ module.exports = grammar({
       $.binary_expression,
       $.unary_expression,
       $.grouped_expression,
+      $.if_expression,
     ),
 
     call: $ => prec(2, seq(
@@ -115,7 +119,71 @@ module.exports = grammar({
       seq('not', $._expression),
     )),
 
-    grouped_expression: $ => seq('(', $._expression, ')'),
+    grouped_expression: $ => prec(-1, seq('(', $._expression, ')')),
+
+    // Functions
+    function_definition: $ => {
+      const header = seq(
+        optional(field('visibility', choice('public', 'private'))),
+        'def',
+        field('name', $.identifier),
+      );
+      return choice(
+        prec.dynamic(10, seq(header, field('params', $.parameters), optional(seq('->', $.return_type)), field('body', $.body), 'end')),
+        prec.dynamic(1, seq(header, optional(seq('->', $.return_type)), field('body', $.body), 'end')),
+      );
+    },
+
+    parameters: $ => seq(
+      '(',
+      optional(seq($.parameter, repeat(seq(',', $.parameter)))),
+      ')',
+    ),
+
+    parameter: $ => seq(
+      field('name', $.identifier),
+      optional(seq(':', field('type', $.type_annotation))),
+      optional(seq('=', field('default', $._expression))),
+    ),
+
+    return_type: $ => seq(
+      $.identifier,
+      optional(seq('[', $.type_annotation, repeat(seq(',', $.type_annotation)), ']')),
+      optional('?'),
+    ),
+
+    type_annotation: $ => seq(
+      $.identifier,
+      optional(seq('[', $.type_annotation, repeat(seq(',', $.type_annotation)), ']')),
+      optional('?'),
+    ),
+
+    return_statement: $ => prec.right(seq('return', optional($._expression))),
+
+    body: $ => repeat1($._statement),
+
+    // Control flow
+    if_expression: $ => prec(-1, seq(
+      'if',
+      field('condition', $._expression),
+      optional('then'),
+      optional(field('consequence', $.body)),
+      repeat($.elsif_clause),
+      optional($.else_clause),
+      'end',
+    )),
+
+    elsif_clause: $ => seq(
+      'elsif',
+      field('condition', $._expression),
+      optional('then'),
+      optional(field('body', $.body)),
+    ),
+
+    else_clause: $ => seq(
+      'else',
+      optional(field('body', $.body)),
+    ),
 
     // Literals
     identifier: $ => /[a-zA-Z_][a-zA-Z0-9_]*!?/,
