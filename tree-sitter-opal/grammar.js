@@ -5,52 +5,139 @@ module.exports = grammar({
   name: 'opal',
 
   extras: $ => [
-    /[ \t\r]/,
+    /[\s]/,
     $.comment,
   ],
 
   word: $ => $.identifier,
 
+  conflicts: $ => [
+  ],
+
   rules: {
     source_file: $ => repeat($._statement),
 
     _statement: $ => choice(
+      $.assignment,
+      $.compound_assignment,
+      $.let_binding,
       $.expression_statement,
     ),
 
-    expression_statement: $ => seq(
-      $._expression,
-      $._terminator,
+    assignment: $ => seq(
+      field('name', $.identifier),
+      '=',
+      field('value', $._expression),
     ),
+
+    compound_assignment: $ => seq(
+      field('name', $.identifier),
+      field('operator', choice('+=', '-=', '*=', '/=')),
+      field('value', $._expression),
+    ),
+
+    let_binding: $ => seq(
+      'let',
+      field('name', $.identifier),
+      '=',
+      field('value', $._expression),
+    ),
+
+    expression_statement: $ => $._expression,
 
     _expression: $ => choice(
       $.identifier,
       $.integer,
       $.float,
       $.string,
+      $.true,
+      $.false,
+      $.null,
+      $.symbol,
       $.call,
+      $.binary_expression,
+      $.unary_expression,
+      $.grouped_expression,
     ),
 
-    call: $ => prec(1, seq(
-      $._expression,
+    call: $ => prec(2, seq(
+      field('function', $._expression),
       '(',
-      optional(seq($._expression, repeat(seq(',', $._expression)))),
+      optional(seq($._argument, repeat(seq(',', $._argument)))),
       ')',
     )),
+
+    _argument: $ => choice(
+      $.named_argument,
+      $._expression,
+    ),
+
+    named_argument: $ => seq(
+      field('name', $.identifier),
+      ':',
+      field('value', $._expression),
+    ),
+
+    binary_expression: $ => {
+      const table = [
+        [1, 'or'],
+        [2, 'and'],
+        [3, choice('==', '!=')],
+        [4, choice('<', '<=', '>', '>=')],
+        [4, 'in'],
+        [4, 'is'],
+        [5, choice('+', '-')],
+        [6, choice('*', '/', '%')],
+        [8, '|>'],
+        [9, '..'],
+        [9, '...'],
+        [10, '??'],
+      ];
+
+      return choice(
+        ...table.map(([precedence, op]) =>
+          prec.left(precedence, seq(
+            field('left', $._expression),
+            field('operator', op),
+            field('right', $._expression),
+          ))
+        ),
+        prec.right(7, seq(
+          field('left', $._expression),
+          field('operator', '**'),
+          field('right', $._expression),
+        )),
+      );
+    },
+
+    unary_expression: $ => prec(11, choice(
+      seq('-', $._expression),
+      seq('not', $._expression),
+    )),
+
+    grouped_expression: $ => seq('(', $._expression, ')'),
 
     // Literals
     identifier: $ => /[a-zA-Z_][a-zA-Z0-9_]*!?/,
     integer: $ => /[0-9][0-9_]*/,
     float: $ => /[0-9][0-9_]*\.[0-9][0-9_]*/,
     string: $ => choice(
+      seq('"""', /([^"]|"[^"]|""[^"])*/, '"""'),
+      seq("'''", /([^']|'[^']|''[^'])*/, "'''"),
       /"([^"\\]|\\.)*"/,
       /'([^'\\]|\\.)*'/,
     ),
+    symbol: $ => /:[a-zA-Z_][a-zA-Z0-9_]*/,
+    true: $ => 'true',
+    false: $ => 'false',
+    null: $ => 'null',
 
-    // Comments
-    comment: $ => token(seq('#', /.*/)),
+    comment: $ => token(choice(
+      seq('#', /[^#\n][^\n]*/),
+      seq('#', /\n/),
+      seq('###', /(.|\n)*?/, '###'),
+    )),
 
-    // Statement terminator
-    _terminator: $ => /\n/,
+    _terminator: $ => '\n',
   },
 });

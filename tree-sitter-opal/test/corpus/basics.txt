@@ -1,0 +1,66 @@
+================
+Integer assignment
+================
+
+x = 42
+
+---
+
+(source_file
+  (assignment
+    (identifier)
+    (integer)))
+
+================
+Let binding
+================
+
+let name = "opal"
+
+---
+
+(source_file
+  (let_binding
+    (identifier)
+    (string)))
+
+================
+Boolean and null
+================
+
+a = true
+b = false
+c = null
+
+---
+
+(source_file
+  (assignment (identifier) (true))
+  (assignment (identifier) (false))
+  (assignment (identifier) (null)))
+
+================
+Symbol literal
+================
+
+status = :ok
+
+---
+
+(source_file
+  (assignment
+    (identifier)
+    (symbol)))
+
+================
+Compound assignment
+================
+
+x += 10
+
+---
+
+(source_file
+  (compound_assignment
+    (identifier)
+    (integer)))
