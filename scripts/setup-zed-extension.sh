@@ -35,7 +35,7 @@ description = "Opal language support: syntax highlighting and LSP."
 authors = ["Claudio"]
 
 [grammars.opal]
-repository = "https://github.com/user/opal"
+repository = "https://github.com/jcfigueiredo/opal-a"
 rev = "main"
 TOML
 
