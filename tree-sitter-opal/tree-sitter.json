@@ -1,0 +1,16 @@
+{
+  "grammars": [
+    {
+      "name": "opal",
+      "camelcase": "Opal",
+      "scope": "source.opal",
+      "path": ".",
+      "file-types": ["opl"],
+      "injection-regex": "^opal$"
+    }
+  ],
+  "metadata": {
+    "version": "0.1.0",
+    "license": "MIT"
+  }
+}

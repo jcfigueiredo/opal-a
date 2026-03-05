@@ -1,0 +1,25 @@
+{
+  "name": "tree-sitter-opal",
+  "version": "0.1.0",
+  "description": "Tree-sitter grammar for the Opal programming language",
+  "main": "bindings/node",
+  "keywords": ["parser", "tree-sitter", "opal"],
+  "devDependencies": {
+    "tree-sitter-cli": "^0.25.0"
+  },
+  "scripts": {
+    "generate": "tree-sitter generate",
+    "test": "tree-sitter test",
+    "parse": "tree-sitter parse"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["tree-sitter-cli"]
+  },
+  "tree-sitter": [
+    {
+      "scope": "source.opal",
+      "file-types": ["opl"],
+      "injection-regex": "^opal$"
+    }
+  ]
+}
