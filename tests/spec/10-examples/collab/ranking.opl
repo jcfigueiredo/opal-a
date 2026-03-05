@@ -1,0 +1,15 @@
+export { rank_contributors, format_leaderboard }
+
+def rank_contributors(contributors)
+  contributors.sort(|a, b| b.total_points() - a.total_points())
+end
+
+def format_leaderboard(ranked)
+  lines = []
+  for i in 0..ranked.length()
+    c = ranked[i]
+    rank = i + 1
+    lines = lines.push(f"{rank}. {c.name} ({c.total_points()} pts)")
+  end
+  lines.join(" | ")
+end

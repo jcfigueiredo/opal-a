@@ -1,0 +1,54 @@
+# expect: Build Opal Compiler: 4/4 claimed | 1. Alice (750 pts) | 2. Carol (250 pts) | 3. Bob (50 pts)
+
+import Types.{tier_for}
+import Contributor.{Contributor, award_contributor}
+import Bounty.{Bounty, claim_bounty}
+import Ranking.{rank_contributors, format_leaderboard}
+
+# Create contributors
+alice = Contributor.new(name: "Alice", skills: [:rust, :opal], points: 0, awards: [])
+bob = Contributor.new(name: "Bob", skills: [:docs, :design], points: 0, awards: [])
+carol = Contributor.new(name: "Carol", skills: [:testing], points: 0, awards: [])
+
+# Create bounties
+bounties = [
+  Bounty.new(title: "Parser", reward: 500, skill: :rust, claimer: ""),
+  Bounty.new(title: "Core Types", reward: 250, skill: :opal, claimer: ""),
+  Bounty.new(title: "Test Suite", reward: 250, skill: :testing, claimer: ""),
+  Bounty.new(title: "Documentation", reward: 50, skill: :docs, claimer: "")
+]
+
+# Process claims
+claims = [
+  [0, "Alice", alice.skills],
+  [1, "Alice", alice.skills],
+  [2, "Carol", carol.skills],
+  [3, "Bob", bob.skills]
+]
+
+claimed_count = 0
+for claim in claims
+  idx = claim[0]
+  name = claim[1]
+  skills = claim[2]
+  result = claim_bounty(bounties[idx], name, skills)
+  match result
+    case Ok(b)
+      bounties[idx] = b
+      claimed_count += 1
+    case Error(_)
+      claimed_count = claimed_count
+  end
+end
+
+# Award points
+alice = award_contributor(alice, 500)
+alice = award_contributor(alice, 250)
+carol = award_contributor(carol, 250)
+bob = award_contributor(bob, 50)
+
+# Rank and display
+ranked = rank_contributors([alice, bob, carol])
+leaderboard = format_leaderboard(ranked)
+
+print(f"Build Opal Compiler: {claimed_count}/4 claimed | {leaderboard}")
