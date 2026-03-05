@@ -1,0 +1,49 @@
+================
+Import
+================
+
+from Math import sqrt, PI
+
+---
+
+(source_file
+  (from_import (identifier) (identifier) (identifier)))
+
+================
+Try catch
+================
+
+try
+  risky()
+catch Error as e
+  print(e)
+end
+
+---
+
+(source_file
+  (try_catch
+    (body (expression_statement (call (identifier))))
+    (catch_clause (identifier) (identifier) (body (expression_statement (call (identifier) (identifier)))))))
+
+================
+Event and emit
+================
+
+event UserJoined(name: String)
+
+---
+
+(source_file
+  (event_definition (identifier) (enum_field (identifier) (type_annotation (identifier)))))
+
+================
+Type alias
+================
+
+type Status = :ok | :error | :pending
+
+---
+
+(source_file
+  (type_alias (identifier) (type_expression (type_expression (type_expression (symbol)) (type_expression (symbol))) (type_expression (symbol)))))

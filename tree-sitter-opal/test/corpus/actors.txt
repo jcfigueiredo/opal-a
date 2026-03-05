@@ -1,0 +1,29 @@
+================
+Actor with receive
+================
+
+actor Counter
+  def init()
+    .count = 0
+  end
+
+  receive
+    case :increment
+      .count = .count + 1
+    case :get
+      reply .count
+  end
+end
+
+---
+
+(source_file
+  (actor_definition
+    (identifier)
+    (function_definition
+      (identifier)
+      (parameters)
+      (body (instance_assign (instance_variable (identifier)) (integer))))
+    (receive_block
+      (match_case (pattern (symbol)) (body (instance_assign (instance_variable (identifier)) (binary_expression (instance_variable (identifier)) (integer)))))
+      (match_case (pattern (symbol)) (body (reply_statement (instance_variable (identifier))))))))

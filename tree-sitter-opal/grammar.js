@@ -16,6 +16,7 @@ module.exports = grammar({
     [$.pattern, $.constructor_pattern],
     [$.pattern, $.closure_params],
     [$.list_pattern, $.or_pattern],
+    [$._expression, $.catch_clause],
   ],
 
   rules: {
@@ -38,6 +39,23 @@ module.exports = grammar({
       $.while_loop,
       $.break_statement,
       $.next_statement,
+      $.actor_definition,
+      $.try_catch,
+      $.from_import,
+      $.import_statement,
+      $.export_block,
+      $.macro_definition,
+      $.macro_invocation,
+      $.annotated_statement,
+      $.event_definition,
+      $.on_handler,
+      $.emit_statement,
+      $.type_alias,
+      $.requires_statement,
+      $.raise_statement,
+      $.reply_statement,
+      $.extern_definition,
+      $.retroactive_impl,
       $.expression_statement,
     ),
 
@@ -85,6 +103,10 @@ module.exports = grammar({
       $.dict,
       $.list_comprehension,
       $.self,
+      $.await_expression,
+      $.index_expression,
+      $.null_safe_access,
+      $.cast_expression,
     ),
 
     call: $ => prec(2, seq(
@@ -438,6 +460,192 @@ module.exports = grammar({
     ),
 
     self: $ => 'self',
+
+    // Actors
+    actor_definition: $ => seq(
+      'actor',
+      field('name', $.identifier),
+      repeat(choice(
+        $.needs_declaration,
+        $.function_definition,
+        $.receive_block,
+      )),
+      'end',
+    ),
+
+    receive_block: $ => seq(
+      'receive',
+      repeat1($.match_case),
+      'end',
+    ),
+
+    reply_statement: $ => prec.right(seq('reply', $._expression)),
+
+    // Error handling
+    try_catch: $ => seq(
+      'try',
+      optional(field('body', $.body)),
+      repeat1($.catch_clause),
+      optional($.ensure_clause),
+      'end',
+    ),
+
+    catch_clause: $ => choice(
+      prec.dynamic(10, seq('catch', field('type', $.identifier), 'as', field('var', $.identifier), optional(field('body', $.body)))),
+      prec.dynamic(9, seq('catch', field('type', $.identifier), optional(field('body', $.body)))),
+      seq('catch', optional(field('body', $.body))),
+    ),
+
+    ensure_clause: $ => seq(
+      'ensure',
+      optional(field('body', $.body)),
+    ),
+
+    raise_statement: $ => prec.right(seq('raise', $._expression)),
+
+    requires_statement: $ => prec.right(seq(
+      'requires',
+      $._expression,
+      optional(seq(',', $._expression)),
+    )),
+
+    // Imports/exports
+    from_import: $ => seq(
+      'from',
+      field('module', $.identifier),
+      'import',
+      $.identifier,
+      repeat(seq(',', $.identifier)),
+    ),
+
+    import_statement: $ => prec.left(seq(
+      'import',
+      $.identifier,
+      repeat(seq('.', $.identifier)),
+      optional(choice(
+        seq('as', $.identifier),
+        seq('.', '{', $.identifier, repeat(seq(',', $.identifier)), '}'),
+      )),
+    )),
+
+    export_block: $ => seq(
+      'export',
+      '{',
+      $.identifier,
+      repeat(seq(',', $.identifier)),
+      '}',
+    ),
+
+    // Macros and annotations
+    macro_definition: $ => seq(
+      'macro',
+      field('name', $.identifier),
+      '(',
+      optional(seq($.identifier, repeat(seq(',', $.identifier)))),
+      ')',
+      optional(field('body', $.body)),
+      'end',
+    ),
+
+    macro_invocation: $ => seq(
+      '@',
+      field('name', $.identifier),
+    ),
+
+    annotated_statement: $ => seq(
+      $.annotation,
+      $._statement,
+    ),
+
+    annotation: $ => seq(
+      '@[',
+      $.identifier,
+      optional(seq(':', $._expression)),
+      repeat(seq(',', $.identifier, optional(seq(':', $._expression)))),
+      ']',
+    ),
+
+    // Events
+    event_definition: $ => seq(
+      'event',
+      field('name', $.identifier),
+      '(',
+      optional(seq($.enum_field, repeat(seq(',', $.enum_field)))),
+      ')',
+    ),
+
+    on_handler: $ => seq(
+      'on',
+      field('event', $.identifier),
+      'do',
+      '|',
+      field('param', $.identifier),
+      '|',
+      optional(field('body', $.body)),
+      'end',
+    ),
+
+    emit_statement: $ => prec.right(seq('emit', $._expression)),
+
+    // Type aliases
+    type_alias: $ => seq(
+      'type',
+      field('name', $.identifier),
+      '=',
+      field('type', $.type_expression),
+    ),
+
+    type_expression: $ => prec.left(1, choice(
+      $.identifier,
+      $.symbol,
+      seq($.type_expression, '|', $.type_expression),
+    )),
+
+    // Extern and retroactive conformance
+    extern_definition: $ => seq(
+      'extern',
+      $.string,
+      repeat($.extern_declaration),
+      'end',
+    ),
+
+    extern_declaration: $ => seq(
+      'def',
+      $.identifier,
+      optional($.parameters),
+      optional(seq('->', $.type_annotation)),
+    ),
+
+    retroactive_impl: $ => seq(
+      'implements',
+      field('protocol', $.identifier),
+      'for',
+      field('type', $.identifier),
+      repeat($.function_definition),
+      'end',
+    ),
+
+    // Additional expressions
+    await_expression: $ => prec(12, seq('await', $._expression)),
+
+    index_expression: $ => prec(3, seq(
+      $._expression,
+      '[',
+      $._expression,
+      ']',
+    )),
+
+    null_safe_access: $ => prec(3, seq(
+      $._expression,
+      '?.',
+      $.identifier,
+    )),
+
+    cast_expression: $ => prec(1, seq(
+      $._expression,
+      'as',
+      $.identifier,
+    )),
 
     // Literals
     identifier: $ => /[a-zA-Z_][a-zA-Z0-9_]*!?/,
