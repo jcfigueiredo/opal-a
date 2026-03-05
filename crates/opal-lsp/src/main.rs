@@ -6,6 +6,7 @@ use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
 
 mod diagnostics;
+mod symbols;
 
 #[derive(Debug)]
 struct OpalBackend {
@@ -34,6 +35,7 @@ impl LanguageServer for OpalBackend {
                 text_document_sync: Some(TextDocumentSyncCapability::Kind(
                     TextDocumentSyncKind::FULL,
                 )),
+                document_symbol_provider: Some(OneOf::Left(true)),
                 ..Default::default()
             },
             ..Default::default()
@@ -69,6 +71,24 @@ impl LanguageServer for OpalBackend {
                 .insert(uri.clone(), change.text.clone());
             self.publish_diagnostics(uri, &change.text).await;
         }
+    }
+
+    async fn document_symbol(
+        &self,
+        params: DocumentSymbolParams,
+    ) -> Result<Option<DocumentSymbolResponse>> {
+        let uri = params.text_document.uri;
+        let docs = self.documents.lock().unwrap();
+        let Some(source) = docs.get(&uri) else {
+            return Ok(None);
+        };
+
+        let Ok(program) = opal_parser::parse(source) else {
+            return Ok(None);
+        };
+
+        let syms = symbols::document_symbols(&program, source);
+        Ok(Some(DocumentSymbolResponse::Nested(syms)))
     }
 }
 
