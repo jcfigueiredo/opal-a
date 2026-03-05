@@ -1,0 +1,7 @@
+export { calculate_reward, BONUS_RATE }
+
+BONUS_RATE = 1.5
+
+def calculate_reward(base)
+  base * BONUS_RATE
+end

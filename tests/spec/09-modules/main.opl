@@ -1,0 +1,6 @@
+# expect: reward: 1125.0
+import Rewards.{calculate_reward, BONUS_RATE}
+
+base = 750.0
+reward = calculate_reward(base)
+print(f"reward: {reward}")
