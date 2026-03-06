@@ -40,19 +40,33 @@ fn position_to_offset(source: &str, position: Position) -> Option<usize> {
 }
 
 fn identifier_at_offset(source: &str, offset: usize) -> Option<String> {
-    let bytes = source.as_bytes();
-    if offset >= bytes.len() {
+    if offset >= source.len() {
         return None;
     }
 
+    // Work with char boundaries for Unicode support
     let mut start = offset;
-    while start > 0 && is_ident_char(bytes[start - 1]) {
-        start -= 1;
+    while start > 0 {
+        let prev = floor_char_boundary(source, start - 1);
+        let ch = source[prev..].chars().next().unwrap();
+        if is_ident_char(ch) {
+            start = prev;
+        } else {
+            break;
+        }
     }
 
     let mut end = offset;
-    while end < bytes.len() && is_ident_char(bytes[end]) {
-        end += 1;
+    while end < source.len() {
+        let ch = match source[end..].chars().next() {
+            Some(c) => c,
+            None => break,
+        };
+        if is_ident_char(ch) {
+            end += ch.len_utf8();
+        } else {
+            break;
+        }
     }
 
     if start == end {
@@ -62,8 +76,21 @@ fn identifier_at_offset(source: &str, offset: usize) -> Option<String> {
     Some(source[start..end].to_string())
 }
 
-fn is_ident_char(b: u8) -> bool {
-    b.is_ascii_alphanumeric() || b == b'_' || b == b'!'
+fn floor_char_boundary(s: &str, mut i: usize) -> usize {
+    while i > 0 && !s.is_char_boundary(i) {
+        i -= 1;
+    }
+    i
+}
+
+fn is_ident_char(c: char) -> bool {
+    // Match the lexer regex: [\p{L}\p{So}_][\p{L}\p{N}\p{So}\p{M}_]*!?
+    c.is_alphabetic()    // \p{L}
+        || c.is_numeric()    // \p{N}
+        || c == '_'
+        || c == '!'
+        || (!c.is_ascii() && !c.is_whitespace() && !c.is_ascii_punctuation())
+        // Non-ASCII, non-whitespace, non-punct covers \p{So} (emoji) and \p{M} (combining marks)
 }
 
 fn collect_definitions(stmts: &[Stmt], symbols: &mut Vec<(String, Span)>) {
