@@ -1,0 +1,32 @@
+# expect: Widget blue 1 | Button red 2 click | true
+
+# Inherited needs with explicit values
+class Widget
+  needs color: String
+  needs priority: Int
+
+  def describe()
+    f"Widget {.color} {.priority}"
+  end
+end
+
+class Button < Widget
+  needs action: String
+
+  def describe()
+    f"Button {.color} {.priority} {.action}"
+  end
+end
+
+w = Widget.new(color: "blue", priority: 1)
+
+# Child requires all parent needs + own
+b = Button.new(color: "red", priority: 2, action: "click")
+
+results = [
+  w.describe(),
+  b.describe(),
+  f"{b is Widget}"
+]
+
+print(results.join(" | "))

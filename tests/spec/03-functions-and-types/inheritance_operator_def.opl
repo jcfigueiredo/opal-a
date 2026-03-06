@@ -1,0 +1,54 @@
+# expect: (4.0, 6.0) | (4.0, 6.0) | true | 3D: (4.0, 6.0, 8.0)
+
+# Operator overloading with inheritance and Self.new()
+class Vec2
+  needs x: Float
+  needs y: Float
+
+  def +(other)
+    Self.new(x: .x + other.x, y: .y + other.y)
+  end
+
+  def ==(other)
+    .x == other.x and .y == other.y
+  end
+
+  def display()
+    f"({.x}, {.y})"
+  end
+end
+
+# Child inherits operators from parent
+class Point2D < Vec2
+end
+
+a = Vec2.new(x: 1.0, y: 2.0)
+b = Vec2.new(x: 3.0, y: 4.0)
+c = a + b
+
+# Point2D inherits + and == from Vec2
+p1 = Point2D.new(x: 1.0, y: 2.0)
+p2 = Point2D.new(x: 3.0, y: 4.0)
+p3 = p1 + p2
+
+eq = c == p3
+
+# Child that extends with new operator and needs
+class Vec3 < Vec2
+  needs z: Float
+
+  def +(other)
+    Self.new(x: .x + other.x, y: .y + other.y, z: .z + other.z)
+  end
+
+  def display()
+    f"3D: ({.x}, {.y}, {.z})"
+  end
+end
+
+v1 = Vec3.new(x: 1.0, y: 2.0, z: 3.0)
+v2 = Vec3.new(x: 3.0, y: 4.0, z: 5.0)
+v3 = v1 + v2
+
+results = [c.display(), p3.display(), f"{eq}", v3.display()]
+print(results.join(" | "))

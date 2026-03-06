@@ -1,0 +1,51 @@
+# expect: Rex is a Dog | Whiskers is a Cat | unknown | 3 animals
+
+# Pattern matching and control flow with inherited types
+class Animal
+  needs name: String
+end
+
+class Dog < Animal
+  needs breed: String
+end
+
+class Cat < Animal
+  needs indoor: Bool
+end
+
+def classify(animal)
+  if animal is Dog
+    f"{animal.name} is a Dog"
+  elsif animal is Cat
+    f"{animal.name} is a Cat"
+  elsif animal is Animal
+    f"{animal.name} is an Animal"
+  else
+    "unknown"
+  end
+end
+
+rex = Dog.new(name: "Rex", breed: "Lab")
+whiskers = Cat.new(name: "Whiskers", indoor: true)
+
+# Note: is checks most-specific first since Dog < Animal
+# But we check Dog before Animal in the if chain
+
+animals = [rex, whiskers, Animal.new(name: "Mystery")]
+
+# Count using for loop
+count = 0
+for a in animals
+  if a is Animal
+    count += 1
+  end
+end
+
+results = [
+  classify(rex),
+  classify(whiskers),
+  classify("not an animal"),
+  f"{count} animals"
+]
+
+print(results.join(" | "))

@@ -1,0 +1,48 @@
+# expect: Dog: Rex | Cat: Whiskers | Dog Cat | 1 dogs
+
+# Inheritance with closures, list operations, match
+class Animal
+  needs name: String
+  needs kind: String
+
+  def label()
+    f"{.kind}: {.name}"
+  end
+end
+
+class Dog < Animal
+  def init()
+    .kind = "Dog"
+  end
+end
+
+class Cat < Animal
+  def init()
+    .kind = "Cat"
+  end
+end
+
+rex = Dog.new(name: "Rex", kind: "Dog")
+whiskers = Cat.new(name: "Whiskers", kind: "Cat")
+
+# Closures with inherited methods
+animals = [rex, whiskers]
+labels = animals.map(|a| a.label())
+
+# For loop with inherited method
+kinds = ""
+for a in animals
+  kinds = if kinds == "" then a.kind else f"{kinds} {a.kind}" end
+end
+
+# Filter using is operator with inheritance
+dogs = animals.filter(|a| a is Dog)
+
+results = [
+  labels[0],
+  labels[1],
+  kinds,
+  f"{dogs.length()} dogs"
+]
+
+print(results.join(" | "))

@@ -1,0 +1,53 @@
+# expect: 7 | 150 | Level3: 111
+
+# Self.new() in inherited operator defs
+class Score
+  needs points: Int
+
+  def +(other)
+    Self.new(points: .points + other.points)
+  end
+end
+
+class BonusScore < Score
+  def +(other)
+    Self.new(points: .points + other.points + 50)
+  end
+end
+
+# Score uses Self.new() → returns Score
+s = Score.new(points: 3) + Score.new(points: 4)
+
+# BonusScore overrides + with own Self.new() → returns BonusScore
+b = BonusScore.new(points: 20) + BonusScore.new(points: 30) + BonusScore.new(points: 0)
+
+# Deep chain with Self.new() at each level
+class Level1
+  needs val: Int
+
+  def combine(other)
+    Self.new(val: .val + other.val)
+  end
+
+  def label()
+    f"Level1: {.val}"
+  end
+end
+
+class Level2 < Level1
+  def label()
+    f"Level2: {.val}"
+  end
+end
+
+class Level3 < Level2
+  def label()
+    f"Level3: {.val}"
+  end
+end
+
+# Level3 inherits combine() which uses Self.new()
+l = Level3.new(val: 100).combine(Level3.new(val: 11))
+
+results = [f"{s.points}", f"{b.points}", l.label()]
+print(results.join(" | "))

@@ -1,0 +1,51 @@
+# expect: Circle: 78.53975 | Sphere: 78.53975 | true | true | true
+
+# Inheritance combined with protocol conformance
+protocol Describable
+  def describe() -> String
+end
+
+class Shape implements Describable
+  needs name: String
+
+  def describe()
+    f"{.name}"
+  end
+end
+
+class Circle < Shape
+  needs radius: Float
+
+  def area()
+    3.14159 * .radius * .radius
+  end
+
+  def describe()
+    f"Circle: {.area()}"
+  end
+end
+
+# Grandchild: inherits from Circle, which inherits from Shape,
+# which implements Describable
+class Sphere < Circle
+  def volume()
+    (4.0 / 3.0) * 3.14159 * .radius * .radius * .radius
+  end
+
+  def describe()
+    f"Sphere: {.area()}"
+  end
+end
+
+c = Circle.new(name: "C", radius: 5.0)
+s = Sphere.new(name: "S", radius: 5.0)
+
+results = [
+  c.describe(),
+  s.describe(),
+  f"{c is Shape}",
+  f"{s is Circle}",
+  f"{s is Shape}"
+]
+
+print(results.join(" | "))

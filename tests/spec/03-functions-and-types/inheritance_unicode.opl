@@ -1,0 +1,42 @@
+# expect: 🐕 Rex barks! | 🐕 Rex は動物 | 🐱 Tama purrs | true | true | false
+
+# Unicode class names with inheritance
+class 動物
+  needs 名前: String
+
+  def 紹介()
+    f"{.名前} は動物"
+  end
+end
+
+class 🐕犬 < 動物
+  needs 鳴き声: String
+
+  def 鳴く()
+    f"🐕 {.名前} {.鳴き声}!"
+  end
+
+  def 紹介()
+    f"🐕 {super()}"
+  end
+end
+
+class 🐱猫 < 動物
+  def 鳴く()
+    f"🐱 {.名前} purrs"
+  end
+end
+
+rex = 🐕犬.new(名前: "Rex", 鳴き声: "barks")
+tama = 🐱猫.new(名前: "Tama")
+
+results = [
+  rex.鳴く(),
+  rex.紹介(),
+  tama.鳴く(),
+  f"{rex is 🐕犬}",
+  f"{rex is 動物}",
+  f"{tama is 🐕犬}"
+]
+
+print(results.join(" | "))
