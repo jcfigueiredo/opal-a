@@ -1,0 +1,93 @@
+# expect: ❤️+💙=💜 | 3+4i | M(3,7;5,11) | sorted: A,B,C
+
+# Emoji operator overloading
+class Heart
+  needs color: String
+
+  def +(other)
+    Heart.new(color: f"{.color}+{other.color}=💜")
+  end
+end
+
+h1 = Heart.new(color: "❤️")
+h2 = Heart.new(color: "💙")
+merged = h1 + h2
+
+# Complex numbers with def + and def *
+class Complex
+  needs real: Int
+  needs imag: Int
+
+  def +(other)
+    Complex.new(real: .real + other.real, imag: .imag + other.imag)
+  end
+
+  def *(other)
+    Complex.new(
+      real: .real * other.real - .imag * other.imag,
+      imag: .real * other.imag + .imag * other.real
+    )
+  end
+
+  def display()
+    f"{.real}+{.imag}i"
+  end
+end
+
+c1 = Complex.new(real: 1, imag: 2)
+c2 = Complex.new(real: 2, imag: 2)
+c3 = c1 + c2
+
+# Matrix addition
+class Matrix2x2
+  needs a: Int
+  needs b: Int
+  needs c: Int
+  needs d: Int
+
+  def +(other)
+    Matrix2x2.new(a: .a + other.a, b: .b + other.b, c: .c + other.c, d: .d + other.d)
+  end
+
+  def display()
+    f"M({.a},{.b};{.c},{.d})"
+  end
+end
+
+m1 = Matrix2x2.new(a: 1, b: 2, c: 3, d: 4)
+m2 = Matrix2x2.new(a: 2, b: 5, c: 2, d: 7)
+m3 = m1 + m2
+
+# Comparison for sorting by numeric value
+class Ranked
+  needs name: String
+  needs rank: Int
+
+  def <(other)
+    .rank < other.rank
+  end
+end
+
+items = [Ranked.new(name: "C", rank: 3), Ranked.new(name: "A", rank: 1), Ranked.new(name: "B", rank: 2)]
+
+# Simple bubble sort using overloaded <
+for i in [0, 1]
+  for j in [0, 1]
+    if items[j + 1] < items[j]
+      temp = items[j]
+      items[j] = items[j + 1]
+      items[j + 1] = temp
+    end
+  end
+end
+
+sorted_names = [items[0].name, items[1].name, items[2].name]
+
+results = [
+  merged.color,
+  c3.display(),
+  m3.display(),
+  f"sorted: {sorted_names.join(",")}"
+]
+
+print(results.join(" | "))

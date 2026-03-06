@@ -1,0 +1,75 @@
+# expect: (10.0, 20.0) | true | 3 | USD 15.5
+
+# Chained arithmetic operations
+class Vec2
+  needs x: Float
+  needs y: Float
+
+  def +(other)
+    Vec2.new(x: .x + other.x, y: .y + other.y)
+  end
+
+  def -(other)
+    Vec2.new(x: .x - other.x, y: .y - other.y)
+  end
+
+  def *(scalar)
+    Vec2.new(x: .x * scalar, y: .y * scalar)
+  end
+
+  def ==(other)
+    .x == other.x and .y == other.y
+  end
+end
+
+a = Vec2.new(x: 1.0, y: 2.0)
+b = Vec2.new(x: 3.0, y: 4.0)
+c = Vec2.new(x: 5.0, y: 6.0)
+
+# Chain: (a + b + c) * 2 — but * binds tighter, so use intermediate
+sum = a + b + c
+result = sum * 2.0 - Vec2.new(x: 8.0, y: 4.0)
+
+# Comparison in conditional
+equal = a + b == Vec2.new(x: 4.0, y: 6.0)
+
+# Operators with collections
+class Counter
+  needs value: Int
+
+  def +(other)
+    Counter.new(value: .value + other.value)
+  end
+end
+
+counters = [Counter.new(value: 1), Counter.new(value: 1), Counter.new(value: 1)]
+total = counters.reduce(Counter.new(value: 0)) do |acc, c|
+  acc + c
+end
+
+# Mixed: operator-overloaded class in f-string
+class Currency
+  needs amount: Float
+  needs symbol: String
+
+  def +(other)
+    Currency.new(amount: .amount + other.amount, symbol: .symbol)
+  end
+
+  def display()
+    f"{.symbol} {.amount}"
+  end
+end
+
+price = Currency.new(amount: 10.0, symbol: "USD")
+tax = Currency.new(amount: 5.50, symbol: "USD")
+total_price = price + tax
+
+results = [
+  f"({result.x}, {result.y})",
+  f"{equal}",
+  f"{total.value}",
+  total_price.display()
+]
+
+print(results.join(" | "))

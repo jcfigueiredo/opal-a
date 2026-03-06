@@ -1,0 +1,66 @@
+# expect: add: 30 | def +: 30 | both work | 50
+
+# Both def add(other) and def +(other) should work identically
+class Score
+  needs points: Int
+
+  # Using the traditional method name form
+  def add(other)
+    Score.new(points: .points + other.points)
+  end
+end
+
+s1 = Score.new(points: 10)
+s2 = Score.new(points: 20)
+s3 = s1 + s2
+
+# Using the operator def form
+class Rating
+  needs stars: Int
+
+  # Using the operator form
+  def +(other)
+    Rating.new(stars: .stars + other.stars)
+  end
+end
+
+r1 = Rating.new(stars: 10)
+r2 = Rating.new(stars: 20)
+r3 = r1 + r2
+
+# Class with both operator and regular methods
+class Wallet
+  needs balance: Int
+
+  def +(other)
+    Wallet.new(balance: .balance + other.balance)
+  end
+
+  def -(other)
+    Wallet.new(balance: .balance - other.balance)
+  end
+
+  def ==(other)
+    .balance == other.balance
+  end
+
+  def display()
+    f"{.balance}"
+  end
+end
+
+w1 = Wallet.new(balance: 100)
+w2 = Wallet.new(balance: 100)
+w3 = Wallet.new(balance: 50)
+
+same = w1 == w2
+diff = w1 - w3 + w3
+
+results = [
+  f"add: {s3.points}",
+  f"def +: {r3.stars}",
+  if same then "both work" else "broken" end,
+  f"{(w1 - w3 - w3 + w3).display()}"
+]
+
+print(results.join(" | "))

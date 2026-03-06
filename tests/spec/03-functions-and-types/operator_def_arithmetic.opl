@@ -1,0 +1,47 @@
+# expect: (4.0, 6.0) | (-2.0, -2.0) | (3.0, 6.0) | (0.5, 1.0) | (1.0, 4.0) | (-1.0, -2.0)
+
+class Vec2
+  needs x: Float
+  needs y: Float
+
+  def +(other)
+    Vec2.new(x: .x + other.x, y: .y + other.y)
+  end
+
+  def -(other)
+    Vec2.new(x: .x - other.x, y: .y - other.y)
+  end
+
+  def *(scalar)
+    Vec2.new(x: .x * scalar, y: .y * scalar)
+  end
+
+  def /(scalar)
+    Vec2.new(x: .x / scalar, y: .y / scalar)
+  end
+
+  def **(power)
+    Vec2.new(x: .x ** power, y: .y ** power)
+  end
+end
+
+a = Vec2.new(x: 1.0, y: 2.0)
+b = Vec2.new(x: 3.0, y: 4.0)
+
+sum = a + b
+diff = a - b
+scaled = a * 3.0
+halved = a / 2.0
+squared = a ** 2.0
+neg = Vec2.new(x: 0.0, y: 0.0) - a
+
+results = [
+  f"({sum.x}, {sum.y})",
+  f"({diff.x}, {diff.y})",
+  f"({scaled.x}, {scaled.y})",
+  f"({halved.x}, {halved.y})",
+  f"({squared.x}, {squared.y})",
+  f"({neg.x}, {neg.y})"
+]
+
+print(results.join(" | "))

@@ -1,0 +1,46 @@
+# expect: true | false | true | false | true | true | false | true
+
+class Money
+  needs cents: Int
+
+  def ==(other)
+    .cents == other.cents
+  end
+
+  def !=(other)
+    .cents != other.cents
+  end
+
+  def <(other)
+    .cents < other.cents
+  end
+
+  def >(other)
+    .cents > other.cents
+  end
+
+  def <=(other)
+    .cents <= other.cents
+  end
+
+  def >=(other)
+    .cents >= other.cents
+  end
+end
+
+a = Money.new(cents: 500)
+b = Money.new(cents: 500)
+c = Money.new(cents: 1000)
+
+results = [
+  f"{a == b}",
+  f"{a == c}",
+  f"{a != c}",
+  f"{a != b}",
+  f"{a < c}",
+  f"{c > a}",
+  f"{c < a}",
+  f"{a <= b}"
+]
+
+print(results.join(" | "))
