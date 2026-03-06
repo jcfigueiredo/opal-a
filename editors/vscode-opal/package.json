@@ -7,13 +7,24 @@
   "engines": {
     "vscode": "^1.75.0"
   },
-  "categories": ["Programming Languages"],
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:opal"
+  ],
+  "main": "./dist/extension.js",
   "contributes": {
     "languages": [
       {
         "id": "opal",
-        "aliases": ["Opal", "opal"],
-        "extensions": [".opl"],
+        "aliases": [
+          "Opal",
+          "opal"
+        ],
+        "extensions": [
+          ".opl"
+        ],
         "configuration": "./language-configuration.json"
       }
     ],
@@ -24,5 +35,9 @@
         "path": "./syntaxes/opal.tmLanguage.json"
       }
     ]
+  },
+  "devDependencies": {
+    "esbuild": "^0.27.3",
+    "vscode-languageclient": "^9.0.1"
   }
 }
