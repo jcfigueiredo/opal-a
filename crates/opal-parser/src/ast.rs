@@ -45,6 +45,7 @@ pub enum StmtKind {
     /// Class definition
     ClassDef {
         name: String,
+        parent: Option<String>,
         needs: Vec<NeedsDecl>,
         methods: Vec<Stmt>,
         implements: Vec<String>,

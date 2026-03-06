@@ -271,6 +271,8 @@ pub enum Token {
     Defaults,
     #[token("self")]
     SelfKw,
+    #[token("super")]
+    Super,
     #[token("receives")]
     Receives,
     #[token("reply")]

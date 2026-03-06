@@ -708,6 +708,7 @@ impl<W: Write> Interpreter<W> {
             },
             StmtKind::ClassDef {
                 name,
+                parent: _,
                 needs,
                 methods,
                 implements,

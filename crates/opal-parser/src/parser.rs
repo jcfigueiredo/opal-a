@@ -815,6 +815,7 @@ impl<'src> Parser<'src> {
         Ok(Stmt {
             kind: StmtKind::ClassDef {
                 name,
+                parent: None,
                 needs,
                 methods,
                 implements,
@@ -3102,10 +3103,12 @@ mod tests {
         match &prog.statements[0].kind {
             StmtKind::ClassDef {
                 name,
+                parent,
                 needs,
                 methods,
                 implements,
             } => {
+                assert_eq!(*parent, None);
                 assert_eq!(name, "Circle");
                 assert_eq!(needs.len(), 1);
                 assert_eq!(needs[0].name, "radius");
