@@ -14,6 +14,7 @@
   "and" "or" "not" "is"
   "extern" "parallel" "async"
   "self"
+  "Self"
 ] @keyword
 
 ["true" "false"] @boolean

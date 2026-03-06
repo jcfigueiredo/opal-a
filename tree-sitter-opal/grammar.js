@@ -115,6 +115,7 @@ module.exports = grammar({
       $.dict,
       $.list_comprehension,
       $.self,
+      $.Self,
       $.await_expression,
       $.index_expression,
       $.null_safe_access,
@@ -479,6 +480,7 @@ module.exports = grammar({
     ),
 
     self: $ => 'self',
+    Self: $ => 'Self',
 
     // Actors
     actor_definition: $ => seq(

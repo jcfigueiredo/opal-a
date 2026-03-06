@@ -92,6 +92,7 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
 <literal>       ::= INTEGER | FLOAT | STRING | BOOL | NULL
                    | SYMBOL | <list> | <tuple> | <dict> | <range> | <regex>
                    | <f_string> | <r_string> | <t_string>
+                   | "self" | "Self"
 
 <string>        ::= '"' ( STRING_CONTENT | ESCAPE_SEQ )* '"'
                    | "'" ( STRING_CONTENT | ESCAPE_SEQ )* "'"
@@ -441,12 +442,29 @@ type Result[T] = T | Error
 
 Classes use `needs` for dependency injection and `def init()` for initialization. Instance variables use `.` prefix. Single inheritance with `<`. Constructor shorthand: `Type(args)` is sugar for `Type.new(args)`.
 
+- **`self`** (lowercase) — the current instance. Use in `match self`, pass as argument, access fields via `.field`.
+- **`Self`** (uppercase) — the current class. Use `Self.new(...)` to construct new instances without hardcoding the class name. Only valid inside class methods.
+- **`def self.method()`** — defines a static/class method.
+
 ```opal
 class Dog < Animal
   needs breed: String
 
   def speak()
     print(f"Woof! I'm a {.breed}")
+  end
+end
+```
+
+Operator overloading uses `Self.new()` to return new instances:
+
+```opal
+class Vec2
+  needs x: Float
+  needs y: Float
+
+  def +(other)
+    Self.new(x: .x + other.x, y: .y + other.y)
   end
 end
 ```

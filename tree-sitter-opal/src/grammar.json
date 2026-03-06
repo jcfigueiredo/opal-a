@@ -352,6 +352,10 @@
         },
         {
           "type": "SYMBOL",
+          "name": "Self"
+        },
+        {
+          "type": "SYMBOL",
           "name": "await_expression"
         },
         {
@@ -2917,6 +2921,10 @@
     "self": {
       "type": "STRING",
       "value": "self"
+    },
+    "Self": {
+      "type": "STRING",
+      "value": "Self"
     },
     "actor_definition": {
       "type": "SEQ",
