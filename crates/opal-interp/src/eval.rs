@@ -3766,8 +3766,13 @@ impl<W: Write> Interpreter<W> {
             name => {
                 if let Value::Instance(id) = value {
                     let inst = &self.instances[id.0];
-                    if self.classes[inst.class_id.0].name == name {
-                        return true;
+                    // Walk ancestry chain
+                    let mut current_id = Some(inst.class_id);
+                    while let Some(cid) = current_id {
+                        if self.classes[cid.0].name == name {
+                            return true;
+                        }
+                        current_id = self.classes[cid.0].parent;
                     }
                     return self.class_implements_protocol(inst.class_id, name);
                 }
@@ -5740,5 +5745,21 @@ print(f"{d is Speakable} | {d.speak()}")
             "class A\n  def chain()\n    \"base\"\n  end\nend\nclass B < A\n  def chain()\n    f\"{super()} middle\"\n  end\nend\nclass C < B\n  def chain()\n    f\"{super()} top\"\n  end\nend\nprint(C.new().chain())",
         ).unwrap();
         assert_eq!(output, "base middle top");
+    }
+
+    #[test]
+    fn inheritance_is_operator() {
+        let output = run(
+            "class Animal\n  needs name: String\nend\n\nclass Dog < Animal\n  needs breed: String\nend\n\nrex = Dog.new(name: \"Rex\", breed: \"Lab\")\nprint(f\"{rex is Dog} {rex is Animal}\")",
+        ).unwrap();
+        assert_eq!(output, "true true");
+    }
+
+    #[test]
+    fn inheritance_is_not_parent_of_child() {
+        let output = run(
+            "class Animal\n  needs name: String\nend\n\nclass Dog < Animal\n  needs breed: String\nend\n\na = Animal.new(name: \"Cat\")\nprint(a is Dog)",
+        ).unwrap();
+        assert_eq!(output, "false");
     }
 }
