@@ -122,7 +122,7 @@
         },
         {
           "name": "keyword.other.opal",
-          "match": "\\b(let|needs|requires|import|from|export|as|implements|with|where|defaults|receive|reply|send|await|emit|on|extern|parallel|async|public|private)\\b"
+          "match": "\\b(let|needs|requires|import|from|export|as|implements|with|where|defaults|receive|reply|send|await|emit|on|extern|parallel|async|public|private|super)\\b"
         },
         {
           "name": "keyword.operator.logical.opal",
