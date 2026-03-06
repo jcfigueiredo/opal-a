@@ -1352,6 +1352,12 @@ impl<W: Write> Interpreter<W> {
                         return Ok(Value::Instance(id));
                     }
                 }
+                if name == "Self" {
+                    if let Some(id) = self.current_self {
+                        let class_id = self.instances[id.0].class_id;
+                        return Ok(Value::Class(class_id));
+                    }
+                }
                 self.env
                     .get(name)
                     .cloned()
@@ -5159,6 +5165,35 @@ print(L.greet())
             run("class Foo\n  needs x: Int\nend\nf = Foo.new(x: 1)\nprint(typeof(f).name)").unwrap(),
             "Foo"
         );
+    }
+
+    // === Self.new() tests ===
+
+    #[test]
+    fn self_new_in_method() {
+        let output = run(
+            "class Rating\n  needs stars: Int\n\n  def double()\n    Self.new(stars: .stars * 2)\n  end\nend\nr = Rating.new(stars: 3)\nprint(r.double().stars)",
+        )
+        .unwrap();
+        assert_eq!(output, "6");
+    }
+
+    #[test]
+    fn self_new_in_operator_def() {
+        let output = run(
+            "class Rating\n  needs stars: Int\n\n  def +(other)\n    Self.new(stars: .stars + other.stars)\n  end\nend\nr = Rating.new(stars: 3) + Rating.new(stars: 4)\nprint(r.stars)",
+        )
+        .unwrap();
+        assert_eq!(output, "7");
+    }
+
+    #[test]
+    fn self_new_chained() {
+        let output = run(
+            "class Counter\n  needs n: Int\n\n  def +(other)\n    Self.new(n: .n + other.n)\n  end\nend\na = Counter.new(n: 1)\nb = Counter.new(n: 2)\nc = Counter.new(n: 3)\nprint((a + b + c).n)",
+        )
+        .unwrap();
+        assert_eq!(output, "6");
     }
 
     // === operator_def tests (def +(other) syntax) ===
