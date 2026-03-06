@@ -3201,6 +3201,47 @@ impl<W: Write> Interpreter<W> {
                     fields,
                 });
 
+                // Call init() if defined on class or parent chain
+                {
+                    let mut init_fn = None;
+                    // Search the class itself
+                    if let Some(f) = class.methods.iter().find(|m| m.name == "init") {
+                        init_fn = Some((f.clone(), *class_id));
+                    }
+                    // Walk parent chain if not found
+                    if init_fn.is_none() {
+                        let mut current = class.parent;
+                        while let Some(pid) = current {
+                            let parent_class = &self.classes[pid.0];
+                            if let Some(f) = parent_class.methods.iter().find(|m| m.name == "init") {
+                                init_fn = Some((f.clone(), pid));
+                                break;
+                            }
+                            current = parent_class.parent;
+                        }
+                    }
+                    if let Some((func, found_class_id)) = init_fn {
+                        let prev_self = self.current_self;
+                        let prev_method = self.current_method_name.take();
+                        let prev_class = self.current_class_id.take();
+                        self.current_self = Some(instance_id);
+                        self.current_method_name = Some("init".to_string());
+                        self.current_class_id = Some(found_class_id);
+                        self.env.push_scope();
+                        self.env.set("self".to_string(), Value::Instance(instance_id));
+                        let result = self.eval_block(&func.body);
+                        self.env.pop_scope();
+                        self.current_self = prev_self;
+                        self.current_method_name = prev_method;
+                        self.current_class_id = prev_class;
+                        match result {
+                            Ok(_) => {}
+                            Err(EvalError::Return(_)) => {}
+                            Err(e) => return Err(e),
+                        }
+                    }
+                }
+
                 // If this is a model class, run validators and freeze
                 if let Some(validators) = self.model_classes.get(class_id).cloned() {
                     for (field_name, validator_expr) in &validators {
@@ -5761,5 +5802,31 @@ print(f"{d is Speakable} | {d.speak()}")
             "class Animal\n  needs name: String\nend\n\nclass Dog < Animal\n  needs breed: String\nend\n\na = Animal.new(name: \"Cat\")\nprint(a is Dog)",
         ).unwrap();
         assert_eq!(output, "false");
+    }
+
+    // === init() auto-call tests ===
+
+    #[test]
+    fn init_sets_fields() {
+        let output = run("class Foo\n  def init()\n    .x = 42\n  end\nend\nf = Foo.new()\nprint(f.x)").unwrap();
+        assert_eq!(output, "42");
+    }
+
+    #[test]
+    fn init_after_needs() {
+        let output = run("class Foo\n  needs x: Int\n  def init()\n    .doubled = .x * 2\n  end\nend\nf = Foo.new(x: 5)\nprint(f\"{f.x} {f.doubled}\")").unwrap();
+        assert_eq!(output, "5 10");
+    }
+
+    #[test]
+    fn init_with_super() {
+        let output = run("class Base\n  needs x: Int\n  def init()\n    .computed = .x * 10\n  end\nend\nclass Child < Base\n  needs y: Int\n  def init()\n    super()\n    .total = .computed + .y\n  end\nend\nc = Child.new(x: 3, y: 5)\nprint(f\"{c.computed} {c.total}\")").unwrap();
+        assert_eq!(output, "30 35");
+    }
+
+    #[test]
+    fn init_not_required() {
+        let output = run("class Foo\n  needs x: Int\nend\nf = Foo.new(x: 7)\nprint(f.x)").unwrap();
+        assert_eq!(output, "7");
     }
 }
