@@ -265,6 +265,8 @@ pub enum ExprKind {
         expr: Box<Expr>,
         type_name: String,
     },
+    /// super() call to parent method
+    Super(Vec<Expr>),
 }
 
 /// A case in a match expression

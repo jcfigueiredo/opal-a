@@ -1480,6 +1480,10 @@ impl<W: Write> Interpreter<W> {
                 Ok(Value::Closure(id))
             }
 
+            ExprKind::Super(_args) => {
+                Err(EvalError::RuntimeError("super() not yet implemented".into()))
+            }
+
             ExprKind::Call { function, args } => self.eval_call(function, args),
 
             ExprKind::BinaryOp { left, op, right } => {

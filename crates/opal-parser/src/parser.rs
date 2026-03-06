@@ -2072,6 +2072,24 @@ impl<'src> Parser<'src> {
                     span,
                 })
             }
+            Some(Token::Super) => {
+                let start = self.current_span().start;
+                self.advance();
+                self.expect_token(&Token::LParen, "(")?;
+                let mut args = Vec::new();
+                if !self.check(&Token::RParen) {
+                    loop {
+                        args.push(self.parse_expression(0)?);
+                        if !self.check(&Token::Comma) { break; }
+                        self.advance();
+                    }
+                }
+                self.expect_token(&Token::RParen, ")")?;
+                Ok(Expr {
+                    kind: ExprKind::Super(args),
+                    span: Span { start, end: self.previous_span().end },
+                })
+            }
             Some(Token::If) => self.parse_if_expression(),
             Some(Token::Match) => self.parse_match_expression(),
             Some(Token::Try) => self.parse_try_catch_expr(span),
@@ -3135,6 +3153,25 @@ mod tests {
                 assert_eq!(name, "Dog");
                 assert_eq!(parent.as_deref(), Some("Animal"));
                 assert_eq!(needs.len(), 1);
+            }
+            _ => panic!("expected ClassDef"),
+        }
+    }
+
+    #[test]
+    fn parse_super_call() {
+        let program = parse("class Dog < Animal\n  def speak()\n    super()\n  end\nend\n");
+        match &program.statements[0].kind {
+            StmtKind::ClassDef { methods, .. } => {
+                match &methods[0].kind {
+                    StmtKind::FuncDef { body, .. } => {
+                        match &body[0].kind {
+                            StmtKind::Expr(expr) => assert!(matches!(&expr.kind, ExprKind::Super(args) if args.is_empty())),
+                            _ => panic!("expected Expr statement"),
+                        }
+                    }
+                    _ => panic!("expected FuncDef"),
+                }
             }
             _ => panic!("expected ClassDef"),
         }
