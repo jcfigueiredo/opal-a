@@ -352,7 +352,7 @@ pub enum Token {
     // Note: `?` is not included in identifier suffix to avoid conflicting with
     // `?.` (null-safe access) and `??` (null coalesce) operators.
     // `!` suffix is still supported for methods like `save!`.
-    #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*!?")]
+    #[regex(r"[\p{L}\p{So}_][\p{L}\p{N}\p{So}\p{M}_]*!?")]
     Identifier,
 
     // === Operators ===
