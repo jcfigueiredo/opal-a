@@ -124,6 +124,7 @@ module.exports = grammar({
       $.suffix_if,
       $.ast_block,
       $.splice,
+      $.super_call,
     ),
 
     call: $ => prec(2, seq(
@@ -251,6 +252,7 @@ module.exports = grammar({
     class_definition: $ => seq(
       'class',
       field('name', $.identifier),
+      optional(seq('<', field('parent', $.identifier))),
       optional($.implements_clause),
       repeat(choice(
         $.needs_declaration,
@@ -481,6 +483,13 @@ module.exports = grammar({
 
     self: $ => 'self',
     Self: $ => 'Self',
+
+    super_call: $ => seq(
+      'super',
+      '(',
+      optional(seq($._expression, repeat(seq(',', $._expression)))),
+      ')',
+    ),
 
     // Actors
     actor_definition: $ => seq(

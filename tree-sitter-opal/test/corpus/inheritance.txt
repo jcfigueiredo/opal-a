@@ -1,0 +1,36 @@
+================
+Class with parent
+================
+
+class Dog < Animal
+  needs breed: String
+end
+
+---
+
+(source_file
+  (class_definition
+    (identifier)
+    (identifier)
+    (needs_declaration (identifier) (type_annotation (identifier)))))
+
+================
+Super call
+================
+
+class Dog < Animal
+  def speak()
+    super()
+  end
+end
+
+---
+
+(source_file
+  (class_definition
+    (identifier)
+    (identifier)
+    (function_definition
+      (identifier)
+      (parameters)
+      (body (expression_statement (super_call))))))

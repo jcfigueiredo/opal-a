@@ -15,6 +15,7 @@
   "extern" "parallel" "async"
   "self"
   "Self"
+  "super"
 ] @keyword
 
 ["true" "false"] @boolean
