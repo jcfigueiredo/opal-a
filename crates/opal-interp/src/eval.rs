@@ -3324,9 +3324,23 @@ impl<W: Write> Interpreter<W> {
                             .find(|m| m.name == method && m.params.len() == args.len())
                     })
                     // 4. Fallback to name match
-                    .or_else(|| class.methods.iter().find(|m| m.name == method));
+                    .or_else(|| class.methods.iter().find(|m| m.name == method))
+                    .cloned();
+
+                // Walk parent chain if method not found on this class
+                let method_fn = method_fn.or_else(|| {
+                    let mut current = class.parent;
+                    while let Some(pid) = current {
+                        let parent_class = &self.classes[pid.0];
+                        if let Some(f) = parent_class.methods.iter().find(|m| m.name == method) {
+                            return Some(f.clone());
+                        }
+                        current = parent_class.parent;
+                    }
+                    None
+                });
+
                 if let Some(func) = method_fn {
-                    let func = func.clone();
                     // Enforce visibility: private methods only callable from same class
                     if func.visibility == Visibility::Private {
                         let caller_class = self.current_self.map(|id| self.instances[id.0].class_id);
@@ -5620,5 +5634,21 @@ print(f"{d is Speakable} | {d.speak()}")
             "class A\n  needs x: Int\nend\nclass B < A\n  needs y: Int\nend\nclass C < B\n  needs z: Int\nend\nc = C.new(x: 1, y: 2, z: 3)\nprint(f\"{c.x} {c.y} {c.z}\")",
         ).unwrap();
         assert_eq!(output, "1 2 3");
+    }
+
+    #[test]
+    fn inheritance_method_from_parent() {
+        let output = run(
+            "class Animal\n  needs name: String\n\n  def speak()\n    f\"{.name} speaks\"\n  end\nend\n\nclass Dog < Animal\n  needs breed: String\nend\n\nrex = Dog.new(name: \"Rex\", breed: \"Lab\")\nprint(rex.speak())",
+        ).unwrap();
+        assert_eq!(output, "Rex speaks");
+    }
+
+    #[test]
+    fn inheritance_method_override() {
+        let output = run(
+            "class Animal\n  needs name: String\n\n  def speak()\n    f\"{.name} speaks\"\n  end\nend\n\nclass Dog < Animal\n  needs breed: String\n\n  def speak()\n    f\"{.name} barks\"\n  end\nend\n\nrex = Dog.new(name: \"Rex\", breed: \"Lab\")\nprint(rex.speak())",
+        ).unwrap();
+        assert_eq!(output, "Rex barks");
     }
 }
