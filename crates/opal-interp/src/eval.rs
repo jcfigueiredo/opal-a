@@ -2530,6 +2530,14 @@ impl<W: Write> Interpreter<W> {
                     return self.dispatch_multi(&ids, &func_name, arg_values)
                 }
                 Value::Closure(id) => return self.call_closure(id, arg_values),
+                Value::Class(class_id) => {
+                    // Type(args) is sugar for Type.new(args)
+                    let mut eval_args = Vec::new();
+                    for arg in args {
+                        eval_args.push((arg.name.clone(), self.eval_expr(&arg.value)?));
+                    }
+                    return self.call_method(Value::Class(class_id), "new", eval_args);
+                }
                 _ => {}
             }
         }
@@ -5985,5 +5993,23 @@ print(f"{d is Speakable} | {d.speak()}")
     fn static_method_inherited() {
         let output = run("class Animal\n  def self.kingdom()\n    \"Animalia\"\n  end\nend\nclass Dog < Animal\nend\nprint(Dog.kingdom())").unwrap();
         assert_eq!(output, "Animalia");
+    }
+
+    #[test]
+    fn constructor_shorthand() {
+        let output = run("class Point\n  needs x: Int\n  needs y: Int\nend\np = Point(x: 1, y: 2)\nprint(f\"{p.x} {p.y}\")").unwrap();
+        assert_eq!(output, "1 2");
+    }
+
+    #[test]
+    fn constructor_shorthand_with_inheritance() {
+        let output = run("class Animal\n  needs name: String\nend\nclass Dog < Animal\n  needs breed: String\nend\nd = Dog(name: \"Rex\", breed: \"Lab\")\nprint(f\"{d.name} {d.breed}\")").unwrap();
+        assert_eq!(output, "Rex Lab");
+    }
+
+    #[test]
+    fn constructor_shorthand_equivalent() {
+        let output = run("class Foo\n  needs x: Int\n  def +(other)\n    Self.new(x: .x + other.x)\n  end\nend\na = Foo(x: 1) + Foo(x: 2)\nprint(a.x)").unwrap();
+        assert_eq!(output, "3");
     }
 }
