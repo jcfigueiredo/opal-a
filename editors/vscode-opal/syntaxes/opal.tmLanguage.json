@@ -182,11 +182,16 @@
       "patterns": [
         {
           "name": "entity.name.function.opal",
-          "match": "(?<=def\\s)[a-zA-Z_][a-zA-Z0-9_]*!?"
+          "match": "(?<=def\\s)[a-zA-Z_\\p{L}\\p{So}\\u2200-\\u22FF\\u2190-\\u21FF][a-zA-Z0-9_\\p{L}\\p{N}\\p{So}\\p{M}\\u2200-\\u22FF\\u2190-\\u21FF]*!?"
+        },
+        {
+          "comment": "Operator method definitions: def +(other), def ==(other), etc.",
+          "name": "entity.name.function.operator.opal",
+          "match": "(?<=def\\s)(\\+|\\-|\\*\\*|\\*|/|%|==|!=|<=|>=|<|>)(?=\\()"
         },
         {
           "name": "entity.name.function.call.opal",
-          "match": "[a-zA-Z_][a-zA-Z0-9_]*!?(?=\\()"
+          "match": "[a-zA-Z_\\p{L}\\p{So}][a-zA-Z0-9_\\p{L}\\p{N}\\p{So}\\p{M}]*!?(?=\\()"
         }
       ]
     },
@@ -219,7 +224,7 @@
       "patterns": [
         {
           "name": "variable.other.member.opal",
-          "match": "(?<=^|\\s)\\.[a-zA-Z_][a-zA-Z0-9_]*"
+          "match": "(?<=^|\\s)\\.[a-zA-Z_\\p{L}\\p{So}][a-zA-Z0-9_\\p{L}\\p{N}\\p{So}\\p{M}]*"
         }
       ]
     },
@@ -235,7 +240,7 @@
       "patterns": [
         {
           "name": "variable.other.opal",
-          "match": "[a-zA-Z_][a-zA-Z0-9_]*!?"
+          "match": "[a-zA-Z_\\p{L}\\p{So}\\u2200-\\u22FF\\u2190-\\u21FF][a-zA-Z0-9_\\p{L}\\p{N}\\p{So}\\p{M}\\u2200-\\u22FF\\u2190-\\u21FF]*!?"
         }
       ]
     }
