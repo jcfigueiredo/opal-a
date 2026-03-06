@@ -73,6 +73,7 @@ struct StoredClosure {
 struct StoredClass {
     #[allow(dead_code)]
     name: String,
+    parent: Option<ClassId>,
     needs: Vec<(String, Option<String>, Option<Expr>)>,
     methods: Vec<StoredFunction>,
 }
@@ -473,6 +474,7 @@ impl<W: Write> Interpreter<W> {
         let container_class_id = ClassId(self.classes.len());
         self.classes.push(StoredClass {
             name: "Container".to_string(),
+            parent: None,
             needs: vec![],
             methods: vec![],
         });
@@ -708,11 +710,19 @@ impl<W: Write> Interpreter<W> {
             },
             StmtKind::ClassDef {
                 name,
-                parent: _,
+                parent,
                 needs,
                 methods,
                 implements,
             } => {
+                let parent_id = if let Some(parent_name) = parent {
+                    let pid = self.env.get(parent_name)
+                        .and_then(|v| if let Value::Class(id) = v { Some(*id) } else { None })
+                        .ok_or_else(|| EvalError::UndefinedVariable(parent_name.clone()))?;
+                    Some(pid)
+                } else {
+                    None
+                };
                 let mut stored_methods = Vec::new();
                 for method_stmt in methods {
                     if let StmtKind::FuncDef {
@@ -779,6 +789,7 @@ impl<W: Write> Interpreter<W> {
                 let class_id = ClassId(self.classes.len());
                 self.classes.push(StoredClass {
                     name: name.clone(),
+                    parent: parent_id,
                     needs: needs
                         .iter()
                         .map(|n| (n.name.clone(), n.type_annotation.clone(), n.default.clone()))
@@ -853,6 +864,7 @@ impl<W: Write> Interpreter<W> {
                     let class_id = ClassId(self.classes.len());
                     self.classes.push(StoredClass {
                         name: name.clone(),
+                        parent: None,
                         needs: needs.iter().map(|n| (n.name.clone(), n.type_annotation.clone(), n.default.clone())).collect(),
                         methods: stored_methods,
                     });
@@ -1183,6 +1195,7 @@ impl<W: Write> Interpreter<W> {
                 let class_id = ClassId(self.classes.len());
                 self.classes.push(StoredClass {
                     name: name.clone(),
+                    parent: None,
                     needs: needs
                         .iter()
                         .map(|n| (n.name.clone(), n.type_annotation.clone(), None))
@@ -1302,6 +1315,7 @@ impl<W: Write> Interpreter<W> {
                 let class_id = ClassId(self.classes.len());
                 self.classes.push(StoredClass {
                     name: name.clone(),
+                    parent: None,
                     needs: fields.iter().map(|f| (f.name.clone(), f.type_annotation.clone(), None)).collect(),
                     methods: vec![],
                 });
@@ -3069,10 +3083,11 @@ impl<W: Write> Interpreter<W> {
             // Class methods
             (Value::Class(class_id), "new") => {
                 let class = self.classes[class_id.0].clone();
+                let all_needs = self.gather_all_needs(*class_id);
                 let mut fields = HashMap::new();
 
-                // Match named args to needs declarations
-                for (need_name, type_ann, default) in &class.needs {
+                // Match named args to needs declarations (includes inherited needs)
+                for (need_name, type_ann, default) in &all_needs {
                     // Try named arg first
                     let value = named_args
                         .iter()
@@ -3082,8 +3097,7 @@ impl<W: Write> Interpreter<W> {
                         val
                     } else {
                         // Try positional
-                        let idx = class
-                            .needs
+                        let idx = all_needs
                             .iter()
                             .position(|(n, _, _)| n == need_name)
                             .unwrap();
@@ -3710,6 +3724,18 @@ impl<W: Write> Interpreter<W> {
                 parts.iter().any(|p| self.value_matches_type_expr(value, p))
             }
         }
+    }
+
+    /// Gather all needs from a class and its parent chain (parent needs first)
+    fn gather_all_needs(&self, class_id: ClassId) -> Vec<(String, Option<String>, Option<Expr>)> {
+        let class = &self.classes[class_id.0];
+        let mut all_needs = if let Some(pid) = class.parent {
+            self.gather_all_needs(pid)
+        } else {
+            vec![]
+        };
+        all_needs.extend(class.needs.clone());
+        all_needs
     }
 
     /// Check if a class implements a protocol by name
@@ -5576,5 +5602,23 @@ d = Dog.new(name: "Rex")
 print(f"{d is Speakable} | {d.speak()}")
 "#).unwrap();
         assert_eq!(output, "true | Rex says woof");
+    }
+
+    // === Inheritance tests ===
+
+    #[test]
+    fn inheritance_basic_needs() {
+        let output = run(
+            "class Animal\n  needs name: String\nend\n\nclass Dog < Animal\n  needs breed: String\nend\n\nrex = Dog.new(name: \"Rex\", breed: \"Lab\")\nprint(f\"{rex.name} {rex.breed}\")",
+        ).unwrap();
+        assert_eq!(output, "Rex Lab");
+    }
+
+    #[test]
+    fn inheritance_three_levels() {
+        let output = run(
+            "class A\n  needs x: Int\nend\nclass B < A\n  needs y: Int\nend\nclass C < B\n  needs z: Int\nend\nc = C.new(x: 1, y: 2, z: 3)\nprint(f\"{c.x} {c.y} {c.z}\")",
+        ).unwrap();
+        assert_eq!(output, "1 2 3");
     }
 }
