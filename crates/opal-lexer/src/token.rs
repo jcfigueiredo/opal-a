@@ -349,10 +349,13 @@ pub enum Token {
     Symbol,
 
     // === Identifiers (must come after keywords) ===
-    // Note: `?` is not included in identifier suffix to avoid conflicting with
-    // `?.` (null-safe access) and `??` (null coalesce) operators.
-    // `!` suffix is still supported for methods like `save!`.
-    #[regex(r"[\p{L}\p{So}_][\p{L}\p{N}\p{So}\p{M}_]*!?")]
+    // Unicode: \p{L} (letters), \p{So} (symbols like emoji), \p{M} (combining marks),
+    // \p{N} (numbers, continuation only).
+    // Non-ASCII math symbols (∞, →, ∑, etc.) are included via explicit Unicode ranges.
+    // ASCII Sm chars (+, <, >, =, |, ~) are NOT included — they are Opal operators.
+    // `?` excluded to avoid conflicting with `?.` and `??` operators.
+    // `!` suffix supported for methods like `save!`.
+    #[regex(r"[\p{L}\p{So}_\u{00AC}\u{00B1}\u{00D7}\u{00F7}\u{2200}-\u{22FF}\u{2190}-\u{21FF}\u{27F0}-\u{27FF}\u{2900}-\u{297F}][\p{L}\p{N}\p{So}\p{M}_\u{00AC}\u{00B1}\u{00D7}\u{00F7}\u{2200}-\u{22FF}\u{2190}-\u{21FF}\u{27F0}-\u{27FF}\u{2900}-\u{297F}]*!?")]
     Identifier,
 
     // === Operators ===
