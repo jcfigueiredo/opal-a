@@ -1,0 +1,53 @@
+# expect: (4.0, 6.0) | (2.0, 2.0) | (3.0, 6.0) | true | false | true | true
+
+class Vec2
+  needs x: Float
+  needs y: Float
+
+  def +(other)
+    Vec2.new(x: .x + other.x, y: .y + other.y)
+  end
+
+  def -(other)
+    Vec2.new(x: .x - other.x, y: .y - other.y)
+  end
+
+  def *(scalar)
+    Vec2.new(x: .x * scalar, y: .y * scalar)
+  end
+
+  def ==(other)
+    .x == other.x and .y == other.y
+  end
+
+  def !=(other)
+    not (.x == other.x and .y == other.y)
+  end
+
+  def <(other)
+    (.x * .x + .y * .y) < (other.x * other.x + other.y * other.y)
+  end
+end
+
+a = Vec2.new(x: 1.0, y: 2.0)
+b = Vec2.new(x: 3.0, y: 4.0)
+
+sum = a + b
+diff = b - a
+scaled = a * 3.0
+eq1 = a == Vec2.new(x: 1.0, y: 2.0)
+eq2 = a == b
+neq = a != b
+lt = a < b
+
+results = [
+  f"({sum.x}, {sum.y})",
+  f"({diff.x}, {diff.y})",
+  f"({scaled.x}, {scaled.y})",
+  f"{eq1}",
+  f"{eq2}",
+  f"{neq}",
+  f"{lt}"
+]
+
+print(results.join(" | "))

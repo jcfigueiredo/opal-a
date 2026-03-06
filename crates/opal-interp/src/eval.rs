@@ -1538,30 +1538,32 @@ impl<W: Write> Interpreter<W> {
                 }
                 let lval = self.eval_expr(left)?;
                 let rval = self.eval_expr(right)?;
-                match eval_binary_op(*op, lval.clone(), rval.clone()) {
-                    Ok(v) => Ok(v),
-                    Err(EvalError::TypeError(_)) if matches!(lval, Value::Instance(_)) => {
-                        // Try operator overloading via method dispatch
-                        let op_method = match op {
-                            BinOp::Add => Some("add"),
-                            BinOp::Sub => Some("sub"),
-                            BinOp::Mul => Some("mul"),
-                            BinOp::Div => Some("div"),
-                            BinOp::Eq => Some("eq"),
-                            BinOp::Lt => Some("lt"),
-                            BinOp::Gt => Some("gt"),
-                            BinOp::LtEq => Some("lte"),
-                            BinOp::GtEq => Some("gte"),
-                            _ => None,
-                        };
-                        if let Some(method) = op_method {
-                            self.call_method(lval, method, vec![(None, rval)])
-                        } else {
-                            eval_binary_op(*op, lval, rval)
+                // For instances, try operator overloading first
+                if matches!(lval, Value::Instance(_)) {
+                    let op_method = match op {
+                        BinOp::Add => Some("add"),
+                        BinOp::Sub => Some("sub"),
+                        BinOp::Mul => Some("mul"),
+                        BinOp::Div => Some("div"),
+                        BinOp::Mod => Some("mod"),
+                        BinOp::Pow => Some("pow"),
+                        BinOp::Eq => Some("eq"),
+                        BinOp::NotEq => Some("neq"),
+                        BinOp::Lt => Some("lt"),
+                        BinOp::Gt => Some("gt"),
+                        BinOp::LtEq => Some("lte"),
+                        BinOp::GtEq => Some("gte"),
+                        _ => None,
+                    };
+                    if let Some(method) = op_method {
+                        match self.call_method(lval.clone(), method, vec![(None, rval.clone())]) {
+                            Ok(v) => return Ok(v),
+                            Err(EvalError::TypeError(msg)) if msg.contains("no method") => {} // fall through to default
+                            Err(e) => return Err(e),
                         }
                     }
-                    other => other,
                 }
+                eval_binary_op(*op, lval, rval)
             }
 
             ExprKind::UnaryOp { op, operand } => {
@@ -5157,6 +5159,44 @@ print(L.greet())
             run("class Foo\n  needs x: Int\nend\nf = Foo.new(x: 1)\nprint(typeof(f).name)").unwrap(),
             "Foo"
         );
+    }
+
+    // === operator_def tests (def +(other) syntax) ===
+
+    #[test]
+    fn operator_def_add() {
+        let output = run(
+            "class Vec2\n  needs x: Float\n  needs y: Float\n\n  def +(other)\n    Vec2.new(x: .x + other.x, y: .y + other.y)\n  end\nend\na = Vec2.new(x: 1.0, y: 2.0)\nb = Vec2.new(x: 3.0, y: 4.0)\nc = a + b\nprint(f\"{c.x}, {c.y}\")",
+        )
+        .unwrap();
+        assert_eq!(output, "4.0, 6.0");
+    }
+
+    #[test]
+    fn operator_def_sub() {
+        let output = run(
+            "class Vec2\n  needs x: Float\n  needs y: Float\n\n  def -(other)\n    Vec2.new(x: .x - other.x, y: .y - other.y)\n  end\nend\na = Vec2.new(x: 5.0, y: 8.0)\nb = Vec2.new(x: 1.0, y: 3.0)\nc = a - b\nprint(f\"{c.x}, {c.y}\")",
+        )
+        .unwrap();
+        assert_eq!(output, "4.0, 5.0");
+    }
+
+    #[test]
+    fn operator_def_mul() {
+        let output = run(
+            "class Vec2\n  needs x: Float\n  needs y: Float\n\n  def *(scalar)\n    Vec2.new(x: .x * scalar, y: .y * scalar)\n  end\nend\na = Vec2.new(x: 2.0, y: 3.0)\nb = a * 5.0\nprint(f\"{b.x}, {b.y}\")",
+        )
+        .unwrap();
+        assert_eq!(output, "10.0, 15.0");
+    }
+
+    #[test]
+    fn operator_def_eq() {
+        let output = run(
+            "class Vec2\n  needs x: Float\n  needs y: Float\n\n  def ==(other)\n    .x == other.x and .y == other.y\n  end\nend\na = Vec2.new(x: 1.0, y: 2.0)\nb = Vec2.new(x: 1.0, y: 2.0)\nc = Vec2.new(x: 3.0, y: 4.0)\nprint(f\"{a == b} {a == c}\")",
+        )
+        .unwrap();
+        assert_eq!(output, "true false");
     }
 
     // === is operator tests ===

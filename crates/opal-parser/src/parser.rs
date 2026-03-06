@@ -2716,6 +2716,23 @@ impl<'src> Parser<'src> {
                 self.advance();
                 Ok(text)
             }
+            // Operator tokens as method names (operator overloading):
+            //   def +(other)  → stores as "add"
+            //   def -(other)  → stores as "sub"
+            //   def *(other)  → stores as "mul"
+            //   etc.
+            Some(Token::Plus) => { self.advance(); Ok("add".to_string()) }
+            Some(Token::Minus) => { self.advance(); Ok("sub".to_string()) }
+            Some(Token::Star) => { self.advance(); Ok("mul".to_string()) }
+            Some(Token::Slash) => { self.advance(); Ok("div".to_string()) }
+            Some(Token::Percent) => { self.advance(); Ok("mod".to_string()) }
+            Some(Token::DoubleStar) => { self.advance(); Ok("pow".to_string()) }
+            Some(Token::EqEq) => { self.advance(); Ok("eq".to_string()) }
+            Some(Token::BangEq) => { self.advance(); Ok("neq".to_string()) }
+            Some(Token::Lt) => { self.advance(); Ok("lt".to_string()) }
+            Some(Token::Gt) => { self.advance(); Ok("gt".to_string()) }
+            Some(Token::LtEq) => { self.advance(); Ok("lte".to_string()) }
+            Some(Token::GtEq) => { self.advance(); Ok("gte".to_string()) }
             Some(tok) => Err(ParseError::UnexpectedToken {
                 found: tok.clone(),
                 expected: "method name".to_string(),
