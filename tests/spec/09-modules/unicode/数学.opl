@@ -1,4 +1,4 @@
-export { π, 二倍, 🔵面積 }
+export { π, 二倍, 🔵面積, 🔵円 }
 
 π = 3.14159
 
@@ -8,4 +8,12 @@ end
 
 def 🔵面積(半径)
   π * 半径 * 半径
+end
+
+class 🔵円
+  needs 半径: Float64
+
+  def 面積()
+    π * .半径 * .半径
+  end
 end
