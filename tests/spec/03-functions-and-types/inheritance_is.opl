@@ -1,0 +1,22 @@
+# expect: true | true | true | false | true
+
+class Animal
+  needs name: String
+end
+
+class Dog < Animal
+  needs breed: String
+end
+
+rex = Dog.new(name: "Rex", breed: "Lab")
+a = Animal.new(name: "Cat")
+
+results = [
+  f"{rex is Dog}",
+  f"{rex is Animal}",
+  f"{a is Animal}",
+  f"{a is Dog}",
+  f"{rex is Dog and rex is Animal}"
+]
+
+print(results.join(" | "))

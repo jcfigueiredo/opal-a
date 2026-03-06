@@ -1,0 +1,57 @@
+# expect: Rex speaks loudly | 30 | base middle top
+
+class Animal
+  needs name: String
+
+  def speak()
+    f"{.name} speaks"
+  end
+end
+
+class Dog < Animal
+  needs breed: String
+
+  def speak()
+    f"{super()} loudly"
+  end
+end
+
+class Base
+  needs x: Int
+
+  def calc(n)
+    .x + n
+  end
+end
+
+class Child < Base
+  def calc(n)
+    super(n) * 2
+  end
+end
+
+class A
+  def chain()
+    "base"
+  end
+end
+
+class B < A
+  def chain()
+    f"{super()} middle"
+  end
+end
+
+class C < B
+  def chain()
+    f"{super()} top"
+  end
+end
+
+rex = Dog.new(name: "Rex", breed: "Lab")
+ch = Child.new(x: 10)
+deep = C.new()
+
+results = [rex.speak(), f"{ch.calc(5)}", deep.chain()]
+
+print(results.join(" | "))

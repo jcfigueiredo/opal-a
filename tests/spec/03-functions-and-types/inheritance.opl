@@ -1,0 +1,42 @@
+# expect: Rex Lab | Rex speaks | Rex barks | 1 2 3
+
+class Animal
+  needs name: String
+
+  def speak()
+    f"{.name} speaks"
+  end
+end
+
+class Dog < Animal
+  needs breed: String
+
+  def speak()
+    f"{.name} barks"
+  end
+end
+
+class A
+  needs x: Int
+end
+
+class B < A
+  needs y: Int
+end
+
+class C < B
+  needs z: Int
+end
+
+rex = Dog.new(name: "Rex", breed: "Lab")
+animal = Animal.new(name: "Rex")
+c = C.new(x: 1, y: 2, z: 3)
+
+results = [
+  f"{rex.name} {rex.breed}",
+  animal.speak(),
+  rex.speak(),
+  f"{c.x} {c.y} {c.z}"
+]
+
+print(results.join(" | "))
