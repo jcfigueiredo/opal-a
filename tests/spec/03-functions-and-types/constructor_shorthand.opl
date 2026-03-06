@@ -1,0 +1,28 @@
+# expect: 1 2 | Rex Lab | 3
+
+class Point
+  needs x: Int
+  needs y: Int
+end
+
+class Animal
+  needs name: String
+end
+
+class Dog < Animal
+  needs breed: String
+end
+
+class Num
+  needs x: Int
+  def +(other)
+    Self.new(x: .x + other.x)
+  end
+end
+
+p = Point(x: 1, y: 2)
+d = Dog(name: "Rex", breed: "Lab")
+n = Num(x: 1) + Num(x: 2)
+
+results = [f"{p.x} {p.y}", f"{d.name} {d.breed}", f"{n.x}"]
+print(results.join(" | "))

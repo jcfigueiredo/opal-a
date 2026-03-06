@@ -1,0 +1,25 @@
+# expect: Dog(Rex) | my Dog(Rex) | Rex
+
+class Dog
+  needs name: String
+  def to_string()
+    f"Dog({.name})"
+  end
+end
+
+class Animal
+  needs name: String
+  def to_string()
+    .name
+  end
+end
+
+class Cat < Animal
+  needs indoor: Bool
+end
+
+d = Dog.new(name: "Rex")
+cat = Cat.new(name: "Rex", indoor: true)
+
+results = [f"{d}", f"my {d}", f"{cat}"]
+print(results.join(" | "))

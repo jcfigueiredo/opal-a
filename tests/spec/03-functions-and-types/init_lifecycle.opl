@@ -1,0 +1,41 @@
+# expect: 42 | 5 10 | 30 35 | 7
+
+class Simple
+  def init()
+    .x = 42
+  end
+end
+
+class WithNeeds
+  needs x: Int
+  def init()
+    .doubled = .x * 2
+  end
+end
+
+class Base
+  needs x: Int
+  def init()
+    .computed = .x * 10
+  end
+end
+
+class Child < Base
+  needs y: Int
+  def init()
+    super()
+    .total = .computed + .y
+  end
+end
+
+class NeedsOnly
+  needs x: Int
+end
+
+s = Simple.new()
+w = WithNeeds.new(x: 5)
+c = Child.new(x: 3, y: 5)
+n = NeedsOnly.new(x: 7)
+
+results = [f"{s.x}", f"{w.x} {w.doubled}", f"{c.computed} {c.total}", f"{n.x}"]
+print(results.join(" | "))

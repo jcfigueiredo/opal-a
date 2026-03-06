@@ -1,0 +1,26 @@
+# expect: 7 | Homo sapiens | Animalia
+
+class MathUtils
+  def self.max(a, b)
+    if a > b then a else b end
+  end
+end
+
+class Person
+  needs name: String
+  def self.species()
+    "Homo sapiens"
+  end
+end
+
+class Animal
+  def self.kingdom()
+    "Animalia"
+  end
+end
+
+class Dog < Animal
+end
+
+results = [f"{MathUtils.max(3, 7)}", Person.species(), Dog.kingdom()]
+print(results.join(" | "))
