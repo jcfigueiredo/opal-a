@@ -1,0 +1,56 @@
+# expect: (0, 0) | (3, 3) | true | Circle r=5.0
+
+# def self.method() as factory + init() + to_string() + inheritance
+class Point
+  needs x: Int
+  needs y: Int
+
+  def self.origin()
+    Self.new(x: 0, y: 0)
+  end
+
+  def self.diagonal(n)
+    Self.new(x: n, y: n)
+  end
+
+  def ==(other)
+    .x == other.x and .y == other.y
+  end
+
+  def to_string()
+    f"({.x}, {.y})"
+  end
+end
+
+# Factory with inheritance + init()
+class Shape
+  needs name: String
+
+  def to_string()
+    .name
+  end
+end
+
+class Circle < Shape
+  needs radius: Float
+
+  def init()
+    .area = 3.14159 * .radius * .radius
+  end
+
+  def self.unit()
+    Self.new(name: "UnitCircle", radius: 1.0)
+  end
+
+  def to_string()
+    f"Circle r={.radius}"
+  end
+end
+
+origin = Point.origin()
+diag = Point.diagonal(3)
+eq = origin == Point(x: 0, y: 0)
+c = Circle(name: "C", radius: 5.0)
+
+results = [f"{origin}", f"{diag}", f"{eq}", f"{c}"]
+print(results.join(" | "))

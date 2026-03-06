@@ -1,0 +1,38 @@
+# expect: 🐕 Rex (Lab) | 🐱 Whiskers | Animal: Mystery | [🐕 Rex (Lab), 🐱 Whiskers, Animal: Mystery]
+
+# to_string() + inheritance + super() + closures + Type() shorthand
+class Animal
+  needs name: String
+
+  def to_string()
+    f"Animal: {.name}"
+  end
+end
+
+class 🐕Dog < Animal
+  needs breed: String
+
+  def to_string()
+    f"🐕 {.name} ({.breed})"
+  end
+end
+
+class 🐱Cat < Animal
+  def to_string()
+    f"🐱 {.name}"
+  end
+end
+
+# Type() shorthand + inherited needs
+rex = 🐕Dog(name: "Rex", breed: "Lab")
+whiskers = 🐱Cat(name: "Whiskers")
+mystery = Animal(name: "Mystery")
+
+# to_string() called via f-string on each
+animals = [rex, whiskers, mystery]
+
+# to_string() called via list join — map to string
+labels = animals.map(|a| f"{a}")
+
+results = [f"{rex}", f"{whiskers}", f"{mystery}", f"[{labels.join(", ")}]"]
+print(results.join(" | "))

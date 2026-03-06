@@ -1,0 +1,33 @@
+# expect: Vec2(3.0, 7.0) | 58.0 | Vec2(6.0, 14.0)
+
+# init() + operator overloading + to_string() + Self.new()
+class Vec2
+  needs x: Float
+  needs y: Float
+
+  def init()
+    .magnitude = (.x * .x + .y * .y)
+  end
+
+  def +(other)
+    Self.new(x: .x + other.x, y: .y + other.y)
+  end
+
+  def *(scalar)
+    Self.new(x: .x * scalar, y: .y * scalar)
+  end
+
+  def to_string()
+    f"Vec2({.x}, {.y})"
+  end
+end
+
+a = Vec2(x: 1.0, y: 3.0)
+b = Vec2(x: 2.0, y: 4.0)
+c = a + b
+
+# init() runs after Self.new() in operator — c has .magnitude
+# to_string() used in f-string
+# Type() shorthand used for construction
+results = [f"{c}", f"{c.magnitude}", f"{c * 2.0}"]
+print(results.join(" | "))

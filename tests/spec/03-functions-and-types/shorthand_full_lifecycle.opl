@@ -1,0 +1,44 @@
+# expect: $100.00 USD | $250.00 USD | true | $350.00 USD | balance: $350.00 USD
+
+# Type() shorthand + init() + to_string() + operator def + inheritance + closures
+class Money
+  needs cents: Int
+  needs currency: String
+
+  def init()
+    .dollars = .cents / 100
+    .remainder = .cents % 100
+  end
+
+  def +(other)
+    Self.new(cents: .cents + other.cents, currency: .currency)
+  end
+
+  def ==(other)
+    .cents == other.cents and .currency == other.currency
+  end
+
+  def to_string()
+    remainder_str = if .remainder < 10 then f"0{.remainder}" else f"{.remainder}" end
+    f"${.dollars}.{remainder_str} {.currency}"
+  end
+end
+
+# Type() shorthand creates instance, init() computes dollars/remainder
+a = Money(cents: 10000, currency: "USD")
+b = Money(cents: 25000, currency: "USD")
+
+# == uses overloaded operator
+eq = a == Money(cents: 10000, currency: "USD")
+
+# + creates new Money via Self.new(), init() runs on result
+total = a + b
+
+# Closures with to_string()
+wallet = [a, b]
+balance = wallet.reduce(Money(cents: 0, currency: "USD")) do |acc, m|
+  acc + m
+end
+
+results = [f"{a}", f"{b}", f"{eq}", f"{total}", f"balance: {balance}"]
+print(results.join(" | "))
