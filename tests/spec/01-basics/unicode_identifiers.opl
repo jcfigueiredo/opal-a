@@ -1,0 +1,64 @@
+# expect: ❤️ | 🚀 launched! | café au lait | 3 | こんにちは世界 | Ω=42 | 🎯 hit! | 🌍🌙 | résumé: Claudio | Ελληνικά
+
+# Emoji function names
+def ❤️()
+  "❤️"
+end
+
+def 🚀(mission)
+  f"{mission} launched!"
+end
+
+# Accented identifiers — naturally expressive
+café = "café au lait"
+
+# CJK variable names
+日本語リスト = ["東京", "大阪", "京都"]
+
+# Mixed script function
+def こんにちは(名前)
+  f"こんにちは{名前}"
+end
+
+# Greek letters for math/science
+Ω = 42
+
+# Emoji-named methods in a class
+class 🎯Game
+  needs target: String
+
+  def 🎯()
+    f"{.target} hit!"
+  end
+end
+
+game = 🎯Game.new(target: "🎯")
+
+# Emoji as data
+🌍 = "🌍"
+🌙 = "🌙"
+
+# Real-world: French function names
+def créer_résumé(nom)
+  f"résumé: {nom}"
+end
+
+# Greek language — full identifiers
+def Ελληνικά()
+  "Ελληνικά"
+end
+
+results = [
+  ❤️(),
+  🚀("🚀"),
+  café,
+  f"{日本語リスト.length()}",
+  こんにちは("世界"),
+  f"Ω={Ω}",
+  game.🎯(),
+  f"{🌍}{🌙}",
+  créer_résumé("Claudio"),
+  Ελληνικά()
+]
+
+print(results.join(" | "))
