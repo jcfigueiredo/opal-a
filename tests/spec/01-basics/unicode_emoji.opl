@@ -1,0 +1,45 @@
+# expect: ❤️ | 🚀 launched! | 🎯 bullseye | 🌍→🌙 | 🏠=home | 7 | 🎲🎲=7
+
+# Emoji as function names
+def ❤️()
+  "❤️"
+end
+
+def 🚀(payload)
+  f"{payload} launched!"
+end
+
+def 🎯(target)
+  f"{target} bullseye"
+end
+
+# Emoji as variable names
+🌍 = "🌍"
+🌙 = "🌙"
+
+# Emoji as class name with emoji method
+class 🏠House
+  needs label: String
+
+  def 🏷️()
+    f"{.label}"
+  end
+end
+
+house = 🏠House.new(label: "home")
+
+# Emoji in compound expressions
+🎲 = 3
+🎲 += 4
+
+results = [
+  ❤️(),
+  🚀("🚀"),
+  🎯("🎯"),
+  f"{🌍}→{🌙}",
+  f"🏠={house.🏷️()}",
+  f"{🎲}",
+  f"🎲🎲={🎲}"
+]
+
+print(results.join(" | "))

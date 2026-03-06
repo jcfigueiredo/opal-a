@@ -1,4 +1,4 @@
-# expect: ❤️ | 🚀 launched! | café au lait | 3 | こんにちは世界 | Ω=42 | 🎯 hit! | 🌍🌙 | résumé: Claudio | Ελληνικά
+# expect: ❤️ | 🚀 launched! | café au lait | 3 | こんにちは世界 | Ω=42 | 🎯 hit! | 🌍🌙 | résumé: Claudio | Ελληνικά | true
 
 # Emoji function names
 def ❤️()
@@ -47,6 +47,7 @@ end
 def Ελληνικά()
   "Ελληνικά"
 end
+π = 3.14159
 
 results = [
   ❤️(),
@@ -58,7 +59,8 @@ results = [
   game.🎯(),
   f"{🌍}{🌙}",
   créer_résumé("Claudio"),
-  Ελληνικά()
+  Ελληνικά(),
+  6.28318 / π == 2.0
 ]
 
 print(results.join(" | "))

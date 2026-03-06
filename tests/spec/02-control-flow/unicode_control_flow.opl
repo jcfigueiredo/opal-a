@@ -1,0 +1,41 @@
+# expect: ⭐⭐⭐ | 偶数: 2, 4 | found 🎯 | 大きい
+
+# Unicode in for loop variables
+⭐s = ""
+for ★ in [1, 2, 3]
+  ⭐s = ⭐s + "⭐"
+end
+
+# Unicode in list comprehension
+数字 = [1, 2, 3, 4, 5]
+偶数 = [n for n in 数字 if n % 2 == 0]
+
+# Unicode in match/case
+def 検索(リスト, 目標)
+  for 項目 in リスト
+    if 項目 == 目標
+      return f"found {目標}"
+    end
+  end
+  "not found"
+end
+
+# Unicode in if/elsif
+def サイズ(数)
+  if 数 > 100
+    "巨大"
+  elsif 数 > 10
+    "大きい"
+  else
+    "小さい"
+  end
+end
+
+results = [
+  ⭐s,
+  f"偶数: {偶数.join(", ")}",
+  検索(["🎲", "🎯", "🎮"], "🎯"),
+  サイズ(42)
+]
+
+print(results.join(" | "))

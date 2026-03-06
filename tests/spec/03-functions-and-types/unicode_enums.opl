@@ -1,0 +1,65 @@
+# expect: 🟢 | 春 | → East
+
+# Emoji enum
+enum 🚦Signal
+  🟢
+  🟡
+  🔴
+end
+
+# CJK enum
+enum 季節
+  春
+  夏
+  秋
+  冬
+end
+
+# Standard enum with Unicode method
+enum Direction
+  North
+  South
+  East
+  West
+
+  def →()
+    match self
+      case Direction.East
+        "→ East"
+      case Direction.West
+        "← West"
+      case Direction.North
+        "↑ North"
+      case Direction.South
+        "↓ South"
+    end
+  end
+end
+
+light = 🚦Signal.🟢
+season = 季節.春
+dir = Direction.East
+
+# Match emoji enum
+light_str = match light
+  case 🚦Signal.🟢
+    "🟢"
+  case 🚦Signal.🟡
+    "🟡"
+  case _
+    "🔴"
+end
+
+# Match CJK enum
+season_str = match season
+  case 季節.春
+    "春"
+  case 季節.夏
+    "夏"
+  case _
+    "?"
+end
+
+results = [light_str, season_str, dir.→()]
+
+print(results.join(" | "))

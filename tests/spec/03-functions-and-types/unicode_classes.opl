@@ -1,0 +1,54 @@
+# expect: 🐕 Buddy barks! | 猫 Tama says にゃー | Café Latte: $4.5 | 🎮 score: 100
+
+# Emoji class with emoji methods
+class 🐕Dog
+  needs name: String
+
+  def 🐾()
+    f"🐕 {.name} barks!"
+  end
+end
+
+# CJK class with CJK methods
+class 猫
+  needs 名前: String
+  needs 鳴き声: String
+
+  def 鳴く()
+    f"猫 {.名前} says {.鳴き声}"
+  end
+end
+
+# Accented class
+class CaféMenu
+  needs boisson: String
+  needs prix: Float
+
+  def afficher()
+    f"Café {.boisson}: ${.prix}"
+  end
+end
+
+# Mixed: emoji class with Unicode needs
+class 🎮Game
+  needs player: String
+  needs スコア: Int
+
+  def display()
+    f"🎮 score: {.スコア}"
+  end
+end
+
+buddy = 🐕Dog.new(name: "Buddy")
+tama = 猫.new(名前: "Tama", 鳴き声: "にゃー")
+latte = CaféMenu.new(boisson: "Latte", prix: 4.50)
+game = 🎮Game.new(player: "P1", スコア: 100)
+
+results = [
+  buddy.🐾(),
+  tama.鳴く(),
+  latte.afficher(),
+  game.display()
+]
+
+print(results.join(" | "))

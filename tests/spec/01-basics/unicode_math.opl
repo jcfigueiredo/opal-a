@@ -1,0 +1,37 @@
+# expect: ∑=15 | ∞=999999 | A → B | ±5 | ×=6 | ÷=2
+
+# Math symbols as variables
+∞ = 999999
+
+# Summation with compound assignment
+∑ = 0
+for i in [1, 2, 3, 4, 5]
+  ∑ += i
+end
+
+# Arrow as function name
+def →(a, b)
+  f"{a} → {b}"
+end
+
+# Plus-minus, multiply, divide symbols
+± = 5
+× = 2 * 3
+÷ = 6 / 3
+
+# Verify operators still work alongside math symbol identifiers
+x = 10 + 20
+y = x > 5
+z = x < 100
+w = 3 == 3
+
+results = [
+  f"∑={∑}",
+  f"∞={∞}",
+  →("A", "B"),
+  f"±{±}",
+  f"×={×}",
+  f"÷={÷}"
+]
+
+print(results.join(" | "))
