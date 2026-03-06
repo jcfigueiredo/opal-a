@@ -1,0 +1,98 @@
+# expect: 20 | Hello, World! How are you? | 225.0 | tax: 11.0 | combo: [Rex]-lab!
+
+# Single arg passthrough
+class Calculator
+  needs base: Int
+
+  def compute(n)
+    .base + n
+  end
+end
+
+class DoubleCalc < Calculator
+  def compute(n)
+    super(n) * 2
+  end
+end
+
+c = DoubleCalc.new(base: 5)
+
+# Multiple args
+class Greeter
+  def greet(name, greeting)
+    f"{greeting}, {name}!"
+  end
+end
+
+class FriendlyGreeter < Greeter
+  def greet(name, greeting)
+    f"{super(name, greeting)} How are you?"
+  end
+end
+
+g = FriendlyGreeter.new()
+
+# Args modified before passing to super
+class Pricer
+  needs base_price: Float
+
+  def total(quantity)
+    .base_price * quantity
+  end
+end
+
+class DiscountPricer < Pricer
+  needs discount: Float
+
+  def total(quantity)
+    super(quantity) * (1.0 - .discount)
+  end
+end
+
+p = DiscountPricer.new(base_price: 100.0, discount: 0.25)
+
+# Super with expression args
+class TaxCalculator
+  def tax(amount, rate)
+    amount * rate
+  end
+end
+
+class RoundedTax < TaxCalculator
+  def tax(amount, rate)
+    super(amount, rate + 0.01)
+  end
+end
+
+t = RoundedTax.new()
+
+# Super with chained calls — 3 levels, each modifying args
+class Formatter
+  def format(name, tag)
+    f"{name}-{tag}"
+  end
+end
+
+class PrefixFormatter < Formatter
+  def format(name, tag)
+    super(f"[{name}]", tag)
+  end
+end
+
+class ComboFormatter < PrefixFormatter
+  def format(name, tag)
+    f"combo: {super(name, f"{tag}!")}"
+  end
+end
+
+f = ComboFormatter.new()
+
+results = [
+  f"{c.compute(5)}",
+  g.greet("World", "Hello"),
+  f"{p.total(3)}",
+  f"tax: {t.tax(100.0, 0.1)}",
+  f.format("Rex", "lab")
+]
+
+print(results.join(" | "))
