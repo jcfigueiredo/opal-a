@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-OPAL_BIN="${OPAL_BIN:-cargo run --quiet --}"
+OPAL_BIN="${OPAL_BIN:-cargo run --quiet --bin opal --}"
 SPEC_DIR="${1:-tests/spec}"
 PASS=0
 FAIL=0
