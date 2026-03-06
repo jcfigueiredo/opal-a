@@ -921,7 +921,7 @@ checksum = "d6790f58c7ff633d8771f42965289203411a5e5c68388703c06e14f24770b41e"
 
 [[package]]
 name = "opal-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "clap",
  "miette",
@@ -933,7 +933,7 @@ dependencies = [
 
 [[package]]
 name = "opal-interp"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "opal-parser",
  "opal-runtime",
@@ -943,7 +943,7 @@ dependencies = [
 
 [[package]]
 name = "opal-lexer"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "criterion",
  "logos",
@@ -952,7 +952,7 @@ dependencies = [
 
 [[package]]
 name = "opal-lsp"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "opal-lexer",
  "opal-parser",
@@ -963,7 +963,7 @@ dependencies = [
 
 [[package]]
 name = "opal-parser"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "opal-lexer",
  "proptest",
@@ -972,14 +972,14 @@ dependencies = [
 
 [[package]]
 name = "opal-runtime"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "thiserror",
 ]
 
 [[package]]
 name = "opal-stdlib"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "opal-runtime",
 ]
