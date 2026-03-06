@@ -753,6 +753,14 @@ impl<'src> Parser<'src> {
         self.advance(); // consume 'class'
         let name = self.expect_identifier()?;
 
+        // Parse optional parent class: < ParentName
+        let parent = if self.check(&Token::Lt) {
+            self.advance();
+            Some(self.expect_identifier()?)
+        } else {
+            None
+        };
+
         // Parse optional: implements Protocol1, Protocol2
         let mut implements = Vec::new();
         if self.check(&Token::Implements) {
@@ -815,7 +823,7 @@ impl<'src> Parser<'src> {
         Ok(Stmt {
             kind: StmtKind::ClassDef {
                 name,
-                parent: None,
+                parent,
                 needs,
                 methods,
                 implements,
@@ -3116,6 +3124,19 @@ mod tests {
                 assert!(implements.is_empty());
             }
             _ => panic!("expected class def"),
+        }
+    }
+
+    #[test]
+    fn parse_class_with_parent() {
+        let program = parse("class Dog < Animal\n  needs breed: String\nend\n");
+        match &program.statements[0].kind {
+            StmtKind::ClassDef { name, parent, needs, .. } => {
+                assert_eq!(name, "Dog");
+                assert_eq!(parent.as_deref(), Some("Animal"));
+                assert_eq!(needs.len(), 1);
+            }
+            _ => panic!("expected ClassDef"),
         }
     }
 
