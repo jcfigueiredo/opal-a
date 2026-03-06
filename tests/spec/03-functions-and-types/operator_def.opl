@@ -5,15 +5,15 @@ class Vec2
   needs y: Float
 
   def +(other)
-    Vec2.new(x: .x + other.x, y: .y + other.y)
+    Self.new(x: .x + other.x, y: .y + other.y)
   end
 
   def -(other)
-    Vec2.new(x: .x - other.x, y: .y - other.y)
+    Self.new(x: .x - other.x, y: .y - other.y)
   end
 
   def *(scalar)
-    Vec2.new(x: .x * scalar, y: .y * scalar)
+    Self.new(x: .x * scalar, y: .y * scalar)
   end
 
   def ==(other)

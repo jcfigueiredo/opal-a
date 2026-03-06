@@ -1,0 +1,51 @@
+# expect: ❤️❤️❤️ | 🎲=15 | 🏆 P1: 30pts
+
+# Emoji class with Self.new()
+class ❤️Box
+  needs hearts: String
+
+  def +(other)
+    Self.new(hearts: .hearts + other.hearts)
+  end
+end
+
+h = ❤️Box.new(hearts: "❤️") + ❤️Box.new(hearts: "❤️") + ❤️Box.new(hearts: "❤️")
+
+# Emoji class with Self.new() in regular method
+class 🎲Die
+  needs value: Int
+
+  def +(other)
+    Self.new(value: .value + other.value)
+  end
+
+  def roll(n)
+    Self.new(value: n)
+  end
+end
+
+dice = 🎲Die.new(value: 5) + 🎲Die.new(value: 3) + 🎲Die.new(value: 7)
+
+# Unicode class with Self.new() and multiple methods
+class 🏆Trophy
+  needs player: String
+  needs points: Int
+
+  def +(other)
+    Self.new(player: .player, points: .points + other.points)
+  end
+
+  def display()
+    f"🏆 {.player}: {.points}pts"
+  end
+end
+
+trophy = 🏆Trophy.new(player: "P1", points: 10) + 🏆Trophy.new(player: "P1", points: 20)
+
+results = [
+  h.hearts,
+  f"🎲={dice.value}",
+  trophy.display()
+]
+
+print(results.join(" | "))
