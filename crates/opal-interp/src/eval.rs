@@ -76,6 +76,7 @@ struct StoredClass {
     parent: Option<ClassId>,
     needs: Vec<(String, Option<String>, Option<Expr>)>,
     methods: Vec<StoredFunction>,
+    static_methods: Vec<StoredFunction>,
 }
 
 /// A stored protocol definition
@@ -485,6 +486,7 @@ impl<W: Write> Interpreter<W> {
             parent: None,
             needs: vec![],
             methods: vec![],
+            static_methods: vec![],
         });
         self.env.set("Container".to_string(), Value::Class(container_class_id));
     }
@@ -732,12 +734,14 @@ impl<W: Write> Interpreter<W> {
                     None
                 };
                 let mut stored_methods = Vec::new();
+                let mut stored_static_methods = Vec::new();
                 for method_stmt in methods {
                     if let StmtKind::FuncDef {
                         name: mname,
                         params,
                         body,
                         visibility: vis,
+                        is_static,
                         ..
                     } = &method_stmt.kind
                     {
@@ -746,7 +750,7 @@ impl<W: Write> Interpreter<W> {
                             Some("protected") => Visibility::Protected,
                             _ => Visibility::Public,
                         };
-                        stored_methods.push(StoredFunction {
+                        let func = StoredFunction {
                             name: mname.clone(),
                             params: params.iter().map(|p| p.name.clone()).collect(),
                             param_types: params.iter().map(|p| p.type_annotation.clone()).collect(),
@@ -755,7 +759,12 @@ impl<W: Write> Interpreter<W> {
                             captured_env: None,
                             annotations: vec![],
                             visibility: method_vis,
-                        });
+                        };
+                        if *is_static {
+                            stored_static_methods.push(func);
+                        } else {
+                            stored_methods.push(func);
+                        }
                     }
                 }
 
@@ -803,6 +812,7 @@ impl<W: Write> Interpreter<W> {
                         .map(|n| (n.name.clone(), n.type_annotation.clone(), n.default.clone()))
                         .collect(),
                     methods: stored_methods,
+                    static_methods: stored_static_methods,
                 });
                 self.env.set(name.clone(), Value::Class(class_id));
             }
@@ -875,6 +885,7 @@ impl<W: Write> Interpreter<W> {
                         parent: None,
                         needs: needs.iter().map(|n| (n.name.clone(), n.type_annotation.clone(), n.default.clone())).collect(),
                         methods: stored_methods,
+                        static_methods: vec![],
                     });
                     self.env.set(name.clone(), Value::Class(class_id));
                 }
@@ -1209,6 +1220,7 @@ impl<W: Write> Interpreter<W> {
                         .map(|n| (n.name.clone(), n.type_annotation.clone(), None))
                         .collect(),
                     methods: stored_methods,
+                    static_methods: vec![],
                 });
                 // Store model metadata: validators and that it's a model
                 self.model_classes.insert(class_id, validators);
@@ -1326,6 +1338,7 @@ impl<W: Write> Interpreter<W> {
                     parent: None,
                     needs: fields.iter().map(|f| (f.name.clone(), f.type_annotation.clone(), None)).collect(),
                     methods: vec![],
+                    static_methods: vec![],
                 });
                 self.env.set(name.clone(), Value::Class(class_id));
             }
@@ -3263,6 +3276,51 @@ impl<W: Write> Interpreter<W> {
                 }
 
                 Ok(Value::Instance(instance_id))
+            }
+
+            // Static methods on class (def self.method())
+            (Value::Class(class_id), method) => {
+                // Search class and parent chain for static methods
+                let mut found = None;
+                let mut search = Some(*class_id);
+                while let Some(cid) = search {
+                    let c = &self.classes[cid.0];
+                    if let Some(f) = c.static_methods.iter().find(|m| m.name == method) {
+                        found = Some(f.clone());
+                        break;
+                    }
+                    search = c.parent;
+                }
+                if let Some(func) = found {
+                    self.env.push_scope();
+                    // Bind Self to the class
+                    self.env.set("Self".to_string(), Value::Class(*class_id));
+                    for (i, param) in func.params.iter().enumerate() {
+                        // Try named args first, then positional
+                        let val = named_args
+                            .iter()
+                            .find(|(name, _)| name.as_deref() == Some(param.as_str()))
+                            .map(|(_, v)| v.clone())
+                            .or_else(|| args.get(i).cloned());
+                        if let Some(v) = val {
+                            self.env.set(param.clone(), v);
+                        } else if let Some(default_expr) = &func.param_defaults[i] {
+                            let v = self.eval_expr(default_expr)?;
+                            self.env.set(param.clone(), v);
+                        }
+                    }
+                    let result = self.eval_block(&func.body);
+                    self.env.pop_scope();
+                    return match result {
+                        Ok(val) => Ok(val),
+                        Err(EvalError::Return(v)) => Ok(v),
+                        Err(e) => Err(e),
+                    };
+                }
+                return Err(EvalError::RuntimeError(format!(
+                    "undefined static method '{}' on class",
+                    method
+                )));
             }
 
             // Instance methods — dispatch to class
@@ -5909,5 +5967,23 @@ print(f"{d is Speakable} | {d.speak()}")
     fn to_string_fallback() {
         let output = run("class Foo\n  needs x: Int\nend\nf = Foo.new(x: 1)\nprint(f)").unwrap();
         assert!(output.contains("Foo") && output.contains("instance"));
+    }
+
+    #[test]
+    fn static_method() {
+        let output = run("class MathUtils\n  def self.max(a, b)\n    if a > b then a else b end\n  end\nend\nprint(MathUtils.max(3, 7))").unwrap();
+        assert_eq!(output, "7");
+    }
+
+    #[test]
+    fn static_method_no_instance() {
+        let output = run("class Person\n  needs name: String\n  def self.species()\n    \"Homo sapiens\"\n  end\nend\nprint(Person.species())").unwrap();
+        assert_eq!(output, "Homo sapiens");
+    }
+
+    #[test]
+    fn static_method_inherited() {
+        let output = run("class Animal\n  def self.kingdom()\n    \"Animalia\"\n  end\nend\nclass Dog < Animal\nend\nprint(Dog.kingdom())").unwrap();
+        assert_eq!(output, "Animalia");
     }
 }

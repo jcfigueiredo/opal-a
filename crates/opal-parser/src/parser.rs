@@ -392,6 +392,19 @@ impl<'src> Parser<'src> {
         let start = self.current_span();
         self.advance(); // consume 'def'
 
+        // Check for `def self.method()` static method syntax
+        let is_static = if self.check(&Token::SelfKw) {
+            if let Some(Token::Dot) = self.peek_ahead(1) {
+                self.advance(); // consume 'self'
+                self.advance(); // consume '.'
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
         let name = self.expect_method_name()?;
         self.expect_token(&Token::LParen, "(")?;
         let params = self.parse_params()?;
@@ -431,6 +444,7 @@ impl<'src> Parser<'src> {
                 return_type,
                 body,
                 visibility,
+                is_static,
             },
             span: Span {
                 start: start.start,
