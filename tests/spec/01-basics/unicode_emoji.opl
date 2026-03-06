@@ -26,7 +26,7 @@ class 🏠House
   end
 end
 
-house = 🏠House.new(label: "home")
+🏠 = 🏠House.new(label: "home")
 
 # Emoji in compound expressions
 🎲 = 3
@@ -37,7 +37,7 @@ results = [
   🚀("🚀"),
   🎯("🎯"),
   f"{🌍}→{🌙}",
-  f"🏠={house.🏷️()}",
+  f"🏠={🏠.🏷️()}",
   f"{🎲}",
   f"🎲🎲={🎲}"
 ]

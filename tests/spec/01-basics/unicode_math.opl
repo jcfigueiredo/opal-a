@@ -1,4 +1,4 @@
-# expect: ∑=15 | ∞=999999 | A → B | ±5 | ×=6 | ÷=2
+# expect: ∑=15 | ∞=999999 | A → B | ±5 | ×=6 | ÷=2 | m=A → B → C
 
 # Math symbols as variables
 ∞ = 999999
@@ -14,11 +14,15 @@ def →(a, b)
   f"{a} → {b}"
 end
 
+def ←(a, b)
+  f"{→(b, a)}"
+end
+
 # Plus-minus, multiply, divide symbols
 ± = 5
 × = 2 * 3
 ÷ = 6 / 3
-
+m = ←("C", →("A", "B"))
 # Verify operators still work alongside math symbol identifiers
 x = 10 + 20
 y = x > 5
@@ -31,7 +35,8 @@ results = [
   →("A", "B"),
   f"±{±}",
   f"×={×}",
-  f"÷={÷}"
+  f"÷={÷}",
+  f"m={m}"
 ]
 
 print(results.join(" | "))
