@@ -1394,11 +1394,11 @@ impl<W: Write> Interpreter<W> {
                         FStringPart::Literal(s) => result.push_str(s),
                         FStringPart::Expr(e) => {
                             let val = self.eval_expr(e)?;
-                            result.push_str(&self.format_value(&val));
+                            result.push_str(&self.format_value_display(&val));
                         }
                         FStringPart::FormattedExpr { expr, spec } => {
                             let val = self.eval_expr(expr)?;
-                            let formatted = self.format_value(&val);
+                            let formatted = self.format_value_display(&val);
                             result.push_str(&Self::apply_format_spec(&formatted, &val, spec));
                         }
                     }
@@ -2468,7 +2468,7 @@ impl<W: Write> Interpreter<W> {
 
         // Intercept print/println to use format_value for proper display
         if func_name == "print" || func_name == "println" {
-            let output: Vec<String> = arg_values.iter().map(|v| self.format_value(v)).collect();
+            let output: Vec<String> = arg_values.iter().map(|v| self.format_value_display(v)).collect();
             writeln!(self.writer, "{}", output.join(" ")).ok();
             return Ok(Value::Null);
         }
@@ -3956,6 +3956,61 @@ impl<W: Write> Interpreter<W> {
                 format!("{}.{}", self.enums[id.0].name, self.enums[id.0].variants[*vi].name)
             }
         }
+    }
+
+    /// Try calling to_string() on an instance; returns Some(s) if method exists and returns a string.
+    fn try_instance_to_string(&mut self, id: InstanceId) -> Option<String> {
+        let instance = self.instances[id.0].clone();
+        let class = self.classes[instance.class_id.0].clone();
+
+        // Search class for to_string method
+        let mut method_fn = class.methods.iter().find(|m| m.name == "to_string")
+            .map(|f| (f.clone(), instance.class_id));
+
+        // Walk parent chain
+        if method_fn.is_none() {
+            let mut current = class.parent;
+            while let Some(pid) = current {
+                let parent_class = &self.classes[pid.0];
+                if let Some(f) = parent_class.methods.iter().find(|m| m.name == "to_string") {
+                    method_fn = Some((f.clone(), pid));
+                    break;
+                }
+                current = parent_class.parent;
+            }
+        }
+
+        if let Some((func, found_class_id)) = method_fn {
+            let prev_self = self.current_self;
+            let prev_method = self.current_method_name.take();
+            let prev_class = self.current_class_id.take();
+            self.current_self = Some(id);
+            self.current_method_name = Some("to_string".to_string());
+            self.current_class_id = Some(found_class_id);
+            self.env.push_scope();
+            let result = self.eval_block(&func.body);
+            self.env.pop_scope();
+            self.current_self = prev_self;
+            self.current_method_name = prev_method;
+            self.current_class_id = prev_class;
+            match result {
+                Ok(Value::String(s)) => Some(s),
+                Err(EvalError::Return(Value::String(s))) => Some(s),
+                _ => None,
+            }
+        } else {
+            None
+        }
+    }
+
+    /// Like format_value but can call to_string() on instances (requires &mut self).
+    fn format_value_display(&mut self, value: &Value) -> String {
+        if let Value::Instance(id) = value {
+            if let Some(s) = self.try_instance_to_string(*id) {
+                return s;
+            }
+        }
+        self.format_value(value)
     }
 
     fn format_value(&self, value: &Value) -> String {
@@ -5828,5 +5883,31 @@ print(f"{d is Speakable} | {d.speak()}")
     fn init_not_required() {
         let output = run("class Foo\n  needs x: Int\nend\nf = Foo.new(x: 7)\nprint(f.x)").unwrap();
         assert_eq!(output, "7");
+    }
+
+    // === to_string() protocol tests ===
+
+    #[test]
+    fn to_string_in_print() {
+        let output = run("class Dog\n  needs name: String\n  def to_string()\n    f\"Dog({.name})\"\n  end\nend\nd = Dog.new(name: \"Rex\")\nprint(d)").unwrap();
+        assert_eq!(output, "Dog(Rex)");
+    }
+
+    #[test]
+    fn to_string_in_fstring() {
+        let output = run("class Dog\n  needs name: String\n  def to_string()\n    f\"Dog({.name})\"\n  end\nend\nd = Dog.new(name: \"Rex\")\nprint(f\"my {d}\")").unwrap();
+        assert_eq!(output, "my Dog(Rex)");
+    }
+
+    #[test]
+    fn to_string_inherited() {
+        let output = run("class Animal\n  needs name: String\n  def to_string()\n    .name\n  end\nend\nclass Dog < Animal\n  needs breed: String\nend\nd = Dog.new(name: \"Rex\", breed: \"Lab\")\nprint(f\"{d}\")").unwrap();
+        assert_eq!(output, "Rex");
+    }
+
+    #[test]
+    fn to_string_fallback() {
+        let output = run("class Foo\n  needs x: Int\nend\nf = Foo.new(x: 1)\nprint(f)").unwrap();
+        assert!(output.contains("Foo") && output.contains("instance"));
     }
 }
