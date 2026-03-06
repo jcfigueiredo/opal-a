@@ -158,6 +158,10 @@ pub struct Interpreter<W: Write> {
     actors: Vec<StoredActorInstance>,
     /// Current `self` instance for method calls
     current_self: Option<InstanceId>,
+    /// Current method name (for super() dispatch)
+    current_method_name: Option<String>,
+    /// Current class id where the executing method is defined (for super() dispatch)
+    current_class_id: Option<ClassId>,
     /// Current actor for receive handlers
     current_actor: Option<ActorId>,
     /// True when loading a file-based module (functions should capture env)
@@ -198,6 +202,8 @@ impl Interpreter<std::io::Stdout> {
             actor_defs: Vec::new(),
             actors: Vec::new(),
             current_self: None,
+            current_method_name: None,
+            current_class_id: None,
             current_actor: None,
             loading_module: false,
             macros: Vec::new(),
@@ -239,6 +245,8 @@ impl<W: Write> Interpreter<W> {
             actor_defs: Vec::new(),
             actors: Vec::new(),
             current_self: None,
+            current_method_name: None,
+            current_class_id: None,
             current_actor: None,
             loading_module: false,
             macros: Vec::new(),
@@ -1494,8 +1502,60 @@ impl<W: Write> Interpreter<W> {
                 Ok(Value::Closure(id))
             }
 
-            ExprKind::Super(_args) => {
-                Err(EvalError::RuntimeError("super() not yet implemented".into()))
+            ExprKind::Super(args) => {
+                let method_name = self.current_method_name.clone()
+                    .ok_or_else(|| EvalError::RuntimeError("super() outside of method".into()))?;
+                let class_id = self.current_class_id
+                    .ok_or_else(|| EvalError::RuntimeError("super() outside of class".into()))?;
+                let parent_id = self.classes[class_id.0].parent
+                    .ok_or_else(|| EvalError::RuntimeError("super() in class with no parent".into()))?;
+                let instance_id = self.current_self
+                    .ok_or_else(|| EvalError::RuntimeError("super() with no self".into()))?;
+
+                // Evaluate arguments
+                let mut eval_args = Vec::new();
+                for arg in args {
+                    eval_args.push(self.eval_expr(arg)?);
+                }
+
+                // Find method on parent chain
+                let mut found = None;
+                let mut search_id = Some(parent_id);
+                while let Some(pid) = search_id {
+                    let pc = &self.classes[pid.0];
+                    if let Some(f) = pc.methods.iter().find(|m| m.name == method_name) {
+                        found = Some((f.clone(), pid));
+                        break;
+                    }
+                    search_id = pc.parent;
+                }
+
+                let (func, found_class_id) = found
+                    .ok_or_else(|| EvalError::RuntimeError(format!("super(): no '{}' in parent", method_name)))?;
+
+                // Call the parent method with current self
+                let prev_method = self.current_method_name.take();
+                let prev_class = self.current_class_id.take();
+                self.current_method_name = Some(method_name);
+                self.current_class_id = Some(found_class_id);
+
+                self.env.push_scope();
+                self.env.set("self".to_string(), Value::Instance(instance_id));
+                for (i, param) in func.params.iter().enumerate() {
+                    if let Some(val) = eval_args.get(i) {
+                        self.env.set(param.clone(), val.clone());
+                    }
+                }
+                let result = self.eval_block(&func.body);
+                self.env.pop_scope();
+
+                self.current_method_name = prev_method;
+                self.current_class_id = prev_class;
+
+                match result {
+                    Err(EvalError::Return(v)) => Ok(v),
+                    other => other,
+                }
             }
 
             ExprKind::Call { function, args } => self.eval_call(function, args),
@@ -3299,7 +3359,7 @@ impl<W: Write> Interpreter<W> {
                 }
 
                 // Find method in class — dispatch by name + arity + type
-                let method_fn = class
+                let method_fn: Option<(StoredFunction, ClassId)> = class
                     .methods
                     .iter()
                     // 1. Exact type + arity match
@@ -3325,7 +3385,7 @@ impl<W: Write> Interpreter<W> {
                     })
                     // 4. Fallback to name match
                     .or_else(|| class.methods.iter().find(|m| m.name == method))
-                    .cloned();
+                    .map(|f| (f.clone(), instance.class_id));
 
                 // Walk parent chain if method not found on this class
                 let method_fn = method_fn.or_else(|| {
@@ -3333,14 +3393,14 @@ impl<W: Write> Interpreter<W> {
                     while let Some(pid) = current {
                         let parent_class = &self.classes[pid.0];
                         if let Some(f) = parent_class.methods.iter().find(|m| m.name == method) {
-                            return Some(f.clone());
+                            return Some((f.clone(), pid));
                         }
                         current = parent_class.parent;
                     }
                     None
                 });
 
-                if let Some(func) = method_fn {
+                if let Some((func, found_class_id)) = method_fn {
                     // Enforce visibility: private methods only callable from same class
                     if func.visibility == Visibility::Private {
                         let caller_class = self.current_self.map(|id| self.instances[id.0].class_id);
@@ -3360,9 +3420,13 @@ impl<W: Write> Interpreter<W> {
                         )));
                     }
 
-                    // Set self and push scope
+                    // Set self, method tracking, and push scope
                     let prev_self = self.current_self;
+                    let prev_method = self.current_method_name.take();
+                    let prev_class = self.current_class_id.take();
                     self.current_self = Some(*instance_id);
+                    self.current_method_name = Some(method.to_string());
+                    self.current_class_id = Some(found_class_id);
                     self.env.push_scope();
                     for (param_name, arg_val) in func.params.iter().zip(args) {
                         self.env.set(String::clone(param_name), arg_val);
@@ -3371,6 +3435,8 @@ impl<W: Write> Interpreter<W> {
                     let result = self.eval_block(&func.body);
                     self.env.pop_scope();
                     self.current_self = prev_self;
+                    self.current_method_name = prev_method;
+                    self.current_class_id = prev_class;
 
                     match result {
                         Ok(val) => Ok(val),
@@ -5650,5 +5716,29 @@ print(f"{d is Speakable} | {d.speak()}")
             "class Animal\n  needs name: String\n\n  def speak()\n    f\"{.name} speaks\"\n  end\nend\n\nclass Dog < Animal\n  needs breed: String\n\n  def speak()\n    f\"{.name} barks\"\n  end\nend\n\nrex = Dog.new(name: \"Rex\", breed: \"Lab\")\nprint(rex.speak())",
         ).unwrap();
         assert_eq!(output, "Rex barks");
+    }
+
+    #[test]
+    fn inheritance_super_call() {
+        let output = run(
+            "class Animal\n  needs name: String\n\n  def speak()\n    f\"{.name} speaks\"\n  end\nend\n\nclass Dog < Animal\n  needs breed: String\n\n  def speak()\n    f\"{super()} loudly\"\n  end\nend\n\nrex = Dog.new(name: \"Rex\", breed: \"Lab\")\nprint(rex.speak())",
+        ).unwrap();
+        assert_eq!(output, "Rex speaks loudly");
+    }
+
+    #[test]
+    fn inheritance_super_with_args() {
+        let output = run(
+            "class Base\n  needs x: Int\n\n  def calc(n)\n    .x + n\n  end\nend\n\nclass Child < Base\n  def calc(n)\n    super(n) * 2\n  end\nend\n\nc = Child.new(x: 10)\nprint(c.calc(5))",
+        ).unwrap();
+        assert_eq!(output, "30");
+    }
+
+    #[test]
+    fn inheritance_super_chain() {
+        let output = run(
+            "class A\n  def chain()\n    \"base\"\n  end\nend\nclass B < A\n  def chain()\n    f\"{super()} middle\"\n  end\nend\nclass C < B\n  def chain()\n    f\"{super()} top\"\n  end\nend\nprint(C.new().chain())",
+        ).unwrap();
+        assert_eq!(output, "base middle top");
     }
 }
