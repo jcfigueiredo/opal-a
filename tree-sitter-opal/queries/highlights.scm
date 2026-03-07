@@ -65,8 +65,11 @@
   "==" "!=" "<" "<=" ">" ">="
   "+=" "-=" "*=" "/="
   "|>" ".." "..." "?." "??"
-  "=" "->" "|"
+  "=" "->" "|" "!"
 ] @operator
+
+; Propagation
+(propagation_expression "!" @operator)
 
 ; Punctuation
 ["(" ")" "[" "]" "{" "}"] @punctuation.bracket

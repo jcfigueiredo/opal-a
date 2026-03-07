@@ -125,6 +125,7 @@ module.exports = grammar({
       $.ast_block,
       $.splice,
       $.super_call,
+      $.propagation_expression,
     ),
 
     call: $ => prec(2, seq(
@@ -181,6 +182,8 @@ module.exports = grammar({
       seq('-', $._expression),
       seq('not', $._expression),
     )),
+
+    propagation_expression: $ => prec.left(13, seq($._expression, '!')),
 
     grouped_expression: $ => prec(-1, seq('(', $._expression, ')')),
 
@@ -723,7 +726,7 @@ module.exports = grammar({
     ),
 
     // Literals
-    identifier: $ => /[a-zA-Z_][a-zA-Z0-9_]*!?/,
+    identifier: $ => /[a-zA-Z_][a-zA-Z0-9_]*/,
     integer: $ => /[0-9][0-9_]*/,
     float: $ => /[0-9][0-9_]*\.[0-9][0-9_]*/,
     string: $ => choice(
