@@ -324,6 +324,173 @@ Rather than inventing special syntax, bridging uses a standard library method th
 
 ---
 
+## 7. Choosing Your Approach — A Practical Guide
+
+Opal gives you multiple tools for handling errors. Here's how to choose the right one.
+
+### Decision Flowchart
+
+```
+Is the error expected in normal operation?
+├── No (bug, OOM, assertion) ──────────► fail / try / catch (exceptions)
+└── Yes (validation, I/O, parsing) ───► Result[T, E]
+    │
+    Does the caller need to handle the error?
+    ├── Yes, always ──────────────────► return Result, let caller match/propagate
+    └── No, just crash if it fails ──► .unwrap() or .unwrap_or(default)
+        │
+        Are you chaining multiple Result calls?
+        ├── Yes ──────────────────────► use ! propagation
+        └── No, just one call ────────► match or .unwrap_or()
+```
+
+### The Same Problem, Four Ways
+
+**Scenario:** Read a file, parse it as JSON, extract a "name" field.
+
+#### Approach 1: match — Full Control
+
+Use `match` when you need different recovery strategies for different errors, or when the error handling *is* the interesting logic.
+
+```opal
+def get_name(path: String) -> String
+  match read_file(path)
+    case Ok(content)
+      match parse_json(content)
+        case Ok(data)
+          data["name"] ?? "anonymous"
+        case Error(e)
+          print(f"Bad JSON: {e}")
+          "anonymous"
+      end
+    case Error(e)
+      print(f"Can't read {path}: {e}")
+      "anonymous"
+  end
+end
+```
+
+**When to use:** You need per-step error recovery. Each failure has a different fallback. You don't want to propagate — you want to handle it right here.
+
+**Downside:** Deep nesting. Hard to follow the happy path.
+
+#### Approach 2: `!` propagation — Clean Chaining
+
+Use `!` when the function should return a `Result` and the caller will decide what to do with errors.
+
+```opal
+def get_name(path: String) -> Result[String, Error]
+  content = read_file(path)!
+  data = parse_json(content)!
+  Ok(data["name"] ?? "anonymous")
+end
+
+# Caller decides
+match get_name("config.json")
+  case Ok(name)
+    print(f"Hello, {name}")
+  case Error(e)
+    print(f"Couldn't get name: {e}")
+end
+```
+
+**When to use:** You're writing a library or intermediate function. You don't know how the caller wants to handle the error. Multiple fallible steps in sequence. The function's job is the happy path, not error recovery.
+
+**Downside:** Caller must handle the Result. If every caller just unwraps, the propagation adds ceremony without value.
+
+#### Approach 3: .unwrap_or() — Quick Fallback
+
+Use `unwrap_or` when a default value is acceptable and you don't care *why* it failed.
+
+```opal
+def get_name(path: String) -> String
+  content = read_file(path).unwrap_or("{}")
+  data = parse_json(content).unwrap_or({:})
+  data["name"] ?? "anonymous"
+end
+```
+
+**When to use:** Errors are expected and non-critical. A sensible default exists. You don't need to log or report the failure.
+
+**Downside:** Silently swallows errors. If something goes wrong, you won't know.
+
+#### Approach 4: try / catch — Exception Boundary
+
+Use `try`/`catch` when operations `fail` with exceptions (bugs, system errors, or libraries that throw).
+
+```opal
+def get_name(path: String) -> String
+  try
+    content = File.read(path)
+    data = JSON.parse(content)
+    data["name"] ?? "anonymous"
+  catch FileNotFound as e
+    "anonymous"
+  catch as e
+    log(f"Unexpected error: {e.message}")
+    "anonymous"
+  end
+end
+```
+
+**When to use:** The operations throw exceptions (not Result). You want a catch-all safety net. You're at a system boundary (HTTP handler, CLI entry point, event loop).
+
+**Downside:** Hard to know which line threw. Easy to catch too broadly. Doesn't force the caller to think about failure.
+
+### Quick Reference: When to Use What
+
+| Approach | Returns | Best for | Error visibility |
+|----------|---------|----------|------------------|
+| `match` on Result | Any type | Per-error recovery | Explicit, verbose |
+| `!` propagation | `Result[T, E]` | Chaining, libraries | Explicit, concise |
+| `.unwrap_or(val)` | Inner type | Silent defaults | Hidden |
+| `.unwrap()` | Inner type | "Must succeed" cases | Crashes on error |
+| `try / catch` | Any type | Exception boundaries | Catch-all |
+| `ok?()` / `err?()` | Bool | Conditional checks | Query only |
+
+### Combining Approaches
+
+Real code often mixes approaches at different layers:
+
+```opal
+# Low-level: returns Result (let caller decide)
+def fetch_user(id: Int32) -> Result[User, Error]
+  response = http_get(f"/users/{id}")!
+  parse_user(response.body)!
+end
+
+# Mid-level: propagates with !
+def fetch_user_profile(id: Int32) -> Result[Profile, Error]
+  user = fetch_user(id)!
+  settings = fetch_settings(user.id).unwrap_or(Settings.default())
+  Ok(Profile.new(user: user, settings: settings))
+end
+
+# Top-level: handles everything
+def show_profile(id: Int32)
+  match fetch_user_profile(id)
+    case Ok(profile)
+      render(profile)
+    case Error(e)
+      render_error(f"Couldn't load profile: {e}")
+  end
+end
+```
+
+**Pattern:** Propagate `!` at lower layers, `match` at the top, `unwrap_or` for non-critical branches.
+
+### Anti-Patterns
+
+| Don't do this | Do this instead | Why |
+|---------------|-----------------|-----|
+| `result.unwrap()` everywhere | `result!` or `match` | `unwrap` crashes; `!` propagates gracefully |
+| Nested `match` 3+ levels deep | Chain with `!` | Flat code is easier to read |
+| `try/catch` around Result operations | `match` or `!` | Result errors aren't exceptions |
+| Ignoring Result (discard return) | `match`, `!`, or `unwrap_or` | Silent failure hides bugs |
+| `!` in a top-level script | `match` or `unwrap_or` | `!` at top level has nowhere to propagate |
+
+---
+
 ## Summary
 
 | Feature | Purpose |
