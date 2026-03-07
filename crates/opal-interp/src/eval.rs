@@ -1944,20 +1944,30 @@ impl<W: Write> Interpreter<W> {
 
                 let value = match result {
                     Err(EvalError::Raise(val) | EvalError::RequiresFailed(val)) => {
-                        if let Some(catch) = catches.first() {
-                            self.env.push_scope();
-                            if let Some(var) = &catch.var_name {
-                                self.env.set(var.clone(), val.clone());
+                        // Try each catch clause in order; check type filter if present
+                        let mut caught = false;
+                        let mut caught_val = Value::Null;
+                        for catch in catches {
+                            if let Some(type_name) = &catch.error_type {
+                                if !self.value_is_type(&val, type_name) {
+                                    continue; // type doesn't match, try next catch
+                                }
                             }
+                            self.env.push_scope();
+                            self.env.set(catch.var_name.clone(), val.clone());
                             let catch_result = self.eval_block(&catch.body);
                             self.env.pop_scope();
-                            catch_result?
-                        } else {
+                            caught_val = catch_result?;
+                            caught = true;
+                            break;
+                        }
+                        if !caught {
                             if let Some(ensure_body) = ensure {
                                 self.eval_block(ensure_body)?;
                             }
                             return Err(EvalError::Raise(val));
                         }
+                        caught_val
                     }
                     Err(e) => {
                         if let Some(ensure_body) = ensure {
@@ -2170,8 +2180,8 @@ impl<W: Write> Interpreter<W> {
                     catches: catches
                         .iter()
                         .map(|c| opal_parser::CatchClause {
-                            error_type: c.error_type.clone(),
                             var_name: c.var_name.clone(),
+                            error_type: c.error_type.clone(),
                             body: self.substitute_splices(&c.body),
                         })
                         .collect(),
@@ -4902,12 +4912,30 @@ divide(10.0, 0)
         let output = run(r#"
 try
   raise "something went wrong"
-catch as e
+catch e
   print(f"Caught: {e}")
 end
 "#)
         .unwrap();
         assert_eq!(output, "Caught: something went wrong");
+    }
+
+    #[test]
+    fn try_catch_binds_variable() {
+        let output = run("try\n  raise \"oops\"\ncatch e\n  print(e)\nend").unwrap();
+        assert_eq!(output, "oops");
+    }
+
+    #[test]
+    fn try_catch_with_type_filter() {
+        let output = run("try\n  raise \"boom\"\ncatch e as String\n  print(f\"caught: {e}\")\nend").unwrap();
+        assert_eq!(output, "caught: boom");
+    }
+
+    #[test]
+    fn try_catch_ensure() {
+        let output = run("x = \"start\"\ntry\n  raise \"err\"\ncatch e\n  x = f\"{x} caught\"\nensure\n  x = f\"{x} done\"\nend\nprint(x)").unwrap();
+        assert_eq!(output, "start caught done");
     }
 
     #[test]
@@ -5079,7 +5107,7 @@ end
 
 try
   @check false, "boom"
-catch as e
+catch e
   print(e)
 end
 "#)

@@ -33,7 +33,7 @@ result1 = repo.persist("bounty")
 result2 = try
   BountyRepo.new(store: NotAStore.new())
   "no error"
-catch as e
+catch e
   e
 end
 

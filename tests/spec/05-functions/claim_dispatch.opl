@@ -16,7 +16,7 @@ r3 = handle_claim("testing")
 # Try design with catch for requires failure
 r2 = try
   handle_claim("design", "Bob")
-catch as e
+catch e
   "design review assigned"
 end
 

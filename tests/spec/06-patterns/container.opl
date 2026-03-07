@@ -30,7 +30,7 @@ part1 = repo.persist("bounty-1")
 # Missing registration errors
 part2 = try
   container.resolve_name("Mailer")
-catch as e
+catch e
   e
 end
 

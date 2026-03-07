@@ -304,8 +304,8 @@ pub enum Pattern {
 /// A catch clause in try/catch
 #[derive(Debug, Clone)]
 pub struct CatchClause {
-    pub error_type: Option<String>,
-    pub var_name: Option<String>,
+    pub var_name: String,           // variable name is required
+    pub error_type: Option<String>, // optional type filter: catch e as ErrorType
     pub body: Vec<Stmt>,
 }
 

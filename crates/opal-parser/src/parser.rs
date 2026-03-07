@@ -1348,30 +1348,19 @@ impl<'src> Parser<'src> {
         let mut catches = Vec::new();
         while self.check(&Token::Catch) {
             self.advance();
-            // Optional: catch Type as var
-            let (error_type, var_name) = if self.check(&Token::Newline) || self.check(&Token::As) {
-                let var = if self.check(&Token::As) {
-                    self.advance();
-                    Some(self.expect_identifier()?)
-                } else {
-                    None
-                };
-                (None, var)
+            // Syntax: catch e  OR  catch e as ErrorType
+            let var_name = self.expect_identifier()?;
+            let error_type = if self.check(&Token::As) {
+                self.advance();
+                Some(self.expect_identifier()?)
             } else {
-                let etype = self.expect_identifier()?;
-                let var = if self.check(&Token::As) {
-                    self.advance();
-                    Some(self.expect_identifier()?)
-                } else {
-                    None
-                };
-                (Some(etype), var)
+                None
             };
             self.expect_newline()?;
             let catch_body = self.parse_block()?;
             catches.push(CatchClause {
-                error_type,
                 var_name,
+                error_type,
                 body: catch_body,
             });
         }
@@ -3308,7 +3297,7 @@ mod tests {
 
     #[test]
     fn parse_try_catch() {
-        let prog = parse("try\n  print(1)\ncatch as e\n  print(e)\nend");
+        let prog = parse("try\n  print(1)\ncatch e\n  print(e)\nend");
         // try/catch is now an expression (wrapped in StmtKind::Expr)
         match &prog.statements[0].kind {
             StmtKind::Expr(expr) => {
@@ -3320,7 +3309,7 @@ mod tests {
 
     #[test]
     fn parse_try_as_expression() {
-        let prog = parse("x = try\n  42\ncatch as e\n  0\nend");
+        let prog = parse("x = try\n  42\ncatch e\n  0\nend");
         assert!(matches!(prog.statements[0].kind, StmtKind::Assign { .. }));
     }
 
