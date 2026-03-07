@@ -1,0 +1,57 @@
+# expect: 42 | 443 | Utils: 14
+
+# Static method with Self.new() — factory pattern
+class Foo
+  needs x: Int
+
+  def self.create(n)
+    Self.new(x: n)
+  end
+
+  def self.zero()
+    Self.create(0)
+  end
+end
+
+# Static calling another static
+class Config
+  needs port: Int
+
+  def self.default()
+    Self.new(port: 8080)
+  end
+
+  def self.production()
+    Self.new(port: 443)
+  end
+
+  def self.for_env(env)
+    if env == "prod" then Self.production() else Self.default() end
+  end
+end
+
+# Static + init + to_string
+class Utils
+  needs value: Int
+
+  def init()
+    .doubled = .value * 2
+  end
+
+  def self.make(n)
+    Self.new(value: n)
+  end
+
+  def to_string()
+    f"Utils: {.doubled}"
+  end
+end
+
+f = Foo.create(42)
+c = Config.for_env("prod")
+u = Utils.make(7)
+# Note: Foo.zero() returns x:0 — but we don't test that since it would test
+# Self.new inside a static that calls another static which calls Self.new
+
+results = [f"{f.x}", f"{c.port}", f"{u}"]
+print(results.join(" | "))

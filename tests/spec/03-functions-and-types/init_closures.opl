@@ -1,0 +1,38 @@
+# expect: [2, 4, 6] | 3 | tag:important-3
+
+# init() computed fields used in closures and operators
+class NumberList
+  needs items: List
+
+  def init()
+    .count = .items.length()
+    .doubled = .items.map(|x| x * 2)
+  end
+end
+
+nl = NumberList.new(items: [1, 2, 3])
+
+# init() field used in operator def
+class Tagged
+  needs label: String
+  needs priority: Int
+
+  def init()
+    .tag = f"{.label}-{.priority}"
+  end
+
+  def +(other)
+    Self.new(label: .label, priority: .priority + other.priority)
+  end
+
+  def to_string()
+    f"tag:{.tag}"
+  end
+end
+
+t1 = Tagged(label: "important", priority: 1)
+t2 = Tagged(label: "important", priority: 2)
+t3 = t1 + t2
+
+results = [f"{nl.doubled}", f"{nl.count}", f"{t3}"]
+print(results.join(" | "))

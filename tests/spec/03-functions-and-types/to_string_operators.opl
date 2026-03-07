@@ -1,0 +1,35 @@
+# expect: hello Dog(Rex) | [Dog(Rex), Dog(Buddy)] | Dog(Rex) + Dog(Buddy) = Dog(Rex+Buddy)
+
+# to_string() in string concatenation
+class Dog
+  needs name: String
+
+  def +(other)
+    Self.new(name: f"{.name}+{other.name}")
+  end
+
+  def to_string()
+    f"Dog({.name})"
+  end
+end
+
+d1 = Dog(name: "Rex")
+d2 = Dog(name: "Buddy")
+
+# to_string in concatenation
+concat = "hello " + f"{d1}"
+
+# to_string in list display via map
+dogs = [d1, d2]
+labels = dogs.map(|d| f"{d}")
+
+# to_string after operator
+d3 = d1 + d2
+
+results = [
+  concat,
+  f"[{labels.join(", ")}]",
+  f"{d1} + {d2} = {d3}"
+]
+
+print(results.join(" | "))

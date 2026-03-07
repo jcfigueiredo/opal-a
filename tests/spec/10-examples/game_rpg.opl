@@ -1,0 +1,85 @@
+# expect: 🧙 Gandalf hp=80 mp=100 | 🗡️ Aragorn hp=120 mp=0 | true | true | false | Gandalf attacks for 20 | Team: 🧙 Gandalf hp=80 mp=100, 🗡️ Aragorn hp=120 mp=0
+
+# Real-world scenario combining: inheritance, init(), to_string(), Self.new(),
+# def +(), def ==(), static methods, Type() shorthand, closures, is operator,
+# Unicode identifiers, for loops, f-strings
+
+class Character
+  needs name: String
+  needs base_hp: Int
+
+  def init()
+    .hp = .base_hp
+    .mp = 0
+  end
+
+  def ==(other)
+    .name == other.name
+  end
+
+  def to_string()
+    f"{.name} hp={.hp} mp={.mp}"
+  end
+
+  def attack()
+    f"{.name} attacks for {.base_hp / 4}"
+  end
+end
+
+class 🧙Mage < Character
+  needs spell_power: Int
+
+  def init()
+    super()
+    .mp = 100
+  end
+
+  def to_string()
+    f"🧙 {super()}"
+  end
+
+  def self.create(name, power)
+    Self.new(name: name, base_hp: 80, spell_power: power)
+  end
+end
+
+class 🗡️Warrior < Character
+  needs armor: Int
+
+  def init()
+    super()
+    .hp = .base_hp + .armor * 2
+  end
+
+  def to_string()
+    f"🗡️ {super()}"
+  end
+end
+
+# Static factory + Type() shorthand
+gandalf = 🧙Mage.create("Gandalf", 50)
+aragorn = 🗡️Warrior(name: "Aragorn", base_hp: 100, armor: 10)
+
+# is operator with inheritance
+is_char_g = gandalf is Character
+is_char_a = aragorn is Character
+is_mage_a = aragorn is 🧙Mage
+
+# Inherited method
+atk = gandalf.attack()
+
+# Closures with to_string
+team = [gandalf, aragorn]
+team_str = team.map(|c| f"{c}").join(", ")
+
+results = [
+  f"{gandalf}",
+  f"{aragorn}",
+  f"{is_char_g}",
+  f"{is_char_a}",
+  f"{is_mage_a}",
+  atk,
+  f"Team: {team_str}"
+]
+
+print(results.join(" | "))

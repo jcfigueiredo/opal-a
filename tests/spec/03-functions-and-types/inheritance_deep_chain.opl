@@ -1,0 +1,51 @@
+# expect: D | true | true | true | true | a b c d
+
+# 4-level inheritance chain
+class A
+  needs a: String
+
+  def who()
+    "A"
+  end
+end
+
+class B < A
+  needs b: String
+
+  def who()
+    "B"
+  end
+end
+
+class C < B
+  needs c: String
+
+  def who()
+    "C"
+  end
+end
+
+class D < C
+  needs d: String
+
+  def who()
+    "D"
+  end
+end
+
+d = D.new(a: "a", b: "b", c: "c", d: "d")
+
+# Method override: D.who() shadows all parents
+# is operator: D instance is all ancestor types
+# All 4 levels of needs inherited
+
+results = [
+  d.who(),
+  f"{d is D}",
+  f"{d is C}",
+  f"{d is B}",
+  f"{d is A}",
+  f"{d.a} {d.b} {d.c} {d.d}"
+]
+
+print(results.join(" | "))

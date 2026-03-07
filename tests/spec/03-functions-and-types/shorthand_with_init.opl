@@ -1,0 +1,43 @@
+# expect: 100 | Entity #1 active | Player Hero hp=100
+
+# Type() shorthand triggers init()
+class Widget
+  needs size: Int
+
+  def init()
+    .area = .size * .size
+  end
+end
+
+w = Widget(size: 10)
+
+# Type() shorthand with inheritance + init + to_string
+class Entity
+  def init()
+    .id = 1
+    .status = "active"
+  end
+
+  def to_string()
+    f"Entity #{.id} {.status}"
+  end
+end
+
+class Player < Entity
+  needs name: String
+
+  def init()
+    super()
+    .hp = 100
+  end
+
+  def to_string()
+    f"Player {.name} hp={.hp}"
+  end
+end
+
+e = Entity()
+p = Player(name: "Hero")
+
+results = [f"{w.area}", f"{e}", f"{p}"]
+print(results.join(" | "))
