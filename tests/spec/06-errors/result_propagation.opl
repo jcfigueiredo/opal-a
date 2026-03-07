@@ -1,0 +1,44 @@
+# expect: 42 | err: fail | 21
+
+def returns_ok()
+  Ok(42)
+end
+
+def returns_err()
+  Error("fail")
+end
+
+def chain_ok()
+  a = returns_ok()!
+  Ok(a / 2)
+end
+
+def chain_err()
+  a = returns_err()!
+  Ok(a + 1)
+end
+
+# Direct unwrap
+x = returns_ok()!
+
+# Propagation stops at Error
+result_err = chain_err()
+
+# Chained propagation
+result_ok = chain_ok()
+
+err_str = match result_err
+  case Error(msg)
+    f"err: {msg}"
+  case Ok(v)
+    f"ok: {v}"
+end
+
+ok_str = match result_ok
+  case Ok(v)
+    f"{v}"
+  case Error(e)
+    f"err: {e}"
+end
+
+print(f"{x} | {err_str} | {ok_str}")

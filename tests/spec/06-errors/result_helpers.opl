@@ -1,0 +1,16 @@
+# expect: true | false | false | true | 42 | 0 | 99
+
+ok = Ok(42)
+err = Error("nope")
+
+results = [
+  f"{ok.ok?()}",
+  f"{ok.err?()}",
+  f"{err.ok?()}",
+  f"{err.err?()}",
+  f"{ok.unwrap()}",
+  f"{err.unwrap_or(0)}",
+  f"{Ok(99).unwrap_or(0)}"
+]
+
+print(results.join(" | "))
