@@ -2860,6 +2860,53 @@ impl<W: Write> Interpreter<W> {
                 let parts: Vec<String> = items.iter().map(|v| self.format_value(v)).collect();
                 Ok(Value::String(parts.join(&sep)))
             }
+            (Value::List(items), "contains") => {
+                if args.len() != 1 {
+                    return Err(EvalError::TypeError("contains() takes exactly 1 argument".into()));
+                }
+                let needle = &args[0];
+                Ok(Value::Bool(items.iter().any(|item| values_equal(item, needle))))
+            }
+            (Value::List(items), "first") => {
+                Ok(items.first().cloned().unwrap_or(Value::Null))
+            }
+            (Value::List(items), "last") => {
+                Ok(items.last().cloned().unwrap_or(Value::Null))
+            }
+            (Value::List(items), "min") => {
+                if items.is_empty() {
+                    return Ok(Value::Null);
+                }
+                let mut min_val = items[0].clone();
+                for item in &items[1..] {
+                    if value_compare(item, &min_val) == std::cmp::Ordering::Less {
+                        min_val = item.clone();
+                    }
+                }
+                Ok(min_val)
+            }
+            (Value::List(items), "max") => {
+                if items.is_empty() {
+                    return Ok(Value::Null);
+                }
+                let mut max_val = items[0].clone();
+                for item in &items[1..] {
+                    if value_compare(item, &max_val) == std::cmp::Ordering::Greater {
+                        max_val = item.clone();
+                    }
+                }
+                Ok(max_val)
+            }
+            (Value::List(items), "index") => {
+                if args.len() != 1 {
+                    return Err(EvalError::TypeError("index() takes exactly 1 argument".into()));
+                }
+                let needle = &args[0];
+                match items.iter().position(|item| values_equal(item, needle)) {
+                    Some(pos) => Ok(Value::Integer(pos as i64)),
+                    None => Ok(Value::Null),
+                }
+            }
             // String methods
             (Value::String(s), "length") => Ok(Value::Integer(s.len() as i64)),
             (Value::String(s), "split") => {
@@ -6051,5 +6098,43 @@ print(f"{d is Speakable} | {d.speak()}")
     fn constructor_shorthand_equivalent() {
         let output = run("class Foo\n  needs x: Int\n  def +(other)\n    Self.new(x: .x + other.x)\n  end\nend\na = Foo(x: 1) + Foo(x: 2)\nprint(a.x)").unwrap();
         assert_eq!(output, "3");
+    }
+
+    // === List stdlib methods ===
+
+    #[test]
+    fn list_contains() {
+        assert_eq!(run("print([1, 2, 3].contains(2))").unwrap(), "true");
+        assert_eq!(run("print([1, 2, 3].contains(5))").unwrap(), "false");
+    }
+
+    #[test]
+    fn list_first_last() {
+        assert_eq!(run("print([1, 2, 3].first())").unwrap(), "1");
+        assert_eq!(run("print([1, 2, 3].last())").unwrap(), "3");
+        assert_eq!(run("print([].first())").unwrap(), "null");
+    }
+
+    #[test]
+    fn list_min_max() {
+        assert_eq!(run("print([3, 1, 2].min())").unwrap(), "1");
+        assert_eq!(run("print([3, 1, 2].max())").unwrap(), "3");
+    }
+
+    #[test]
+    fn list_index_method() {
+        assert_eq!(run("print([10, 20, 30].index(20))").unwrap(), "1");
+        assert_eq!(run("print([10, 20, 30].index(99))").unwrap(), "null");
+    }
+
+    #[test]
+    fn list_count_with_predicate() {
+        assert_eq!(run("print([1, 2, 3, 4, 5].count(|x| x > 3))").unwrap(), "2");
+    }
+
+    #[test]
+    fn list_take_drop_methods() {
+        assert_eq!(run("print([1, 2, 3, 4, 5].take(3))").unwrap(), "[1, 2, 3]");
+        assert_eq!(run("print([1, 2, 3, 4, 5].drop(3))").unwrap(), "[4, 5]");
     }
 }
