@@ -1,0 +1,51 @@
+# expect: 30 | fallback | err: step2 failed
+
+# Propagation on method call results
+class Api
+  def fetch(id)
+    if id > 0
+      Ok(id * 10)
+    else
+      Error("not found")
+    end
+  end
+end
+
+def process(api, id)
+  val = api.fetch(id)!
+  Ok(val * 3)
+end
+
+# Multiple ! in one function with mixed Ok/Error
+def pipeline()
+  a = Ok(1).unwrap_or(0)
+  b = Ok(a + 1)!
+  c = Ok(b + 1)!
+  Ok(c)
+end
+
+# Early exit: second step fails, third never runs
+def failing_pipeline()
+  a = Ok(10)!
+  b = Error("step2 failed")!
+  Ok(b + 100)
+end
+
+api = Api.new()
+r1 = process(api, 1)
+
+# Propagation with unwrap_or as fallback
+r2 = process(api, -1).unwrap_or("fallback")
+
+# Failing pipeline
+r3 = match failing_pipeline()
+  case Ok(v)
+    f"ok: {v}"
+  case Error(e)
+    f"err: {e}"
+end
+
+# Pipeline success
+r4 = pipeline()
+
+print(f"{r1.unwrap()} | {r2} | {r3}")

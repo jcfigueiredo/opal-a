@@ -1,0 +1,14 @@
+# expect: 42 | caught: boom
+
+# unwrap() on Ok returns the value
+ok_val = Ok(42).unwrap()
+
+# unwrap() on Error raises — catch it with try/catch
+caught = try
+  Error("boom").unwrap()
+  "should not reach"
+catch e
+  f"caught: {e}"
+end
+
+print(f"{ok_val} | {caught}")
