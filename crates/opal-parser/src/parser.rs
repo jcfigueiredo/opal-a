@@ -2063,6 +2063,13 @@ impl<'src> Parser<'src> {
             Some(Token::Identifier) => {
                 let name = self.extract_text(&span);
                 self.advance();
+                // Allow ? suffix for predicate identifiers: adult?(21)
+                let name = if self.check(&Token::Question) {
+                    self.advance();
+                    format!("{}?", name)
+                } else {
+                    name
+                };
                 Ok(Expr {
                     kind: ExprKind::Identifier(name),
                     span,
@@ -2744,7 +2751,13 @@ impl<'src> Parser<'src> {
                 | Token::Next,
             ) => {
                 self.advance();
-                Ok(text)
+                // Allow ? suffix for predicate methods: empty?(), valid?()
+                if self.check(&Token::Question) {
+                    self.advance();
+                    Ok(format!("{}?", text))
+                } else {
+                    Ok(text)
+                }
             }
             // Operator tokens as method names (operator overloading):
             //   def +(other)  → stores as "add"

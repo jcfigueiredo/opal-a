@@ -4939,6 +4939,18 @@ end
     }
 
     #[test]
+    fn predicate_method_def_and_call() {
+        let output = run("class Box\n  needs items: List\n  def empty?()\n    .items.length() == 0\n  end\nend\nb = Box.new(items: [1, 2])\nprint(f\"{b.empty?()} {Box.new(items: []).empty?()}\")").unwrap();
+        assert_eq!(output, "false true");
+    }
+
+    #[test]
+    fn predicate_function() {
+        let output = run("def adult?(age)\n  age >= 18\nend\nprint(f\"{adult?(21)} {adult?(15)}\")").unwrap();
+        assert_eq!(output, "true false");
+    }
+
+    #[test]
     fn error_handling_target_program() {
         let output = run(r#"
 def divide(a: Float, b: Float) -> Result[Float, String]
