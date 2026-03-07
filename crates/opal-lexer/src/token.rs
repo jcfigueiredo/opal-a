@@ -355,9 +355,11 @@ pub enum Token {
     // \p{N} (numbers, continuation only).
     // Non-ASCII math symbols (∞, →, ∑, etc.) are included via explicit Unicode ranges.
     // ASCII Sm chars (+, <, >, =, |, ~) are NOT included — they are Opal operators.
-    // `?` excluded to avoid conflicting with `?.` and `??` operators.
-    // `!` suffix supported for methods like `save!`.
-    #[regex(r"[\p{L}\p{So}_\u{00AC}\u{00B1}\u{00D7}\u{00F7}\u{2200}-\u{22FF}\u{2190}-\u{21FF}\u{27F0}-\u{27FF}\u{2900}-\u{297F}][\p{L}\p{N}\p{So}\p{M}_\u{00AC}\u{00B1}\u{00D7}\u{00F7}\u{2200}-\u{22FF}\u{2190}-\u{21FF}\u{27F0}-\u{27FF}\u{2900}-\u{297F}]*!?")]
+    // `!` suffix for mutation methods (`save!`) handled in parser:
+    // when Identifier is followed by Bang token, parser combines them.
+    // `?` suffix for predicates (`any?`, `empty?`) handled in parser:
+    // when Identifier is followed by Question token, parser combines them.
+    #[regex(r"[\p{L}\p{So}_\u{00AC}\u{00B1}\u{00D7}\u{00F7}\u{2200}-\u{22FF}\u{2190}-\u{21FF}\u{27F0}-\u{27FF}\u{2900}-\u{297F}][\p{L}\p{N}\p{So}\p{M}_\u{00AC}\u{00B1}\u{00D7}\u{00F7}\u{2200}-\u{22FF}\u{2190}-\u{21FF}\u{27F0}-\u{27FF}\u{2900}-\u{297F}]*")]
     Identifier,
 
     // === Operators ===

@@ -2064,9 +2064,14 @@ impl<'src> Parser<'src> {
                 let name = self.extract_text(&span);
                 self.advance();
                 // Allow ? suffix for predicate identifiers: adult?(21)
+                // Allow ! suffix for mutation identifiers: save!(record)
+                // Only combine ! when followed by ( — otherwise leave for propagation
                 let name = if self.check(&Token::Question) {
                     self.advance();
                     format!("{}?", name)
+                } else if self.check(&Token::Bang) && self.peek_ahead(1) == Some(&Token::LParen) {
+                    self.advance();
+                    format!("{}!", name)
                 } else {
                     name
                 };
@@ -2753,9 +2758,14 @@ impl<'src> Parser<'src> {
             ) => {
                 self.advance();
                 // Allow ? suffix for predicate methods: empty?(), valid?()
+                // Allow ! suffix for mutation methods: save!(), delete!()
+                // Only combine ! when followed by ( — otherwise leave for propagation operator
                 if self.check(&Token::Question) {
                     self.advance();
                     Ok(format!("{}?", text))
+                } else if self.check(&Token::Bang) && self.peek_ahead(1) == Some(&Token::LParen) {
+                    self.advance();
+                    Ok(format!("{}!", text))
                 } else {
                     Ok(text)
                 }
