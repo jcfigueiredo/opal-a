@@ -3712,8 +3712,36 @@ impl<W: Write> Interpreter<W> {
                 }
                 return Err(EvalError::TypeError(format!("enum '{}' has no variant '{}'", e.name, method)));
             }
-            // Enum variant method calls
+            // Enum variant method calls (including Result helpers)
             (Value::EnumVariant { enum_id, .. }, _) => {
+                // Result helper methods (enum_id 0 = Result)
+                if enum_id.0 == 0 {
+                    if let Value::EnumVariant { variant_index, fields, .. } = &obj {
+                        match method {
+                            "ok?" => return Ok(Value::Bool(*variant_index == 0)),
+                            "err?" => return Ok(Value::Bool(*variant_index == 1)),
+                            "unwrap" => {
+                                if *variant_index == 0 {
+                                    return Ok(fields.first().cloned().unwrap_or(Value::Null));
+                                } else {
+                                    let err_val = fields.first().cloned().unwrap_or(Value::Null);
+                                    return Err(EvalError::Raise(err_val));
+                                }
+                            }
+                            "unwrap_or" => {
+                                if args.len() != 1 {
+                                    return Err(EvalError::TypeError("unwrap_or() takes 1 argument".into()));
+                                }
+                                if *variant_index == 0 {
+                                    return Ok(fields.first().cloned().unwrap_or(Value::Null));
+                                } else {
+                                    return Ok(args.into_iter().next().unwrap());
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
                 let e = self.enums[enum_id.0].clone();
                 if let Some(func) = e.methods.iter().find(|m| m.name == method) {
                     let func = func.clone();
@@ -6254,5 +6282,35 @@ print(f"{d is Speakable} | {d.speak()}")
     fn propagation_on_non_result_errors() {
         let result = run("x = 42!\nprint(x)");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn result_ok_predicate() {
+        assert_eq!(run("print(Ok(42).ok?())").unwrap(), "true");
+        assert_eq!(run(r#"print(Error("x").ok?())"#).unwrap(), "false");
+    }
+
+    #[test]
+    fn result_err_predicate() {
+        assert_eq!(run("print(Ok(42).err?())").unwrap(), "false");
+        assert_eq!(run(r#"print(Error("x").err?())"#).unwrap(), "true");
+    }
+
+    #[test]
+    fn result_unwrap_ok() {
+        assert_eq!(run("print(Ok(42).unwrap())").unwrap(), "42");
+    }
+
+    #[test]
+    fn result_unwrap_error_raises() {
+        let result = run(r#"Ok(1)
+Error("boom").unwrap()"#);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn result_unwrap_or() {
+        assert_eq!(run("print(Ok(42).unwrap_or(0))").unwrap(), "42");
+        assert_eq!(run(r#"print(Error("x").unwrap_or(0))"#).unwrap(), "0");
     }
 }
