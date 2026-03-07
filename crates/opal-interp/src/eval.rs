@@ -2860,6 +2860,7 @@ impl<W: Write> Interpreter<W> {
                 let parts: Vec<String> = items.iter().map(|v| self.format_value(v)).collect();
                 Ok(Value::String(parts.join(&sep)))
             }
+            (Value::List(items), "empty?") => Ok(Value::Bool(items.is_empty())),
             (Value::List(items), "contains") => {
                 if args.len() != 1 {
                     return Err(EvalError::TypeError("contains() takes exactly 1 argument".into()));
@@ -3057,6 +3058,7 @@ impl<W: Write> Interpreter<W> {
                     None => Ok(Value::Null),
                 }
             }
+            (Value::String(s), "empty?") => Ok(Value::Bool(s.is_empty())),
 
             // Dict methods
             (Value::Dict(entries), "length") => Ok(Value::Integer(entries.len() as i64)),
@@ -6190,5 +6192,19 @@ print(f"{d is Speakable} | {d.speak()}")
     fn string_index_method() {
         assert_eq!(run(r#"print("hello".index("ll"))"#).unwrap(), "2");
         assert_eq!(run(r#"print("hello".index("xyz"))"#).unwrap(), "null");
+    }
+
+    // === empty?() predicate ===
+
+    #[test]
+    fn list_empty_predicate() {
+        assert_eq!(run("print([].empty?())").unwrap(), "true");
+        assert_eq!(run("print([1].empty?())").unwrap(), "false");
+    }
+
+    #[test]
+    fn string_empty_predicate() {
+        assert_eq!(run(r#"print("".empty?())"#).unwrap(), "true");
+        assert_eq!(run(r#"print("hi".empty?())"#).unwrap(), "false");
     }
 }
