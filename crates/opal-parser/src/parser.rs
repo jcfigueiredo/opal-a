@@ -2002,6 +2002,18 @@ impl<'src> Parser<'src> {
                     },
                     span,
                 };
+            } else if self.check(&Token::Bang) {
+                // Propagation: expr! — only when ! is NOT followed by (
+                // (identifier!() is handled in parse_primary as a mutation call)
+                if self.peek_ahead(1) == Some(&Token::LParen) {
+                    break;
+                }
+                let start = expr.span.start;
+                self.advance(); // consume !
+                expr = Expr {
+                    kind: ExprKind::Propagate(Box::new(expr)),
+                    span: Span { start, end: self.previous_span().end },
+                };
             } else {
                 break;
             }
@@ -3352,6 +3364,47 @@ mod tests {
                 assert_eq!(declarations[0].name, "listen");
             }
             _ => panic!("expected extern def"),
+        }
+    }
+
+    #[test]
+    fn parse_propagation() {
+        let source = "x = foo()!\n";
+        let program = parse(source);
+        match &program.statements[0].kind {
+            StmtKind::Assign { value, .. } => {
+                assert!(matches!(&value.kind, ExprKind::Propagate(_)));
+            }
+            _ => panic!("expected Assign"),
+        }
+    }
+
+    #[test]
+    fn parse_propagation_chained() {
+        let source = "x = obj.method()!\n";
+        let program = parse(source);
+        match &program.statements[0].kind {
+            StmtKind::Assign { value, .. } => {
+                assert!(matches!(&value.kind, ExprKind::Propagate(_)));
+            }
+            _ => panic!("expected Assign"),
+        }
+    }
+
+    #[test]
+    fn parse_mutation_call_not_propagation() {
+        let source = "save!(record)\n";
+        let program = parse(source);
+        match &program.statements[0].kind {
+            StmtKind::Expr(expr) => {
+                match &expr.kind {
+                    ExprKind::Call { function, .. } => {
+                        assert!(matches!(&function.kind, ExprKind::Identifier(name) if name == "save!"));
+                    }
+                    _ => panic!("expected Call"),
+                }
+            }
+            _ => panic!("expected Expr"),
         }
     }
 }

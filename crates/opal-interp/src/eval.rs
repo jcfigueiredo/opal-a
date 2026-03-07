@@ -1935,6 +1935,30 @@ impl<W: Write> Interpreter<W> {
                 Ok(Value::Null) // no match
             }
 
+            ExprKind::Propagate(inner) => {
+                let val = self.eval_expr(inner)?;
+                match &val {
+                    Value::EnumVariant { enum_id, variant_index, fields } => {
+                        if enum_id.0 == 0 {
+                            if *variant_index == 0 {
+                                // Ok(value) — unwrap
+                                Ok(fields.first().cloned().unwrap_or(Value::Null))
+                            } else {
+                                // Error(value) — propagate by returning from function
+                                Err(EvalError::Return(val))
+                            }
+                        } else {
+                            Err(EvalError::TypeError(
+                                "! operator requires an Ok or Error value".into()
+                            ))
+                        }
+                    }
+                    _ => Err(EvalError::TypeError(
+                        "! operator requires an Ok or Error value".into()
+                    )),
+                }
+            }
+
             ExprKind::TryCatch {
                 body,
                 catches,
