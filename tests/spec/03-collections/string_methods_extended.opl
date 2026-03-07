@@ -1,0 +1,13 @@
+# expect: HELLO | hello | ell | 2 | null | true | false
+
+results = [
+  "hello".upcase(),
+  "HELLO".downcase(),
+  "hello".slice(1, 4),
+  f"{"hello".index("ll")}",
+  f"{"hello".index("xyz")}",
+  f"{"".empty?()}",
+  f"{"hi".empty?()}"
+]
+
+print(results.join(" | "))

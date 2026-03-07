@@ -1,0 +1,20 @@
+# expect: true | false | 1 | 3 | null | 1 | 3 | 1 | null | 2 | [1, 2, 3] | [4, 5] | true | false
+
+results = [
+  f"{[1,2,3].contains(2)}",
+  f"{[1,2,3].contains(5)}",
+  f"{[1,2,3].first()}",
+  f"{[1,2,3].last()}",
+  f"{[].first()}",
+  f"{[3,1,2].min()}",
+  f"{[3,1,2].max()}",
+  f"{[10,20,30].index(20)}",
+  f"{[10,20,30].index(99)}",
+  f"{[1,2,3,4,5].count(|x| x > 3)}",
+  f"{[1,2,3,4,5].take(3)}",
+  f"{[1,2,3,4,5].drop(3)}",
+  f"{[].empty?()}",
+  f"{[1].empty?()}"
+]
+
+print(results.join(" | "))

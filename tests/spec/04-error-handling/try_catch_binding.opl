@@ -1,0 +1,27 @@
+# expect: oops | caught: boom | start caught done
+
+results = []
+
+try
+  raise "oops"
+catch e
+  results = results.push(e)
+end
+
+try
+  raise "boom"
+catch e as String
+  results = results.push(f"caught: {e}")
+end
+
+x = "start"
+try
+  raise "err"
+catch e
+  x = f"{x} caught"
+ensure
+  x = f"{x} done"
+end
+results = results.push(x)
+
+print(results.join(" | "))

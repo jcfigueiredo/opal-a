@@ -1,0 +1,31 @@
+# expect: true | false | false | true | true | false
+
+def adult?(age)
+  age >= 18
+end
+
+class Box
+  needs items: List
+
+  def empty?()
+    .items.length() == 0
+  end
+
+  def has_items?()
+    not .empty?()
+  end
+end
+
+empty_box = Box.new(items: [])
+full_box = Box.new(items: [1, 2, 3])
+
+results = [
+  f"{adult?(21)}",
+  f"{adult?(15)}",
+  f"{full_box.empty?()}",
+  f"{empty_box.empty?()}",
+  f"{full_box.has_items?()}",
+  f"{empty_box.has_items?()}"
+]
+
+print(results.join(" | "))

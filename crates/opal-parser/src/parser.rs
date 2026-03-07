@@ -2259,9 +2259,10 @@ impl<'src> Parser<'src> {
                 })
             }
             // Instance variable: .field (at start of expression, not after another expr)
+            // Uses expect_method_name to support predicate methods like .empty?()
             Some(Token::Dot) => {
                 self.advance();
-                let field = self.expect_identifier()?;
+                let field = self.expect_method_name()?;
                 let end = self.previous_span().end;
                 Ok(Expr {
                     kind: ExprKind::InstanceVar(field),
