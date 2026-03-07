@@ -6231,4 +6231,28 @@ print(f"{d is Speakable} | {d.speak()}")
         assert_eq!(run(r#"print("".empty?())"#).unwrap(), "true");
         assert_eq!(run(r#"print("hi".empty?())"#).unwrap(), "false");
     }
+
+    #[test]
+    fn propagation_unwraps_ok() {
+        let output = run("def foo()\n  Ok(42)\nend\nx = foo()!\nprint(x)").unwrap();
+        assert_eq!(output, "42");
+    }
+
+    #[test]
+    fn propagation_returns_error() {
+        let output = run("def foo()\n  Error(\"fail\")\nend\ndef bar()\n  x = foo()!\n  Ok(x + 1)\nend\nresult = bar()\nmatch result\n  case Error(msg)\n    print(f\"err: {msg}\")\n  case Ok(v)\n    print(f\"ok: {v}\")\nend").unwrap();
+        assert_eq!(output, "err: fail");
+    }
+
+    #[test]
+    fn propagation_chained() {
+        let output = run("def step1()\n  Ok(10)\nend\ndef step2(n)\n  Ok(n * 2)\nend\ndef process()\n  a = step1()!\n  b = step2(a)!\n  Ok(b + 1)\nend\nmatch process()\n  case Ok(v)\n    print(v)\n  case Error(e)\n    print(e)\nend").unwrap();
+        assert_eq!(output, "21");
+    }
+
+    #[test]
+    fn propagation_on_non_result_errors() {
+        let result = run("x = 42!\nprint(x)");
+        assert!(result.is_err());
+    }
 }
