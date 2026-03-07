@@ -3023,6 +3023,40 @@ impl<W: Write> Interpreter<W> {
             (Value::String(s), "reverse") => {
                 Ok(Value::String(s.chars().rev().collect()))
             }
+            (Value::String(s), "upcase") => Ok(Value::String(s.to_uppercase())),
+            (Value::String(s), "downcase") => Ok(Value::String(s.to_lowercase())),
+            (Value::String(s), "slice") => {
+                if args.len() != 2 {
+                    return Err(EvalError::TypeError("slice() takes exactly 2 arguments (start, end)".into()));
+                }
+                let start = match &args[0] {
+                    Value::Integer(n) => *n as usize,
+                    _ => return Err(EvalError::TypeError("slice() start must be an integer".into())),
+                };
+                let end = match &args[1] {
+                    Value::Integer(n) => *n as usize,
+                    _ => return Err(EvalError::TypeError("slice() end must be an integer".into())),
+                };
+                let result: String = s.chars().skip(start).take(end.saturating_sub(start)).collect();
+                Ok(Value::String(result))
+            }
+            (Value::String(s), "index") => {
+                if args.len() != 1 {
+                    return Err(EvalError::TypeError("index() takes exactly 1 argument".into()));
+                }
+                let substr = match &args[0] {
+                    Value::String(sub) => sub.clone(),
+                    _ => return Err(EvalError::TypeError("index() argument must be a string".into())),
+                };
+                match s.find(&substr) {
+                    Some(byte_pos) => {
+                        // Convert byte position to char position for Unicode safety
+                        let char_pos = s[..byte_pos].chars().count();
+                        Ok(Value::Integer(char_pos as i64))
+                    }
+                    None => Ok(Value::Null),
+                }
+            }
 
             // Dict methods
             (Value::Dict(entries), "length") => Ok(Value::Integer(entries.len() as i64)),
@@ -6136,5 +6170,25 @@ print(f"{d is Speakable} | {d.speak()}")
     fn list_take_drop_methods() {
         assert_eq!(run("print([1, 2, 3, 4, 5].take(3))").unwrap(), "[1, 2, 3]");
         assert_eq!(run("print([1, 2, 3, 4, 5].drop(3))").unwrap(), "[4, 5]");
+    }
+
+    // === String stdlib methods ===
+
+    #[test]
+    fn string_upcase_downcase() {
+        assert_eq!(run(r#"print("hello".upcase())"#).unwrap(), "HELLO");
+        assert_eq!(run(r#"print("HELLO".downcase())"#).unwrap(), "hello");
+    }
+
+    #[test]
+    fn string_slice() {
+        assert_eq!(run(r#"print("hello world".slice(0, 5))"#).unwrap(), "hello");
+        assert_eq!(run(r#"print("hello".slice(1, 3))"#).unwrap(), "el");
+    }
+
+    #[test]
+    fn string_index_method() {
+        assert_eq!(run(r#"print("hello".index("ll"))"#).unwrap(), "2");
+        assert_eq!(run(r#"print("hello".index("xyz"))"#).unwrap(), "null");
     }
 }
