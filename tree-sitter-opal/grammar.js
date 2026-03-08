@@ -183,7 +183,9 @@ module.exports = grammar({
       seq('not', $._expression),
     )),
 
-    propagation_expression: $ => prec.left(13, seq($._expression, '!')),
+    propagation_expression: $ => prec.left(13, seq($._expression, $.bang)),
+
+    bang: $ => '!',
 
     grouped_expression: $ => prec(-1, seq('(', $._expression, ')')),
 

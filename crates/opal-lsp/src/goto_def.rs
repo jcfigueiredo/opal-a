@@ -84,11 +84,12 @@ fn floor_char_boundary(s: &str, mut i: usize) -> usize {
 }
 
 fn is_ident_char(c: char) -> bool {
-    // Match the lexer regex: [\p{L}\p{So}_][\p{L}\p{N}\p{So}\p{M}_]*!?
+    // Match the lexer regex: [\p{L}\p{So}_][\p{L}\p{N}\p{So}\p{M}_]*
+    // Note: ! and ? are NOT identifier chars — they are separate tokens
+    // combined by the parser when followed by (
     c.is_alphabetic()    // \p{L}
         || c.is_numeric()    // \p{N}
         || c == '_'
-        || c == '!'
         || (!c.is_ascii() && !c.is_whitespace() && !c.is_ascii_punctuation())
         // Non-ASCII, non-whitespace, non-punct covers \p{So} (emoji) and \p{M} (combining marks)
 }

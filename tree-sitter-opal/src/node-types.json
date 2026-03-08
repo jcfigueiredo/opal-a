@@ -6072,7 +6072,7 @@
     "named": true,
     "fields": {},
     "children": {
-      "multiple": false,
+      "multiple": true,
       "required": true,
       "types": [
         {
@@ -6085,6 +6085,10 @@
         },
         {
           "type": "await_expression",
+          "named": true
+        },
+        {
+          "type": "bang",
           "named": true
         },
         {
@@ -7783,10 +7787,6 @@
     }
   },
   {
-    "type": "!",
-    "named": false
-  },
-  {
     "type": "!=",
     "named": false
   },
@@ -7949,6 +7949,10 @@
   {
     "type": "await",
     "named": false
+  },
+  {
+    "type": "bang",
+    "named": true
   },
   {
     "type": "break_statement",

@@ -1,25 +1,29 @@
-; Keywords
+; Keywords (only tokens that exist in the grammar)
 [
   "def" "end" "class" "module" "protocol" "enum" "model"
   "if" "elsif" "else" "then"
   "for" "while" "in" "do"
   "match" "case"
-  "return" "break" "next"
+  "return"
   "try" "catch" "ensure" "raise"
   "let" "needs" "requires"
   "import" "from" "export" "as"
-  "actor" "receive" "reply" "send" "await"
+  "actor" "receive" "reply" "await"
   "macro" "ast" "emit" "event" "on"
-  "type" "implements" "with" "where" "defaults"
+  "type" "implements"
   "and" "or" "not" "is"
-  "extern" "parallel" "async"
-  "self"
-  "Self"
-  "super"
+  "extern"
 ] @keyword
 
-["true" "false"] @boolean
-"null" @constant.builtin
+; Named keyword nodes
+(break_statement) @keyword
+(next_statement) @keyword
+(self) @keyword
+(Self) @keyword
+
+(true) @boolean
+(false) @boolean
+(null) @constant.builtin
 
 ; Functions
 (function_definition name: (identifier) @function.definition)
@@ -65,11 +69,11 @@
   "==" "!=" "<" "<=" ">" ">="
   "+=" "-=" "*=" "/="
   "|>" ".." "..." "?." "??"
-  "=" "->" "|" "!"
+  "=" "->" "|"
 ] @operator
 
-; Propagation
-(propagation_expression "!" @operator)
+; Propagation operator
+(propagation_expression (bang) @operator)
 
 ; Punctuation
 ["(" ")" "[" "]" "{" "}"] @punctuation.bracket

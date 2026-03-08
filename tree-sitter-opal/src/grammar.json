@@ -1020,11 +1020,15 @@
             "name": "_expression"
           },
           {
-            "type": "STRING",
-            "value": "!"
+            "type": "SYMBOL",
+            "name": "bang"
           }
         ]
       }
+    },
+    "bang": {
+      "type": "STRING",
+      "value": "!"
     },
     "grouped_expression": {
       "type": "PREC",

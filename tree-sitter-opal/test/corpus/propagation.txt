@@ -1,0 +1,49 @@
+================
+Propagation on identifier
+================
+
+x = y!
+
+---
+
+(source_file
+  (assignment
+    (identifier)
+    (propagation_expression
+      (identifier)
+      (bang))))
+
+================
+Propagation on function call
+================
+
+x = foo()!
+
+---
+
+(source_file
+  (assignment
+    (identifier)
+    (propagation_expression
+      (call
+        (identifier))
+      (bang))))
+
+================
+Propagation on method call
+================
+
+x = obj.fetch(id)!
+
+---
+
+(source_file
+  (assignment
+    (identifier)
+    (propagation_expression
+      (call
+        (member_access
+          (identifier)
+          (identifier))
+        (identifier))
+      (bang))))
