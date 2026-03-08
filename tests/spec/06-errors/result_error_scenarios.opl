@@ -1,0 +1,33 @@
+# expect: true | -1 | ok: 10
+
+# Propagation stops at first error, helpers inspect result
+def divide(a, b)
+  if b == 0
+    Error("division by zero")
+  else
+    Ok(a / b)
+  end
+end
+
+def calculate()
+  x = divide(100, 5)!
+  y = divide(x, 2)!
+  z = divide(y, 0)!
+  Ok(z)
+end
+
+r = calculate()
+
+# Inline helpers on Result
+is_err = r.err?()
+fallback = r.unwrap_or(-1)
+
+# Helpers work on inline expressions too
+inline_check = match Ok(10)
+  case Ok(v) if Ok(v).ok?()
+    f"ok: {Ok(v).unwrap()}"
+  case _
+    "unexpected"
+end
+
+print(f"{is_err} | {fallback} | {inline_check}")
