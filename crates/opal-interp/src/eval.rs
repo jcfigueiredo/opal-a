@@ -3781,34 +3781,6 @@ impl<W: Write> Interpreter<W> {
             }
             // Enum variant method calls (including Result helpers)
             (Value::EnumVariant { enum_id, .. }, _) => {
-                // Result helper methods (enum_id 0 = Result)
-                if enum_id.0 == 0 {
-                    if let Value::EnumVariant { variant_index, fields, .. } = &obj {
-                        match method {
-                            "ok?" => return Ok(Value::Bool(*variant_index == 0)),
-                            "err?" => return Ok(Value::Bool(*variant_index == 1)),
-                            "unwrap" => {
-                                if *variant_index == 0 {
-                                    return Ok(fields.first().cloned().unwrap_or(Value::Null));
-                                } else {
-                                    let err_val = fields.first().cloned().unwrap_or(Value::Null);
-                                    return Err(EvalError::Raise(err_val));
-                                }
-                            }
-                            "unwrap_or" => {
-                                if args.len() != 1 {
-                                    return Err(EvalError::Panic(PanicKind::TypeError,"unwrap_or() takes 1 argument".into()));
-                                }
-                                if *variant_index == 0 {
-                                    return Ok(fields.first().cloned().unwrap_or(Value::Null));
-                                } else {
-                                    return Ok(args.into_iter().next().unwrap());
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                }
                 let e = self.enums[enum_id.0].clone();
                 if let Some(func) = e.methods.iter().find(|m| m.name == method) {
                     let func = func.clone();
@@ -4161,11 +4133,6 @@ impl<W: Write> Interpreter<W> {
     fn make_ok(val: Value) -> Value {
         Value::EnumVariant { enum_id: EnumId(0), variant_index: 0, fields: vec![val] }
     }
-    #[allow(dead_code)]
-    fn make_err(val: Value) -> Value {
-        Value::EnumVariant { enum_id: EnumId(0), variant_index: 1, fields: vec![val] }
-    }
-
     /// Create an Error class instance with .message and .cause fields
     fn make_error_instance(&mut self, val: Value) -> Value {
         let (message, cause) = match &val {
@@ -6445,33 +6412,4 @@ print(result)
         assert_eq!(output, "default");
     }
 
-    #[test]
-    fn result_ok_predicate() {
-        assert_eq!(run("print(Ok(42).ok?())").unwrap(), "true");
-        // Error() now creates a class instance, not an enum variant
-        // ok?/err? only work on Result enum variants (Ok/Error via make_err)
-    }
-
-    #[test]
-    fn result_err_predicate() {
-        assert_eq!(run("print(Ok(42).err?())").unwrap(), "false");
-    }
-
-    #[test]
-    fn result_unwrap_ok() {
-        assert_eq!(run("print(Ok(42).unwrap())").unwrap(), "42");
-    }
-
-    #[test]
-    fn result_unwrap_error_raises() {
-        let result = run(r#"Ok(1)
-Error("boom").unwrap()"#);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn result_unwrap_or() {
-        assert_eq!(run("print(Ok(42).unwrap_or(0))").unwrap(), "42");
-        // Error() is now a class instance, unwrap_or only works on enum variants
-    }
 }
