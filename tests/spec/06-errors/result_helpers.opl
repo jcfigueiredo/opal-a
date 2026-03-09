@@ -1,16 +1,38 @@
-# expect: true | false | false | true | 42 | 0 | 99
+# expect: true | false | 42 | default | nope
+# Error handling with ? operator, or keyword, and Error class
 
-ok = Ok(42)
-err = Error("nope")
+def succeed()
+  42
+end
 
-results = [
-  f"{ok.ok?()}",
-  f"{ok.err?()}",
-  f"{err.ok?()}",
-  f"{err.err?()}",
-  f"{ok.unwrap()}",
-  f"{err.unwrap_or(0)}",
-  f"{Ok(99).unwrap_or(0)}"
-]
+def fail_with(msg)
+  return Error(msg)
+end
 
-print(results.join(" | "))
+# ? on success — returns value (truthy)
+ok_result = succeed()?
+is_ok = if ok_result
+  true
+else
+  false
+end
+
+# ? on failure — returns Error (falsy)
+err_result = fail_with("nope")?
+is_err = if err_result
+  true
+else
+  false
+end
+
+# Direct value
+val = succeed()
+
+# ? or default
+fallback = fail_with("nope")? or "default"
+
+# .message on Error
+err = fail_with("nope")?
+msg = err.message
+
+print(f"{is_ok} | {is_err} | {val} | {fallback} | {msg}")

@@ -1,0 +1,35 @@
+# expect: user_1 | default_user | true | false
+
+def find_user(id)
+  if id > 100
+    return Error("not found")
+  end
+  f"user_{id}"
+end
+
+results = []
+
+# ? suppresses throw, returns the value
+result = find_user(1)?
+results = results.push(result)
+
+# ? with or for default
+user = find_user(999)? or "default_user"
+results = results.push(user)
+
+# Error is falsy in if
+check = if find_user(1)?
+  true
+else
+  false
+end
+results = results.push(check)
+
+check2 = if find_user(999)?
+  true
+else
+  false
+end
+results = results.push(check2)
+
+print(results.join(" | "))

@@ -268,8 +268,8 @@ pub enum ExprKind {
     },
     /// super() call to parent method
     Super(Vec<Expr>),
-    /// Result propagation: expr! — unwraps Ok or returns Err
-    Propagate(Box<Expr>),
+    /// Suppress auto-throw: expr? — returns value or Error without throwing
+    SuppressThrow(Box<Expr>),
 }
 
 /// A case in a match expression

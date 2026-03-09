@@ -17,7 +17,7 @@ def transition(current, target)
     case Status.InProgress if target is Status
       Ok(Status.Completed)
     case _
-      Error("invalid transition")
+      return Error("invalid transition")
   end
 end
 
@@ -39,8 +39,8 @@ def describe(result)
   end
 end
 
-r1 = describe(transition(Status.Draft, Status.Open))
-r2 = describe(transition(Status.Open, Status.InProgress))
-r3 = describe(transition(Status.Completed, Status.Draft))
+r1 = describe(transition(Status.Draft, Status.Open)?)
+r2 = describe(transition(Status.Open, Status.InProgress)?)
+r3 = describe(transition(Status.Completed, Status.Draft)?)
 
 print(f"{r1} | {r2} | {r3}")

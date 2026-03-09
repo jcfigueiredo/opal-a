@@ -736,7 +736,7 @@ impl<W: Write> Interpreter<W> {
             }
             StmtKind::While { condition, body } => loop {
                 let cond = self.eval_expr(condition)?;
-                if !cond.is_truthy() {
+                if !self.is_truthy(&cond) {
                     break;
                 }
                 match self.eval_block(body) {
@@ -1065,7 +1065,7 @@ impl<W: Write> Interpreter<W> {
             }
             StmtKind::Requires { condition, message } => {
                 let cond = self.eval_expr(condition)?;
-                if !cond.is_truthy() {
+                if !self.is_truthy(&cond) {
                     let msg = match message {
                         Some(m) => self.eval_expr(m)?,
                         None => Value::String("requires condition failed".into()),
@@ -1495,7 +1495,7 @@ impl<W: Write> Interpreter<W> {
                     self.env.set(var.clone(), item);
                     if let Some(cond) = condition {
                         let cond_val = self.eval_expr(cond)?;
-                        if !cond_val.is_truthy() {
+                        if !self.is_truthy(&cond_val) {
                             continue;
                         }
                     }
@@ -1664,6 +1664,23 @@ impl<W: Write> Interpreter<W> {
                     return Ok(Value::Bool(if *op == BinOp::Is { result } else { !result }));
                 }
                 let lval = self.eval_expr(left)?;
+                // Short-circuit and/or with Error-aware truthiness
+                if *op == BinOp::And {
+                    return if self.is_truthy(&lval) {
+                        let rval = self.eval_expr(right)?;
+                        Ok(rval)
+                    } else {
+                        Ok(lval)
+                    };
+                }
+                if *op == BinOp::Or {
+                    return if self.is_truthy(&lval) {
+                        Ok(lval)
+                    } else {
+                        let rval = self.eval_expr(right)?;
+                        Ok(rval)
+                    };
+                }
                 let rval = self.eval_expr(right)?;
                 // For instances, try operator overloading first
                 if matches!(lval, Value::Instance(_)) {
@@ -1695,6 +1712,9 @@ impl<W: Write> Interpreter<W> {
 
             ExprKind::UnaryOp { op, operand } => {
                 let val = self.eval_expr(operand)?;
+                if *op == UnOp::Not {
+                    return Ok(Value::Bool(!self.is_truthy(&val)));
+                }
                 eval_unary_op(*op, val)
             }
 
@@ -1705,12 +1725,12 @@ impl<W: Write> Interpreter<W> {
                 else_branch,
             } => {
                 let cond = self.eval_expr(condition)?;
-                if cond.is_truthy() {
+                if self.is_truthy(&cond) {
                     self.eval_block(then_branch)
                 } else {
                     for (elsif_cond, elsif_body) in elsif_branches {
                         let cond = self.eval_expr(elsif_cond)?;
-                        if cond.is_truthy() {
+                        if self.is_truthy(&cond) {
                             return self.eval_block(elsif_body);
                         }
                     }
@@ -1928,7 +1948,7 @@ impl<W: Write> Interpreter<W> {
                         // Check guard if present
                         if let Some(guard) = &case.guard {
                             let guard_val = self.eval_expr(guard)?;
-                            if !guard_val.is_truthy() {
+                            if !self.is_truthy(&guard_val) {
                                 self.env.pop_scope();
                                 continue;
                             }
@@ -1964,27 +1984,13 @@ impl<W: Write> Interpreter<W> {
                 Ok(Value::Null) // no match
             }
 
-            ExprKind::Propagate(inner) => {
-                let val = self.eval_expr(inner)?;
-                match &val {
-                    Value::EnumVariant { enum_id, variant_index, fields } => {
-                        if enum_id.0 == 0 {
-                            if *variant_index == 0 {
-                                // Ok(value) — unwrap
-                                Ok(fields.first().cloned().unwrap_or(Value::Null))
-                            } else {
-                                // Error(value) — propagate by returning from function
-                                Err(EvalError::Return(val))
-                            }
-                        } else {
-                            Err(EvalError::Panic(PanicKind::TypeError,
-                                "! operator requires an Ok or Error value".into()
-                            ))
-                        }
-                    }
-                    _ => Err(EvalError::Panic(PanicKind::TypeError,
-                        "! operator requires an Ok or Error value".into()
-                    )),
+            ExprKind::SuppressThrow(inner) => {
+                // Evaluate the inner expression, catching auto-throw Raise errors
+                // and returning the Error value instead of propagating
+                match self.eval_expr(inner) {
+                    Ok(val) => Ok(val),
+                    Err(EvalError::Raise(val)) => Ok(val), // suppress throw, return Error value
+                    Err(e) => Err(e), // panics and control flow pass through
                 }
             }
 
@@ -3481,8 +3487,8 @@ impl<W: Write> Interpreter<W> {
                     let result = self.eval_block(&func.body);
                     self.env.pop_scope();
                     return match result {
-                        Ok(val) => Ok(val),
-                        Err(EvalError::Return(v)) => Ok(v),
+                        Ok(val) => self.maybe_auto_throw(val),
+                        Err(EvalError::Return(v)) => self.maybe_auto_throw(v),
                         Err(e) => Err(e),
                     };
                 }
@@ -3707,8 +3713,8 @@ impl<W: Write> Interpreter<W> {
                     self.current_class_id = prev_class;
 
                     match result {
-                        Ok(val) => Ok(val),
-                        Err(EvalError::Return(val)) => Ok(val),
+                        Ok(val) => self.maybe_auto_throw(val),
+                        Err(EvalError::Return(val)) => self.maybe_auto_throw(val),
                         Err(e) => Err(e),
                     }
                 } else {
@@ -4172,6 +4178,14 @@ impl<W: Write> Interpreter<W> {
             }
         }
         false
+    }
+
+    /// Check truthiness — extends Value::is_truthy with Error instance awareness
+    fn is_truthy(&self, val: &Value) -> bool {
+        if self.is_error_instance(val) {
+            return false;
+        }
+        val.is_truthy()
     }
 
     /// Wrap a value in an Error instance if it isn't already one
@@ -6372,9 +6386,10 @@ print(f"{d is Speakable} | {d.speak()}")
     }
 
     #[test]
-    fn propagation_unwraps_ok() {
-        let output = run("def foo()\n  Ok(42)\nend\nx = foo()!\nprint(x)").unwrap();
-        assert_eq!(output, "42");
+    fn suppress_throw_returns_value() {
+        // ? suppresses auto-throw, returns value for success case
+        let output = run("def foo()\n  Ok(42)\nend\nx = foo()\nprint(x)").unwrap();
+        assert_eq!(output, "Ok(42)");
     }
 
     #[test]
@@ -6388,15 +6403,29 @@ print(e.cause)
     }
 
     #[test]
-    fn propagation_chained() {
-        let output = run("def step1()\n  Ok(10)\nend\ndef step2(n)\n  Ok(n * 2)\nend\ndef process()\n  a = step1()!\n  b = step2(a)!\n  Ok(b + 1)\nend\nmatch process()\n  case Ok(v)\n    print(v)\n  case Error(e)\n    print(e)\nend").unwrap();
-        assert_eq!(output, "21");
+    fn suppress_throw_catches_error() {
+        // ? suppresses auto-throw — error returned as value
+        let output = run(r#"
+def risky()
+  return Error("fail")
+end
+result = risky()?
+print(result.message)
+"#).unwrap();
+        assert_eq!(output, "fail");
     }
 
     #[test]
-    fn propagation_on_non_result_errors() {
-        let result = run("x = 42!\nprint(x)");
-        assert!(result.is_err());
+    fn suppress_throw_with_or() {
+        // ? + or for default value
+        let output = run(r#"
+def risky()
+  return Error("fail")
+end
+result = risky()? or "default"
+print(result)
+"#).unwrap();
+        assert_eq!(output, "default");
     }
 
     #[test]

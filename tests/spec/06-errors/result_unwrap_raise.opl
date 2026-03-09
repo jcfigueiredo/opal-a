@@ -1,14 +1,23 @@
 # expect: 42 | caught: boom
+# Auto-throw replaces unwrap — Error return throws automatically
 
-# unwrap() on Ok returns the value
-ok_val = Ok(42).unwrap()
+def get_value()
+  42
+end
 
-# unwrap() on Error raises — catch it with try/catch
+def get_error()
+  return Error("boom")
+end
+
+# Success — no throw
+ok_val = get_value()
+
+# Error auto-throws — catch it with try/catch
 caught = try
-  Error("boom").unwrap()
+  get_error()
   "should not reach"
 catch e
-  f"caught: {e}"
+  f"caught: {e.message}"
 end
 
 print(f"{ok_val} | {caught}")

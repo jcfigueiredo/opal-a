@@ -2002,16 +2002,13 @@ impl<'src> Parser<'src> {
                     },
                     span,
                 };
-            } else if self.check(&Token::Bang) {
-                // Propagation: expr! — only when ! is NOT followed by (
-                // (identifier!() is handled in parse_primary as a mutation call)
-                if self.peek_ahead(1) == Some(&Token::LParen) {
-                    break;
-                }
+            } else if self.check(&Token::Question) {
+                // Suppress auto-throw: expr? — only when ? is NOT followed by . or ?
+                // (?. is null-safe access, ?? is null coalescing — already separate tokens)
                 let start = expr.span.start;
-                self.advance(); // consume !
+                self.advance(); // consume ?
                 expr = Expr {
-                    kind: ExprKind::Propagate(Box::new(expr)),
+                    kind: ExprKind::SuppressThrow(Box::new(expr)),
                     span: Span { start, end: self.previous_span().end },
                 };
             } else {
@@ -2075,10 +2072,10 @@ impl<'src> Parser<'src> {
             Some(Token::Identifier) => {
                 let name = self.extract_text(&span);
                 self.advance();
-                // Allow ? suffix for predicate identifiers: adult?(21)
-                // Allow ! suffix for mutation identifiers: save!(record)
-                // Only combine ! when followed by ( — otherwise leave for propagation
-                let name = if self.check(&Token::Question) {
+                // Allow ? suffix for predicate identifiers: adult?(21) — only when followed by (
+                // Allow ! suffix for mutation identifiers: save!(record) — only when followed by (
+                // Otherwise leave ? for suppress-throw operator
+                let name = if self.check(&Token::Question) && self.peek_ahead(1) == Some(&Token::LParen) {
                     self.advance();
                     format!("{}?", name)
                 } else if self.check(&Token::Bang) && self.peek_ahead(1) == Some(&Token::LParen) {
@@ -2770,9 +2767,10 @@ impl<'src> Parser<'src> {
             ) => {
                 self.advance();
                 // Allow ? suffix for predicate methods: empty?(), valid?()
-                // Allow ! suffix for mutation methods: save!(), delete!()
-                // Only combine ! when followed by ( — otherwise leave for propagation operator
-                if self.check(&Token::Question) {
+                // Allow ? suffix for predicate methods: empty?() — only when followed by (
+                // Allow ! suffix for mutation methods: save!(), delete!() — only when followed by (
+                // Otherwise leave ? for suppress-throw operator
+                if self.check(&Token::Question) && self.peek_ahead(1) == Some(&Token::LParen) {
                     self.advance();
                     Ok(format!("{}?", text))
                 } else if self.check(&Token::Bang) && self.peek_ahead(1) == Some(&Token::LParen) {
@@ -3368,24 +3366,24 @@ mod tests {
     }
 
     #[test]
-    fn parse_propagation() {
-        let source = "x = foo()!\n";
+    fn parse_suppress_throw() {
+        let source = "x = foo()?\n";
         let program = parse(source);
         match &program.statements[0].kind {
             StmtKind::Assign { value, .. } => {
-                assert!(matches!(&value.kind, ExprKind::Propagate(_)));
+                assert!(matches!(&value.kind, ExprKind::SuppressThrow(_)));
             }
             _ => panic!("expected Assign"),
         }
     }
 
     #[test]
-    fn parse_propagation_chained() {
-        let source = "x = obj.method()!\n";
+    fn parse_suppress_throw_chained() {
+        let source = "x = obj.method()?\n";
         let program = parse(source);
         match &program.statements[0].kind {
             StmtKind::Assign { value, .. } => {
-                assert!(matches!(&value.kind, ExprKind::Propagate(_)));
+                assert!(matches!(&value.kind, ExprKind::SuppressThrow(_)));
             }
             _ => panic!("expected Assign"),
         }

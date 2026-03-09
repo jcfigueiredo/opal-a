@@ -8,14 +8,14 @@ def claim_bounty(has_skill, reward)
   Ok(reward)
 end
 
-r1 = match claim_bounty(true, 500.0)
+r1 = match claim_bounty(true, 500.0)?
   case Ok(amount)
     "claimed!"
   case Error(msg)
     f"Error: {msg}"
 end
 
-r2 = match claim_bounty(false, 500.0)
+r2 = match claim_bounty(false, 500.0)?
   case Ok(amount)
     "claimed!"
   case Error(msg)

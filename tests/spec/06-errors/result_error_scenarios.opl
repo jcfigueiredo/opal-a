@@ -1,33 +1,27 @@
-# expect: true | -1 | ok: 10
+# expect: true | default | ok: 10
+# Error scenarios with ? operator and or fallback
 
-# Propagation stops at first error, helpers inspect result
 def divide(a, b)
   if b == 0
-    Error("division by zero")
-  else
-    Ok(a / b)
+    return Error("division by zero")
   end
+  a / b
 end
 
 def calculate()
-  x = divide(100, 5)!
-  y = divide(x, 2)!
-  z = divide(y, 0)!
-  Ok(z)
+  x = divide(100, 5)
+  y = divide(x, 2)
+  z = divide(y, 0)
+  z
 end
 
-r = calculate()
+# ? suppresses auto-throw, Error is falsy
+r = calculate()?
+is_err = not r
+fallback = r or "default"
 
-# Inline helpers on Result
-is_err = r.err?()
-fallback = r.unwrap_or(-1)
+# Ok values work normally
+inline_check = divide(100, 10)
+msg = f"ok: {inline_check}"
 
-# Helpers work on inline expressions too
-inline_check = match Ok(10)
-  case Ok(v) if Ok(v).ok?()
-    f"ok: {Ok(v).unwrap()}"
-  case _
-    "unexpected"
-end
-
-print(f"{is_err} | {fallback} | {inline_check}")
+print(f"{is_err} | {fallback} | {msg}")
