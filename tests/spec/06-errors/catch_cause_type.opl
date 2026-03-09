@@ -1,0 +1,35 @@
+# expect: not found | caught: generic error | wrapper: oops
+
+class NotFoundError
+  needs id
+end
+
+def find_user(id)
+  if id > 100
+    return Error(NotFoundError.new(id: id))
+  end
+  f"user_{id}"
+end
+
+# catch e as Type — checks cause type, binds cause
+r1 = try
+  find_user(999)
+catch e as NotFoundError
+  "not found"
+end
+
+# catch e (no type filter) — binds the Error wrapper
+r2 = try
+  raise "generic error"
+catch e
+  f"caught: {e.message}"
+end
+
+# Access Error wrapper via catch e
+r3 = try
+  raise "oops"
+catch e
+  f"wrapper: {e.message}"
+end
+
+print(f"{r1} | {r2} | {r3}")

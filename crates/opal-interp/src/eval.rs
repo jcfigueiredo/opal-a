@@ -2003,17 +2003,34 @@ impl<W: Write> Interpreter<W> {
 
                 let value = match result {
                     Err(EvalError::Raise(val)) => {
+                        // Extract cause from Error wrapper for type matching
+                        let cause = if self.is_error_instance(&val) {
+                            if let Value::Instance(id) = &val {
+                                self.instances[id.0].fields.get("cause").cloned().unwrap_or(Value::Null)
+                            } else {
+                                val.clone()
+                            }
+                        } else {
+                            val.clone()
+                        };
+
                         // Try each catch clause in order; check type filter if present
                         let mut caught = false;
                         let mut caught_val = Value::Null;
                         for catch in catches {
                             if let Some(type_name) = &catch.error_type {
-                                if !self.value_is_type(&val, type_name) {
+                                // Match on cause type (unwrapped from Error)
+                                if !self.value_is_type(&cause, type_name) {
                                     continue; // type doesn't match, try next catch
                                 }
+                                // Bind the cause (not the wrapper) to the variable
+                                self.env.push_scope();
+                                self.env.set(catch.var_name.clone(), cause.clone());
+                            } else {
+                                // No type filter — bind the Error wrapper
+                                self.env.push_scope();
+                                self.env.set(catch.var_name.clone(), val.clone());
                             }
-                            self.env.push_scope();
-                            self.env.set(catch.var_name.clone(), val.clone());
                             let catch_result = self.eval_block(&catch.body);
                             self.env.pop_scope();
                             caught_val = catch_result?;
