@@ -231,7 +231,12 @@ impl fmt::Display for Value {
 impl Value {
     /// Check if value is truthy (everything except false and null)
     pub fn is_truthy(&self) -> bool {
-        !matches!(self, Value::Bool(false) | Value::Null)
+        match self {
+            Value::Bool(false) | Value::Null => false,
+            // Error (Result enum_id=0, variant_index=1) is falsy
+            Value::EnumVariant { enum_id, variant_index: 1, .. } if enum_id.0 == 0 => false,
+            _ => true,
+        }
     }
 }
 
@@ -255,5 +260,29 @@ mod tests {
         assert!(Value::String("".into()).is_truthy());
         assert!(!Value::Bool(false).is_truthy());
         assert!(!Value::Null.is_truthy());
+
+        // Error (enum_id 0, variant_index 1) should be falsy
+        let error_val = Value::EnumVariant {
+            enum_id: EnumId(0),
+            variant_index: 1,
+            fields: vec![Value::String("test error".into())],
+        };
+        assert!(!error_val.is_truthy(), "Error should be falsy");
+
+        // Ok (enum_id 0, variant_index 0) should still be truthy
+        let ok_val = Value::EnumVariant {
+            enum_id: EnumId(0),
+            variant_index: 0,
+            fields: vec![Value::Integer(42)],
+        };
+        assert!(ok_val.is_truthy(), "Ok should be truthy");
+
+        // Other enum variants should remain truthy
+        let some_val = Value::EnumVariant {
+            enum_id: EnumId(1),
+            variant_index: 0,
+            fields: vec![Value::Integer(42)],
+        };
+        assert!(some_val.is_truthy(), "Other enum variants should be truthy");
     }
 }
