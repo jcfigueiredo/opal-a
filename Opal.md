@@ -267,7 +267,7 @@ Opal is a dynamic, interpreted, object-oriented language with first-class functi
 <export_stmt>   ::= "export" <import_list> "from" <module_path>
 
 <is_expr>       ::= <expression> "is" TYPE
-<propagate_expr>::= <expression> "!"
+<suppress_throw> ::= <expression> "?"
 <requires_expr> ::= "requires" <expression> ("," STRING)?
 
 <class_def>     ::= <annotation>* "class" IDENTIFIER ("[" <type_params> "]")? ("<" IDENTIFIER)?
@@ -433,7 +433,7 @@ def add(a: Int32, b: Int32) -> Int32
   a + b
 end
 
-type Result[T] = T | Error
+type Result[T] = T | Error   # Error auto-throws; use ? to suppress
 ```
 
 > See [Type System](docs/03-functions-and-types/type-system.md) for generics, constraints, union types, aliases, and introspection.
@@ -559,17 +559,20 @@ Placeholder `extern` syntax for calling functions from external shared libraries
 
 ### Error Handling
 
-Two-track model: **exceptions** (`fail`/`try`/`catch`/`ensure`) for unexpected errors, **Result types** (`Result[T, E]`) for expected errors. The `!` operator propagates `Err` from the enclosing function. `Result.from do...end` bridges exceptions into Result values.
+Two severity levels: **errors** (recoverable, catchable) and **panics** (unrecoverable, uncatchable). Functions returning `Error(...)` **auto-throw** — the `?` operator suppresses auto-throw to handle errors as values. `Error` is a built-in class with `.message` and `.cause` fields.
 
 ```opal
-def process(path: String) -> Result[Config, Error]
-  content = read_file(path)!
-  config = parse_json(content)!
-  Result.Ok(config)
+def find_user(id)
+  if id > 100
+    return Error("not found")   # auto-throws at call site
+  end
+  f"user_{id}"
 end
+
+user = find_user(999)? or "default"   # ? suppresses throw, or provides fallback
 ```
 
-> See [Error Handling](docs/04-error-handling/error-handling.md) for custom errors, Result helpers, and bridging.
+> See [Error Handling](docs/04-error-handling/error-handling.md) for custom errors, catch type matching, and panics.
 
 ### Preconditions
 
@@ -701,7 +704,7 @@ end
 | `Container` | Optional dependency injection container for large apps |
 | `Iter` | `Iterable` and `Iterator[T]` protocols, lazy sequences |
 | `Option` | `Option[T]` enum -- `Some(value)` or `None` for explicit nullable handling; used by `Iterator[T]` |
-| `Result` | `Result[T, E]` enum -- `Ok(value)` or `Err(error)` for error handling |
+| `Error` | Built-in error class with `.message` and `.cause` fields; auto-throws from functions |
 | `Settings` | Base for `settings model` definitions -- env/config/file loading with source priority |
 | `Platform` | Infrastructure services: topology definition with `define`, `ServiceProvider[C]` protocol, auto-DI registration, environment handling, health checks, lifecycle events |
 | `Reflect` | Runtime introspection: `annotations()`, `field_annotations()`, `typeof()`, `methods()` |
