@@ -1,49 +1,49 @@
 ================
-Propagation on identifier
+Suppress throw on identifier
 ================
 
-x = y!
+x = y?
 
 ---
 
 (source_file
   (assignment
     (identifier)
-    (propagation_expression
+    (suppress_throw_expression
       (identifier)
-      (bang))))
+      (question_mark))))
 
 ================
-Propagation on function call
+Suppress throw on function call
 ================
 
-x = foo()!
+x = foo()?
 
 ---
 
 (source_file
   (assignment
     (identifier)
-    (propagation_expression
+    (suppress_throw_expression
       (call
         (identifier))
-      (bang))))
+      (question_mark))))
 
 ================
-Propagation on method call
+Suppress throw on method call
 ================
 
-x = obj.fetch(id)!
+x = obj.fetch(id)?
 
 ---
 
 (source_file
   (assignment
     (identifier)
-    (propagation_expression
+    (suppress_throw_expression
       (call
         (member_access
           (identifier)
           (identifier))
         (identifier))
-      (bang))))
+      (question_mark))))

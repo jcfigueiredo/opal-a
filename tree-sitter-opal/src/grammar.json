@@ -392,7 +392,7 @@
         },
         {
           "type": "SYMBOL",
-          "name": "propagation_expression"
+          "name": "suppress_throw_expression"
         }
       ]
     },
@@ -1009,7 +1009,7 @@
         ]
       }
     },
-    "propagation_expression": {
+    "suppress_throw_expression": {
       "type": "PREC_LEFT",
       "value": 13,
       "content": {
@@ -1021,14 +1021,21 @@
           },
           {
             "type": "SYMBOL",
-            "name": "bang"
+            "name": "question_mark"
           }
         ]
       }
     },
-    "bang": {
-      "type": "STRING",
-      "value": "!"
+    "question_mark": {
+      "type": "TOKEN",
+      "content": {
+        "type": "PREC",
+        "value": 2,
+        "content": {
+          "type": "STRING",
+          "value": "?"
+        }
+      }
     },
     "grouped_expression": {
       "type": "PREC",

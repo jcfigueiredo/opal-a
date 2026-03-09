@@ -72,8 +72,8 @@
   "=" "->" "|"
 ] @operator
 
-; Propagation operator
-(propagation_expression (bang) @operator)
+; Suppress-throw operator
+(suppress_throw_expression (question_mark) @operator)
 
 ; Punctuation
 ["(" ")" "[" "]" "{" "}"] @punctuation.bracket

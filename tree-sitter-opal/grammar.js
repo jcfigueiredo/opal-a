@@ -125,7 +125,7 @@ module.exports = grammar({
       $.ast_block,
       $.splice,
       $.super_call,
-      $.propagation_expression,
+      $.suppress_throw_expression,
     ),
 
     call: $ => prec(2, seq(
@@ -183,9 +183,9 @@ module.exports = grammar({
       seq('not', $._expression),
     )),
 
-    propagation_expression: $ => prec.left(13, seq($._expression, $.bang)),
+    suppress_throw_expression: $ => prec.left(13, seq($._expression, $.question_mark)),
 
-    bang: $ => '!',
+    question_mark: $ => token(prec(2, '?')),
 
     grouped_expression: $ => prec(-1, seq('(', $._expression, ')')),
 
