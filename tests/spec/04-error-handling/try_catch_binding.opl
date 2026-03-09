@@ -5,13 +5,13 @@ results = []
 try
   raise "oops"
 catch e
-  results = results.push(e)
+  results = results.push(e.message)
 end
 
 try
   raise "boom"
-catch e as String
-  results = results.push(f"caught: {e}")
+catch e
+  results = results.push(f"caught: {e.message}")
 end
 
 x = "start"

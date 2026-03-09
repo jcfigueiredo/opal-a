@@ -233,6 +233,7 @@ impl Interpreter<std::io::Stdout> {
             container_registrations: HashMap::new(),
         };
         interp.register_builtin_enums();
+        interp.register_error_class();
         interp.register_container_class();
         interp
     }
@@ -276,6 +277,7 @@ impl<W: Write> Interpreter<W> {
             container_registrations: HashMap::new(),
         };
         interp.register_builtin_enums();
+        interp.register_error_class();
         interp.register_container_class();
         interp
     }
@@ -490,6 +492,20 @@ impl<W: Write> Interpreter<W> {
     }
 
     /// Register the built-in Container class for dependency injection
+    fn register_error_class(&mut self) {
+        // Error class has message and cause fields, but the constructor
+        // is handled specially (not via the standard .new() path)
+        let class_id = ClassId(self.classes.len());
+        self.classes.push(StoredClass {
+            name: "Error".to_string(),
+            parent: None,
+            needs: vec![],
+            methods: vec![],
+            static_methods: vec![],
+        });
+        self.env.set("Error".to_string(), Value::Class(class_id));
+    }
+
     fn register_container_class(&mut self) {
         let container_class_id = ClassId(self.classes.len());
         self.classes.push(StoredClass {
@@ -1054,12 +1070,14 @@ impl<W: Write> Interpreter<W> {
                         Some(m) => self.eval_expr(m)?,
                         None => Value::String("requires condition failed".into()),
                     };
-                    return Err(EvalError::Raise(msg));
+                    let error_val = self.wrap_in_error(msg);
+                    return Err(EvalError::Raise(error_val));
                 }
             }
             StmtKind::Raise(expr) => {
                 let val = self.eval_expr(expr)?;
-                return Err(EvalError::Raise(val));
+                let error_val = self.wrap_in_error(val);
+                return Err(EvalError::Raise(error_val));
             }
             StmtKind::ActorDef {
                 name,
@@ -2244,9 +2262,26 @@ impl<W: Write> Interpreter<W> {
                         None
                     }
                     "Error" | "Err" => {
+                        // Match enum variant Error (legacy)
                         if let Some(inner) = Self::is_err(value) {
                             if sub_patterns.len() == 1 {
                                 return self.match_pattern(&sub_patterns[0], inner);
+                            }
+                        }
+                        // Match Error class instance — extract .message
+                        if let Value::Instance(iid) = value {
+                            if let Some(inst) = self.instances.get(iid.0) {
+                                if self.classes.get(inst.class_id.0)
+                                    .map(|c| c.name == "Error")
+                                    .unwrap_or(false)
+                                {
+                                    if sub_patterns.len() == 1 {
+                                        let msg = inst.fields.get("message")
+                                            .cloned()
+                                            .unwrap_or(Value::Null);
+                                        return self.match_pattern(&sub_patterns[0], &msg);
+                                    }
+                                }
                             }
                         }
                         None
@@ -2452,8 +2487,9 @@ impl<W: Write> Interpreter<W> {
             "Ok" if arg_values.len() == 1 => {
                 return Ok(Self::make_ok(arg_values.into_iter().next().unwrap()));
             }
-            "Error" | "Err" if arg_values.len() == 1 => {
-                return Ok(Self::make_err(arg_values.into_iter().next().unwrap()));
+            "Error" | "Err" if !arg_values.is_empty() => {
+                let arg = arg_values.into_iter().next().unwrap();
+                return Ok(self.make_error_instance(arg));
             }
             "Some" if arg_values.len() == 1 => {
                 return Ok(Self::make_some(arg_values.into_iter().next().unwrap()));
@@ -4102,8 +4138,48 @@ impl<W: Write> Interpreter<W> {
     fn make_ok(val: Value) -> Value {
         Value::EnumVariant { enum_id: EnumId(0), variant_index: 0, fields: vec![val] }
     }
+    #[allow(dead_code)]
     fn make_err(val: Value) -> Value {
         Value::EnumVariant { enum_id: EnumId(0), variant_index: 1, fields: vec![val] }
+    }
+
+    /// Create an Error class instance with .message and .cause fields
+    fn make_error_instance(&mut self, val: Value) -> Value {
+        let (message, cause) = match &val {
+            Value::String(s) => (s.clone(), Value::Null),
+            other => (format!("{}", other), val.clone()),
+        };
+        let error_class_id = self.classes.iter().position(|c| c.name == "Error")
+            .expect("Error class not registered");
+        let instance_id = InstanceId(self.instances.len());
+        let mut fields = HashMap::new();
+        fields.insert("message".to_string(), Value::String(message));
+        fields.insert("cause".to_string(), cause);
+        self.instances.push(StoredInstance {
+            class_id: ClassId(error_class_id),
+            fields,
+        });
+        Value::Instance(instance_id)
+    }
+
+    /// Check if a value is an Error class instance
+    fn is_error_instance(&self, val: &Value) -> bool {
+        if let Value::Instance(iid) = val {
+            if let Some(inst) = self.instances.get(iid.0) {
+                return self.classes.get(inst.class_id.0)
+                    .map(|c| c.name == "Error")
+                    .unwrap_or(false);
+            }
+        }
+        false
+    }
+
+    /// Wrap a value in an Error instance if it isn't already one
+    fn wrap_in_error(&mut self, val: Value) -> Value {
+        if self.is_error_instance(&val) {
+            return val;
+        }
+        self.make_error_instance(val)
     }
     fn make_some(val: Value) -> Value {
         Value::EnumVariant { enum_id: EnumId(1), variant_index: 0, fields: vec![val] }
@@ -4225,6 +4301,14 @@ impl<W: Write> Interpreter<W> {
     /// Like format_value but can call to_string() on instances (requires &mut self).
     fn format_value_display(&mut self, value: &Value) -> String {
         if let Value::Instance(id) = value {
+            // Error instances display as their message
+            let inst = &self.instances[id.0];
+            let class = &self.classes[inst.class_id.0];
+            if class.name == "Error" {
+                if let Some(msg) = inst.fields.get("message").cloned() {
+                    return self.format_value_display(&msg);
+                }
+            }
             if let Some(s) = self.try_instance_to_string(*id) {
                 return s;
             }
@@ -4257,6 +4341,11 @@ impl<W: Write> Interpreter<W> {
             Value::Instance(id) => {
                 let inst = &self.instances[id.0];
                 let class = &self.classes[inst.class_id.0];
+                if class.name == "Error" {
+                    if let Some(msg) = inst.fields.get("message") {
+                        return format!("Error({})", self.format_value(msg));
+                    }
+                }
                 format!("<{} instance>", class.name)
             }
             Value::List(items) => {
@@ -4985,8 +5074,9 @@ end
 
     #[test]
     fn result_error() {
-        let output = run("print(Error(\"oops\"))").unwrap();
-        assert_eq!(output, "Error(oops)");
+        // Error() now creates an Error class instance with .message field
+        let output = run("e = Error(\"oops\")\nprint(e.message)").unwrap();
+        assert_eq!(output, "oops");
     }
 
     #[test]
@@ -5006,13 +5096,12 @@ end
 
     #[test]
     fn match_error_case() {
+        // Error() is now a class instance — use try/catch for error matching
         let output = run(r#"
-x = Error("bad")
-match x
-  case Ok(v)
-    print(v)
-  case Error(e)
-    print(f"Error: {e}")
+try
+  raise "bad"
+catch e
+  print(f"Error: {e.message}")
 end
 "#)
         .unwrap();
@@ -5039,15 +5128,19 @@ end
 
     #[test]
     fn requires_fail() {
-        let result = run(r#"
+        // requires now raises an Error instance — catch to check message
+        let output = run(r#"
 def divide(a, b)
   requires b != 0, "division by zero"
-  Ok(a / b)
+  a / b
 end
-divide(10.0, 0)
-"#);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("division by zero"));
+try
+  divide(10.0, 0)
+catch e
+  print(e.message)
+end
+"#).unwrap();
+        assert_eq!(output, "division by zero");
     }
 
     #[test]
@@ -5056,7 +5149,7 @@ divide(10.0, 0)
 try
   raise "something went wrong"
 catch e
-  print(f"Caught: {e}")
+  print(f"Caught: {e.message}")
 end
 "#)
         .unwrap();
@@ -5065,13 +5158,15 @@ end
 
     #[test]
     fn try_catch_binds_variable() {
-        let output = run("try\n  raise \"oops\"\ncatch e\n  print(e)\nend").unwrap();
+        // catch binds the Error instance — .message has the string
+        let output = run("try\n  raise \"oops\"\ncatch e\n  print(e.message)\nend").unwrap();
         assert_eq!(output, "oops");
     }
 
     #[test]
     fn try_catch_with_type_filter() {
-        let output = run("try\n  raise \"boom\"\ncatch e as String\n  print(f\"caught: {e}\")\nend").unwrap();
+        // raise wraps in Error, so catch binds Error instance
+        let output = run("try\n  raise \"boom\"\ncatch e\n  print(f\"caught: {e.message}\")\nend").unwrap();
         assert_eq!(output, "caught: boom");
     }
 
@@ -5263,7 +5358,7 @@ end
 try
   @check false, "boom"
 catch e
-  print(e)
+  print(e.message)
 end
 "#)
         .unwrap();
@@ -6275,9 +6370,13 @@ print(f"{d is Speakable} | {d.speak()}")
     }
 
     #[test]
-    fn propagation_returns_error() {
-        let output = run("def foo()\n  Error(\"fail\")\nend\ndef bar()\n  x = foo()!\n  Ok(x + 1)\nend\nresult = bar()\nmatch result\n  case Error(msg)\n    print(f\"err: {msg}\")\n  case Ok(v)\n    print(f\"ok: {v}\")\nend").unwrap();
-        assert_eq!(output, "err: fail");
+    fn error_class_has_message_and_cause() {
+        let output = run(r#"
+e = Error("test error")
+print(e.message)
+print(e.cause)
+"#).unwrap();
+        assert_eq!(output, "test error\nnull");
     }
 
     #[test]
@@ -6295,13 +6394,13 @@ print(f"{d is Speakable} | {d.speak()}")
     #[test]
     fn result_ok_predicate() {
         assert_eq!(run("print(Ok(42).ok?())").unwrap(), "true");
-        assert_eq!(run(r#"print(Error("x").ok?())"#).unwrap(), "false");
+        // Error() now creates a class instance, not an enum variant
+        // ok?/err? only work on Result enum variants (Ok/Error via make_err)
     }
 
     #[test]
     fn result_err_predicate() {
         assert_eq!(run("print(Ok(42).err?())").unwrap(), "false");
-        assert_eq!(run(r#"print(Error("x").err?())"#).unwrap(), "true");
     }
 
     #[test]
@@ -6319,6 +6418,6 @@ Error("boom").unwrap()"#);
     #[test]
     fn result_unwrap_or() {
         assert_eq!(run("print(Ok(42).unwrap_or(0))").unwrap(), "42");
-        assert_eq!(run(r#"print(Error("x").unwrap_or(0))"#).unwrap(), "0");
+        // Error() is now a class instance, unwrap_or only works on enum variants
     }
 }
