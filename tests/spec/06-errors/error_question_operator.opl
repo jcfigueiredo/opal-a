@@ -1,0 +1,27 @@
+# expect: fallback | true | false
+
+def risky(should_fail)
+  if should_fail
+    return Error("nope")
+  end
+  "ok"
+end
+
+# ? or default
+r1 = risky(true)? or "fallback"
+
+# ? for truthiness check — success is truthy
+r2 = if risky(false)?
+  true
+else
+  false
+end
+
+# ? for truthiness check — Error is falsy
+r3 = if risky(true)?
+  true
+else
+  false
+end
+
+print(f"{r1} | {r2} | {r3}")

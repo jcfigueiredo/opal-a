@@ -1,0 +1,8 @@
+# expect-error: TypeError
+# Panics are NOT caught by try/catch
+try
+  x = 42 + "hello"
+catch e
+  print("this should not print")
+end
+print("this should not print either")

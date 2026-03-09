@@ -1,0 +1,15 @@
+# expect: test message | hello
+
+# Error with string message
+e1 = Error("test message")
+msg1 = e1.message
+
+# Error wrapping a class cause
+class MyError
+  needs detail
+end
+
+e2 = Error(MyError.new(detail: "hello"))
+detail = e2.cause.detail
+
+print(f"{msg1} | {detail}")
