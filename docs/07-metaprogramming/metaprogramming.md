@@ -373,7 +373,7 @@ macro test(name, body)
     try
       $body
       Test.pass($name)
-    catch as e
+    catch e
       Test.fail($name, e.message)
     end
   end

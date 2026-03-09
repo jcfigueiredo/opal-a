@@ -230,7 +230,7 @@ pub enum ExprKind {
         subject: Box<Expr>,
         cases: Vec<MatchCase>,
     },
-    /// Try/catch expression: `try ... catch as e ... end`
+    /// Try/catch expression: `try ... catch e ... end`
     TryCatch {
         body: Vec<Stmt>,
         catches: Vec<CatchClause>,

@@ -256,7 +256,7 @@ def place_order(order)
 
   try
     await delivery  # did all handlers complete ok?
-  catch as e
+  catch e
     log(f"Event handling failed: {e.message}")
   end
 end
@@ -357,7 +357,7 @@ actor PaymentProcessor
       try
         .gateway.charge(order.total)
         reply :ok
-      catch as e
+      catch e
         emit PaymentFailed.new(order: order, reason: e.message)
         reply :failed
       end

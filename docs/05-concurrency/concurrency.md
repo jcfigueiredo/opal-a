@@ -180,7 +180,7 @@ try
     fetch_a()   # succeeds
     fetch_b()   # fails!
   end
-catch as e
+catch e
   # fetch_a() is cancelled, error from fetch_b() is raised here
   print(f"Failed: {e.message}")
 end
@@ -240,7 +240,7 @@ Failures are captured in the Future and re-raised when awaited.
 future = async risky_operation()
 try
   result = await future
-catch as e
+catch e
   print(f"Operation failed: {e.message}")
 end
 ```

@@ -4,7 +4,7 @@ set -euo pipefail
 PASS=0
 ERRORS=0
 
-for f in ../tests/spec/**/*.opl; do
+for f in $(find ../tests/spec -name '*.opl' -type f | sort); do
     output=$(pnpm exec tree-sitter parse "$f" 2>&1)
     if echo "$output" | grep -q "ERROR"; then
         echo "HAS ERRORS: $f"

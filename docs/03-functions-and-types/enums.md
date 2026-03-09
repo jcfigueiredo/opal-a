@@ -199,19 +199,29 @@ s.println()     # "Circle(r=5.0)" — default from Printable
 
 ## 4. Generic Enums
 
-Enums support type parameters, enabling foundational stdlib types like `Option[T]` and `Result[T, E]`.
+Enums support type parameters, enabling foundational stdlib types like `Option[T]`.
 
 ```opal
 enum Option[T]
   Some(value: T)
   None
 end
+```
 
+`Result[T, E]` is also a built-in generic enum, shown here as an example of multi-parameter generics:
+
+```opal
 enum Result[T, E]
   Ok(value: T)
   Err(error: E)
 end
 ```
+
+> **Note:** While `Result[T, E]` exists as a built-in enum, Opal's primary error handling
+> uses the `Error(...)` class with auto-throw. Functions that return `Error(...)` automatically
+> throw to the caller; the `?` operator suppresses auto-throw when you want to handle errors
+> as values. See [Error Handling](../04-error-handling/error-handling.md) for the full model.
+> `Result` remains useful as a generic enum example and for interop scenarios.
 
 ### Usage
 
@@ -220,16 +230,16 @@ end
 opt = Option.Some(value: 42)       # Option[Int32]
 opt = Option[String].None           # explicit when ambiguous
 
-# Result in practice
-def parse_int(s: String) -> Result[Int32, String]
+# Option in practice
+def find_user(id: Int32) -> Option[User]
   # ...
 end
 
-match parse_int("42")
-  case Result.Ok(n)
-    print(f"parsed: {n}")
-  case Result.Err(msg)
-    print(f"failed: {msg}")
+match find_user(42)
+  case Option.Some(user)
+    print(f"found: {user.name}")
+  case Option.None
+    print("not found")
 end
 ```
 
@@ -306,7 +316,7 @@ event OrderStatusChanged(order: Order, from: OrderStatus, to: OrderStatus)
 ### Enums with Type Aliases
 
 ```opal
-type Result[T] = Result[T, Error]  # alias with default error type
+type MaybeString = Option[String]  # alias for a common specialization
 ```
 
 ---
