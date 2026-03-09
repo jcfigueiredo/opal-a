@@ -4409,10 +4409,18 @@ impl<W: Write> Interpreter<W> {
         }
 
         match result {
-            Ok(val) => Ok(val),
-            Err(EvalError::Return(val)) => Ok(val),
+            Ok(val) => self.maybe_auto_throw(val),
+            Err(EvalError::Return(val)) => self.maybe_auto_throw(val),
             Err(e) => Err(e),
         }
+    }
+
+    /// Auto-throw if value is an Error class instance
+    fn maybe_auto_throw(&self, val: Value) -> Result<Value, EvalError> {
+        if self.is_error_instance(&val) {
+            return Err(EvalError::Raise(val));
+        }
+        Ok(val)
     }
 
     /// Run the HTTP serve loop. Binds a TCP listener and dispatches incoming
@@ -4618,8 +4626,8 @@ impl<W: Write> Interpreter<W> {
         self.env = saved_env;
 
         match result {
-            Ok(val) => Ok(val),
-            Err(EvalError::Return(val)) => Ok(val),
+            Ok(val) => self.maybe_auto_throw(val),
+            Err(EvalError::Return(val)) => self.maybe_auto_throw(val),
             Err(e) => Err(e),
         }
     }

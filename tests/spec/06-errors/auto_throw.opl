@@ -1,0 +1,23 @@
+# expect: caught: user 42 not found | value is found
+
+def find_user(id)
+  if id > 40
+    return Error(f"user {id} not found")
+  end
+  "found"
+end
+
+results = []
+
+try
+  user = find_user(42)
+  results = results.push(user)
+catch e
+  results = results.push(f"caught: {e.message}")
+end
+
+# Success path — no Error, no throw
+val = find_user(1)
+results = results.push(f"value is {val}")
+
+print(results.join(" | "))
