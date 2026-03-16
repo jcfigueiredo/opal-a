@@ -11,13 +11,14 @@ pub struct Route {
 }
 
 /// A simple HTTP router that stores routes
+#[derive(Default)]
 pub struct Router {
     pub routes: Vec<Route>,
 }
 
 impl Router {
     pub fn new() -> Self {
-        Self { routes: Vec::new() }
+        Self::default()
     }
 }
 

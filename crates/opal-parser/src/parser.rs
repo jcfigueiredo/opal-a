@@ -239,20 +239,20 @@ impl<'src> Parser<'src> {
         // Destructuring assignment: [a, b] = expr or [head | tail] = expr
         if self.check(&Token::LBracket) {
             let saved_pos = self.pos;
-            if let Ok(pattern) = self.parse_pattern() {
-                if self.check(&Token::Eq) {
-                    self.advance(); // consume =
-                    let value = self.parse_expression(0)?;
-                    self.expect_statement_end()?;
-                    let span = Span {
-                        start: start.start,
-                        end: value.span.end,
-                    };
-                    return Ok(Stmt {
-                        kind: StmtKind::DestructureAssign { pattern, value },
-                        span,
-                    });
-                }
+            if let Ok(pattern) = self.parse_pattern()
+                && self.check(&Token::Eq)
+            {
+                self.advance(); // consume =
+                let value = self.parse_expression(0)?;
+                self.expect_statement_end()?;
+                let span = Span {
+                    start: start.start,
+                    end: value.span.end,
+                };
+                return Ok(Stmt {
+                    kind: StmtKind::DestructureAssign { pattern, value },
+                    span,
+                });
             }
             // Not a destructuring assignment — restore position and fall through
             self.pos = saved_pos;
@@ -297,29 +297,29 @@ impl<'src> Parser<'src> {
         }
 
         // Check for parallel assignment: `a, b = 1, 2`
-        if self.check(&Token::Comma) {
-            if let ExprKind::Identifier(first_name) = &expr.kind {
-                let mut names = vec![first_name.clone()];
-                while self.check(&Token::Comma) {
-                    self.advance(); // consume comma
-                    names.push(self.expect_identifier()?);
-                }
-                self.expect_token(&Token::Eq, "=")?;
-                let mut values = vec![self.parse_expression(0)?];
-                while self.check(&Token::Comma) {
-                    self.advance(); // consume comma
-                    values.push(self.parse_expression(0)?);
-                }
-                self.expect_statement_end()?;
-                let end = values.last().map_or(start.end, |v| v.span.end);
-                return Ok(Stmt {
-                    kind: StmtKind::ParallelAssign { names, values },
-                    span: Span {
-                        start: start.start,
-                        end,
-                    },
-                });
+        if self.check(&Token::Comma)
+            && let ExprKind::Identifier(first_name) = &expr.kind
+        {
+            let mut names = vec![first_name.clone()];
+            while self.check(&Token::Comma) {
+                self.advance(); // consume comma
+                names.push(self.expect_identifier()?);
             }
+            self.expect_token(&Token::Eq, "=")?;
+            let mut values = vec![self.parse_expression(0)?];
+            while self.check(&Token::Comma) {
+                self.advance(); // consume comma
+                values.push(self.parse_expression(0)?);
+            }
+            self.expect_statement_end()?;
+            let end = values.last().map_or(start.end, |v| v.span.end);
+            return Ok(Stmt {
+                kind: StmtKind::ParallelAssign { names, values },
+                span: Span {
+                    start: start.start,
+                    end,
+                },
+            });
         }
 
         if self.check(&Token::Eq) {
@@ -747,10 +747,10 @@ impl<'src> Parser<'src> {
             let all_symbols: Vec<String> = parts
                 .iter()
                 .filter_map(|p| {
-                    if let TypeExpr::SymbolSet(syms) = p {
-                        if syms.len() == 1 {
-                            return Some(syms[0].clone());
-                        }
+                    if let TypeExpr::SymbolSet(syms) = p
+                        && syms.len() == 1
+                    {
+                        return Some(syms[0].clone());
                     }
                     None
                 })

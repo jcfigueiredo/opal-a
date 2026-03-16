@@ -46,8 +46,8 @@ impl Environment {
             return Err(format!("cannot reassign immutable binding '{}'", name));
         }
         for scope in self.scopes.iter_mut().rev() {
-            if scope.contains_key(&name) {
-                scope.insert(name, value);
+            if let std::collections::hash_map::Entry::Occupied(mut e) = scope.entry(name.clone()) {
+                e.insert(value);
                 return Ok(());
             }
         }

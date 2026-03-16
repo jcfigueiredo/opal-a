@@ -40,7 +40,6 @@ impl LanguageServer for OpalBackend {
                 definition_provider: Some(OneOf::Left(true)),
                 ..Default::default()
             },
-            ..Default::default()
         })
     }
 

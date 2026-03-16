@@ -394,10 +394,8 @@ impl<W: Write> Interpreter<W> {
         module_path: &[String],
     ) -> Result<Value, EvalError> {
         // Check if a real module is already bound for this key.
-        if let Some(module_id) = self.module_binding_id(module_key) {
-            if !self.modules[module_id.0].is_namespace {
-                return Ok(Value::Module(module_id));
-            }
+        if let Some(module_id) = self.module_binding_id(module_key) && !self.modules[module_id.0].is_namespace {
+            return Ok(Value::Module(module_id));
         }
 
         // Try file-based loading.
@@ -946,11 +944,9 @@ impl<W: Write> Interpreter<W> {
                                 enum_id,
                                 variant_index: 1,
                                 ..
-                            } = &next_val
+                            } = &next_val && enum_id.0 == 1
                             {
-                                if enum_id.0 == 1 {
-                                    break;
-                                }
+                                break;
                             }
                             // Extract value from Some(value)
                             let item = if let Value::EnumVariant {
@@ -1252,19 +1248,17 @@ impl<W: Write> Interpreter<W> {
                 // Evaluate the inner statement
                 self.eval_stmt(statement)?;
                 // Attach annotations to the last defined function
-                if let StmtKind::FuncDef { name, .. } = &statement.kind {
-                    if let Some(val) = self.env.get(name).cloned() {
-                        match val {
-                            Value::Function(id) => {
+                if let StmtKind::FuncDef { name, .. } = &statement.kind && let Some(val) = self.env.get(name).cloned() {
+                    match val {
+                        Value::Function(id) => {
+                            self.functions[id.0].annotations = stored_anns;
+                        }
+                        Value::MultiFunction(ids) => {
+                            if let Some(id) = ids.last() {
                                 self.functions[id.0].annotations = stored_anns;
                             }
-                            Value::MultiFunction(ids) => {
-                                if let Some(id) = ids.last() {
-                                    self.functions[id.0].annotations = stored_anns;
-                                }
-                            }
-                            _ => {}
                         }
+                        _ => {}
                     }
                 }
             }
@@ -1718,7 +1712,7 @@ impl<W: Write> Interpreter<W> {
             } => {
                 self.event_handlers
                     .entry(event_name.clone())
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push((param.clone(), body.clone()));
             }
             StmtKind::Emit(expr) => {
@@ -1761,16 +1755,12 @@ impl<W: Write> Interpreter<W> {
                 if name == "None" {
                     return Ok(Self::make_none());
                 }
-                if name == "self" {
-                    if let Some(id) = self.current_self {
-                        return Ok(Value::Instance(id));
-                    }
+                if name == "self" && let Some(id) = self.current_self {
+                    return Ok(Value::Instance(id));
                 }
-                if name == "Self" {
-                    if let Some(id) = self.current_self {
-                        let class_id = self.instances[id.0].class_id;
-                        return Ok(Value::Class(class_id));
-                    }
+                if name == "Self" && let Some(id) = self.current_self {
+                    let class_id = self.instances[id.0].class_id;
+                    return Ok(Value::Class(class_id));
                 }
                 self.env
                     .get(name)
@@ -2502,10 +2492,8 @@ impl<W: Write> Interpreter<W> {
         match &stmt.kind {
             StmtKind::Expr(expr) => {
                 // Check if the expression is a splice
-                if let ExprKind::Splice(name) = &expr.kind {
-                    if let Some(Value::Ast(ast_id)) = self.env.get(name) {
-                        return self.ast_nodes[ast_id.0].clone();
-                    }
+                if let ExprKind::Splice(name) = &expr.kind && let Some(Value::Ast(ast_id)) = self.env.get(name) {
+                    return self.ast_nodes[ast_id.0].clone();
                 }
                 vec![Stmt {
                     kind: StmtKind::Expr(self.substitute_expr(expr)),
@@ -2583,10 +2571,8 @@ impl<W: Write> Interpreter<W> {
             ExprKind::Splice(name) => {
                 if let Some(Value::Ast(ast_id)) = self.env.get(name) {
                     let stmts = &self.ast_nodes[ast_id.0];
-                    if stmts.len() == 1 {
-                        if let StmtKind::Expr(inner) = &stmts[0].kind {
-                            return inner.clone();
-                        }
+                    if stmts.len() == 1 && let StmtKind::Expr(inner) = &stmts[0].kind {
+                        return inner.clone();
                     }
                 }
                 expr.clone()
@@ -2708,39 +2694,32 @@ impl<W: Write> Interpreter<W> {
             Pattern::Constructor(name, sub_patterns) => {
                 match name.as_str() {
                     "Ok" => {
-                        if let Some(inner) = Self::is_ok(value) {
-                            if sub_patterns.len() == 1 {
-                                return self.match_pattern(&sub_patterns[0], inner);
-                            }
+                        if let Some(inner) = Self::is_ok(value) && sub_patterns.len() == 1 {
+                            return self.match_pattern(&sub_patterns[0], inner);
                         }
                         None
                     }
                     "Error" | "Err" => {
                         // Match enum variant Error (legacy)
-                        if let Some(inner) = Self::is_err(value) {
-                            if sub_patterns.len() == 1 {
-                                return self.match_pattern(&sub_patterns[0], inner);
-                            }
+                        if let Some(inner) = Self::is_err(value) && sub_patterns.len() == 1 {
+                            return self.match_pattern(&sub_patterns[0], inner);
                         }
                         // Match Error class instance — extract .message
-                        if let Value::Instance(iid) = value {
-                            if let Some(inst) = self.instances.get(iid.0) {
-                                if self
-                                    .classes
-                                    .get(inst.class_id.0)
-                                    .map(|c| c.name == "Error")
-                                    .unwrap_or(false)
-                                {
-                                    if sub_patterns.len() == 1 {
-                                        let msg = inst
-                                            .fields
-                                            .get("message")
-                                            .cloned()
-                                            .unwrap_or(Value::Null);
-                                        return self.match_pattern(&sub_patterns[0], &msg);
-                                    }
-                                }
-                            }
+                        if let Value::Instance(iid) = value
+                            && let Some(inst) = self.instances.get(iid.0)
+                            && self
+                                .classes
+                                .get(inst.class_id.0)
+                                .map(|c| c.name == "Error")
+                                .unwrap_or(false)
+                            && sub_patterns.len() == 1
+                        {
+                            let msg = inst
+                                .fields
+                                .get("message")
+                                .cloned()
+                                .unwrap_or(Value::Null);
+                            return self.match_pattern(&sub_patterns[0], &msg);
                         }
                         None
                     }
@@ -2749,11 +2728,9 @@ impl<W: Write> Interpreter<W> {
                             enum_id,
                             variant_index: 0,
                             fields,
-                        } = value
+                        } = value && enum_id.0 == 1 && sub_patterns.len() == 1
                         {
-                            if enum_id.0 == 1 && sub_patterns.len() == 1 {
-                                return self.match_pattern(&sub_patterns[0], &fields[0]);
-                            }
+                            return self.match_pattern(&sub_patterns[0], &fields[0]);
                         }
                         None
                     }
@@ -2762,11 +2739,9 @@ impl<W: Write> Interpreter<W> {
                             enum_id,
                             variant_index: 1,
                             fields,
-                        } = value
+                        } = value && enum_id.0 == 1 && fields.is_empty()
                         {
-                            if enum_id.0 == 1 && fields.is_empty() {
-                                return Some(vec![]);
-                            }
+                            return Some(vec![]);
                         }
                         None
                     }
@@ -2894,12 +2869,10 @@ impl<W: Write> Interpreter<W> {
                         } else {
                             None
                         }
+                    } else if *n >= *start && *n < *end {
+                        Some(vec![])
                     } else {
-                        if *n >= *start && *n < *end {
-                            Some(vec![])
-                        } else {
-                            None
-                        }
+                        None
                     }
                 } else {
                     None
@@ -3899,10 +3872,10 @@ impl<W: Write> Interpreter<W> {
                         other => Ok(other.clone()),
                     };
                 }
-                return Err(EvalError::Panic(
+                Err(EvalError::Panic(
                     PanicKind::NameError,
                     format!("{}.{}", module.name, method),
-                ));
+                ))
             }
 
             // Actor .new()
@@ -3951,7 +3924,7 @@ impl<W: Write> Interpreter<W> {
                     self.current_actor = prev_actor;
                     result?;
                 }
-                return Ok(Value::Actor(actor_id));
+                Ok(Value::Actor(actor_id))
             }
 
             // Actor .send(:msg)
@@ -3993,7 +3966,7 @@ impl<W: Write> Interpreter<W> {
 
                 self.env.pop_scope();
                 self.current_actor = prev_actor;
-                return Ok(reply_val);
+                Ok(reply_val)
             }
 
             // Class methods
@@ -4030,21 +4003,19 @@ impl<W: Write> Interpreter<W> {
                     };
 
                     // Protocol conformance check
-                    if let Some(type_name) = type_ann {
-                        if let Some(Value::Protocol(_proto_id)) = self.env.get(type_name).cloned() {
-                            let conforms = match &val {
-                                Value::Instance(iid) => {
-                                    let inst_class_id = self.instances[iid.0].class_id;
-                                    self.class_implements_protocol(inst_class_id, type_name)
-                                }
-                                _ => true,
-                            };
-                            if !conforms {
-                                return Err(EvalError::Fail(Value::String(format!(
-                                    "{}.new() — '{}' must implement {}",
-                                    class.name, need_name, type_name
-                                ))));
+                    if let Some(type_name) = type_ann && let Some(Value::Protocol(_proto_id)) = self.env.get(type_name).cloned() {
+                        let conforms = match &val {
+                            Value::Instance(iid) => {
+                                let inst_class_id = self.instances[iid.0].class_id;
+                                self.class_implements_protocol(inst_class_id, type_name)
                             }
+                            _ => true,
+                        };
+                        if !conforms {
+                            return Err(EvalError::Fail(Value::String(format!(
+                                "{}.new() — '{}' must implement {}",
+                                class.name, need_name, type_name
+                            ))));
                         }
                     }
 
@@ -4165,10 +4136,10 @@ impl<W: Write> Interpreter<W> {
                         Err(e) => Err(e),
                     };
                 }
-                return Err(EvalError::Panic(
+                Err(EvalError::Panic(
                     PanicKind::RuntimeError,
                     format!("undefined static method '{}' on class", method),
-                ));
+                ))
             }
 
             // Instance methods — dispatch to class
@@ -4192,7 +4163,7 @@ impl<W: Write> Interpreter<W> {
                             };
                             self.container_registrations
                                 .entry(*instance_id)
-                                .or_insert_with(HashMap::new)
+                                .or_default()
                                 .insert(proto_name, args[1].clone());
                             return Ok(Value::Null);
                         }
@@ -4214,11 +4185,9 @@ impl<W: Write> Interpreter<W> {
 
                             let mut fields = HashMap::new();
                             for (need_name, type_ann, default) in &target_class.needs {
-                                if let Some(type_name) = type_ann {
-                                    if let Some(val) = regs.get(type_name) {
-                                        fields.insert(need_name.clone(), val.clone());
-                                        continue;
-                                    }
+                                if let Some(type_name) = type_ann && let Some(val) = regs.get(type_name) {
+                                    fields.insert(need_name.clone(), val.clone());
+                                    continue;
                                 }
                                 if let Some(default_expr) = default {
                                     let val = self.eval_expr(default_expr)?;
@@ -4473,10 +4442,10 @@ impl<W: Write> Interpreter<W> {
                         fields: field_values,
                     });
                 }
-                return Err(EvalError::Panic(
+                Err(EvalError::Panic(
                     PanicKind::TypeError,
                     format!("enum '{}' has no variant '{}'", e.name, method),
-                ));
+                ))
             }
             // Enum variant method calls (including Result helpers)
             (Value::EnumVariant { enum_id, .. }, _) => {
@@ -4497,10 +4466,10 @@ impl<W: Write> Interpreter<W> {
                         Err(e) => Err(e),
                     };
                 }
-                return Err(EvalError::Panic(
+                Err(EvalError::Panic(
                     PanicKind::TypeError,
                     format!("enum '{}' has no method '{}'", e.name, method),
-                ));
+                ))
             }
             // Type methods
             (Value::Type(info), _) => match method {
@@ -4548,7 +4517,7 @@ impl<W: Write> Interpreter<W> {
                 // a |> f  =>  f(a)
                 // Try builtins
                 if let Some(result) =
-                    opal_stdlib::call_builtin(name, &[arg.clone()], &mut self.writer)
+                    opal_stdlib::call_builtin(name, std::slice::from_ref(&arg), &mut self.writer)
                 {
                     return match result {
                         Ok(opal_stdlib::BuiltinResult::Value(v)) => Ok(v),
@@ -4677,10 +4646,8 @@ impl<W: Write> Interpreter<W> {
     /// Check if argument values match exactly (class name, no protocol widening)
     fn args_match_types_exact(&self, args: &[Value], param_types: &[Option<String>]) -> bool {
         for (arg, expected_type) in args.iter().zip(param_types.iter()) {
-            if let Some(type_name) = expected_type {
-                if !self.value_matches_type_exact(arg, type_name) {
-                    return false;
-                }
+            if let Some(type_name) = expected_type && !self.value_matches_type_exact(arg, type_name) {
+                return false;
             }
         }
         true
@@ -4706,10 +4673,8 @@ impl<W: Write> Interpreter<W> {
     /// Check if argument values match the expected parameter types (including protocols)
     fn args_match_types(&self, args: &[Value], param_types: &[Option<String>]) -> bool {
         for (arg, expected_type) in args.iter().zip(param_types.iter()) {
-            if let Some(type_name) = expected_type {
-                if !self.value_matches_type(arg, type_name) {
-                    return false;
-                }
+            if let Some(type_name) = expected_type && !self.value_matches_type(arg, type_name) {
+                return false;
             }
         }
         true
@@ -4718,11 +4683,10 @@ impl<W: Write> Interpreter<W> {
     /// Check if a value matches a type name (class name, protocol, or builtin)
     fn value_matches_type(&self, value: &Value, type_name: &str) -> bool {
         // Handle nullable types: T? accepts null or T
-        if type_name.ends_with('?') {
+        if let Some(base) = type_name.strip_suffix('?') {
             if matches!(value, Value::Null) {
                 return true;
             }
-            let base = &type_name[..type_name.len() - 1];
             return self.value_matches_type(value, base);
         }
         match (value, type_name) {
@@ -4750,11 +4714,10 @@ impl<W: Write> Interpreter<W> {
 
     fn value_is_type(&self, value: &Value, type_name: &str) -> bool {
         // Handle nullable types: T? accepts null or T
-        if type_name.ends_with('?') {
+        if let Some(base) = type_name.strip_suffix('?') {
             if matches!(value, Value::Null) {
                 return true;
             }
-            let base = &type_name[..type_name.len() - 1];
             return self.value_is_type(value, base);
         }
         match type_name {
@@ -4876,14 +4839,12 @@ impl<W: Write> Interpreter<W> {
 
     /// Check if a value is an Error class instance
     fn is_error_instance(&self, val: &Value) -> bool {
-        if let Value::Instance(iid) = val {
-            if let Some(inst) = self.instances.get(iid.0) {
-                return self
-                    .classes
-                    .get(inst.class_id.0)
-                    .map(|c| c.name == "Error")
-                    .unwrap_or(false);
-            }
+        if let Value::Instance(iid) = val && let Some(inst) = self.instances.get(iid.0) {
+            return self
+                .classes
+                .get(inst.class_id.0)
+                .map(|c| c.name == "Error")
+                .unwrap_or(false);
         }
         false
     }
@@ -5045,10 +5006,8 @@ impl<W: Write> Interpreter<W> {
             // Error instances display as their message
             let inst = &self.instances[id.0];
             let class = &self.classes[inst.class_id.0];
-            if class.name == "Error" {
-                if let Some(msg) = inst.fields.get("message").cloned() {
-                    return self.format_value_display(&msg);
-                }
+            if class.name == "Error" && let Some(msg) = inst.fields.get("message").cloned() {
+                return self.format_value_display(&msg);
             }
             if let Some(s) = self.try_instance_to_string(*id) {
                 return s;
@@ -5087,10 +5046,8 @@ impl<W: Write> Interpreter<W> {
             Value::Instance(id) => {
                 let inst = &self.instances[id.0];
                 let class = &self.classes[inst.class_id.0];
-                if class.name == "Error" {
-                    if let Some(msg) = inst.fields.get("message") {
-                        return format!("Error({})", self.format_value(msg));
-                    }
+                if class.name == "Error" && let Some(msg) = inst.fields.get("message") {
+                    return format!("Error({})", self.format_value(msg));
                 }
                 format!("<{} instance>", class.name)
             }
@@ -5234,26 +5191,24 @@ impl<W: Write> Interpreter<W> {
 
         let mut parsed_routes = Vec::new();
         for route in &routes {
-            if let Value::List(parts) = route {
-                if parts.len() == 3 {
-                    let method = match &parts[0] {
-                        Value::String(s) => s.clone(),
-                        _ => continue,
-                    };
-                    let path = match &parts[1] {
-                        Value::String(s) => s.clone(),
-                        _ => continue,
-                    };
-                    let handler_id = match &parts[2] {
-                        Value::Integer(id) => *id as usize,
-                        _ => continue,
-                    };
-                    parsed_routes.push(ParsedRoute {
-                        method,
-                        path,
-                        handler_id,
-                    });
-                }
+            if let Value::List(parts) = route && parts.len() == 3 {
+                let method = match &parts[0] {
+                    Value::String(s) => s.clone(),
+                    _ => continue,
+                };
+                let path = match &parts[1] {
+                    Value::String(s) => s.clone(),
+                    _ => continue,
+                };
+                let handler_id = match &parts[2] {
+                    Value::Integer(id) => *id as usize,
+                    _ => continue,
+                };
+                parsed_routes.push(ParsedRoute {
+                    method,
+                    path,
+                    handler_id,
+                });
             }
         }
 
@@ -5289,34 +5244,32 @@ impl<W: Write> Interpreter<W> {
             // Match against registered routes
             let mut matched = false;
             for route in &parsed_routes {
-                if route.method == method {
-                    if let Some(params) = match_path(&route.path, path) {
-                        matched = true;
-                        let closure_id = ClosureId(route.handler_id);
+                if route.method == method && let Some(params) = match_path(&route.path, path) {
+                    matched = true;
+                    let closure_id = ClosureId(route.handler_id);
 
-                        // Pass route params as a simple argument if any exist
-                        let handler_args = if params.is_empty() {
-                            vec![]
-                        } else {
-                            vec![Value::String(
-                                params.values().next().unwrap_or(&String::new()).clone(),
-                            )]
-                        };
+                    // Pass route params as a simple argument if any exist
+                    let handler_args = if params.is_empty() {
+                        vec![]
+                    } else {
+                        vec![Value::String(
+                            params.values().next().unwrap_or(&String::new()).clone(),
+                        )]
+                    };
 
-                        let result = self.call_closure(closure_id, handler_args);
-                        let body = match result {
-                            Ok(val) => val.to_string(),
-                            Err(e) => format!("Error: {}", e),
-                        };
+                    let result = self.call_closure(closure_id, handler_args);
+                    let body = match result {
+                        Ok(val) => val.to_string(),
+                        Err(e) => format!("Error: {}", e),
+                    };
 
-                        let response = format!(
-                            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n{}",
-                            body.len(),
-                            body
-                        );
-                        std::io::Write::write_all(&mut stream, response.as_bytes()).ok();
-                        break;
-                    }
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n{}",
+                        body.len(),
+                        body
+                    );
+                    std::io::Write::write_all(&mut stream, response.as_bytes()).ok();
+                    break;
                 }
             }
 
@@ -5337,8 +5290,8 @@ impl<W: Write> Interpreter<W> {
     /// Apply a format specifier to a value's string representation
     fn apply_format_spec(formatted: &str, val: &Value, spec: &str) -> String {
         // :.N or :.Nf — decimal places for floats
-        if spec.starts_with('.') {
-            let num_str = spec[1..].trim_end_matches('f');
+        if let Some(rest) = spec.strip_prefix('.') {
+            let num_str = rest.trim_end_matches('f');
             if let Ok(precision) = num_str.parse::<usize>() {
                 let f = match val {
                     Value::Float(f) => *f,
@@ -5349,16 +5302,12 @@ impl<W: Write> Interpreter<W> {
             }
         }
         // :>N — right-align to N chars (pad with spaces on left)
-        if spec.starts_with('>') {
-            if let Ok(width) = spec[1..].parse::<usize>() {
-                return format!("{:>width$}", formatted, width = width);
-            }
+        if let Some(rest) = spec.strip_prefix('>') && let Ok(width) = rest.parse::<usize>() {
+            return format!("{:>width$}", formatted, width = width);
         }
         // :<N — left-align to N chars (pad with spaces on right)
-        if spec.starts_with('<') {
-            if let Ok(width) = spec[1..].parse::<usize>() {
-                return format!("{:<width$}", formatted, width = width);
-            }
+        if let Some(rest) = spec.strip_prefix('<') && let Ok(width) = rest.parse::<usize>() {
+            return format!("{:<width$}", formatted, width = width);
         }
         // Unknown spec — return as-is
         formatted.to_string()
@@ -5440,8 +5389,8 @@ fn match_path(pattern: &str, actual: &str) -> Option<HashMap<String, String>> {
 
     let mut params = HashMap::new();
     for (p, a) in pattern_parts.iter().zip(actual_parts.iter()) {
-        if p.starts_with(':') {
-            params.insert(p[1..].to_string(), a.to_string());
+        if let Some(param_name) = p.strip_prefix(':') {
+            params.insert(param_name.to_string(), a.to_string());
         } else if p != a {
             return None;
         }
