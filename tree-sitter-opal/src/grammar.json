@@ -131,7 +131,7 @@
         },
         {
           "type": "SYMBOL",
-          "name": "raise_statement"
+          "name": "fail_statement"
         },
         {
           "type": "SYMBOL",
@@ -3304,7 +3304,7 @@
         }
       ]
     },
-    "raise_statement": {
+    "fail_statement": {
       "type": "PREC_RIGHT",
       "value": 0,
       "content": {
@@ -3312,7 +3312,7 @@
         "members": [
           {
             "type": "STRING",
-            "value": "raise"
+            "value": "fail"
           },
           {
             "type": "SYMBOL",
@@ -3372,6 +3372,22 @@
           "content": {
             "type": "SYMBOL",
             "name": "identifier"
+          }
+        },
+        {
+          "type": "REPEAT",
+          "content": {
+            "type": "SEQ",
+            "members": [
+              {
+                "type": "STRING",
+                "value": "."
+              },
+              {
+                "type": "SYMBOL",
+                "name": "identifier"
+              }
+            ]
           }
         },
         {

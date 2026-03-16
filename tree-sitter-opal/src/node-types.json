@@ -94,6 +94,10 @@
           "named": true
         },
         {
+          "type": "fail_statement",
+          "named": true
+        },
+        {
           "type": "for_loop",
           "named": true
         },
@@ -151,10 +155,6 @@
         },
         {
           "type": "protocol_definition",
-          "named": true
-        },
-        {
-          "type": "raise_statement",
           "named": true
         },
         {
@@ -1106,6 +1106,10 @@
           "named": true
         },
         {
+          "type": "fail_statement",
+          "named": true
+        },
+        {
           "type": "for_loop",
           "named": true
         },
@@ -1163,10 +1167,6 @@
         },
         {
           "type": "protocol_definition",
-          "named": true
-        },
-        {
-          "type": "raise_statement",
           "named": true
         },
         {
@@ -3041,6 +3041,149 @@
         },
         {
           "type": "string",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "fail_statement",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": false,
+      "required": true,
+      "types": [
+        {
+          "type": "Self",
+          "named": true
+        },
+        {
+          "type": "ast_block",
+          "named": true
+        },
+        {
+          "type": "await_expression",
+          "named": true
+        },
+        {
+          "type": "binary_expression",
+          "named": true
+        },
+        {
+          "type": "block_closure_call",
+          "named": true
+        },
+        {
+          "type": "call",
+          "named": true
+        },
+        {
+          "type": "cast_expression",
+          "named": true
+        },
+        {
+          "type": "closure",
+          "named": true
+        },
+        {
+          "type": "dict",
+          "named": true
+        },
+        {
+          "type": "false",
+          "named": true
+        },
+        {
+          "type": "float",
+          "named": true
+        },
+        {
+          "type": "fstring",
+          "named": true
+        },
+        {
+          "type": "grouped_expression",
+          "named": true
+        },
+        {
+          "type": "identifier",
+          "named": true
+        },
+        {
+          "type": "if_expression",
+          "named": true
+        },
+        {
+          "type": "index_expression",
+          "named": true
+        },
+        {
+          "type": "instance_variable",
+          "named": true
+        },
+        {
+          "type": "integer",
+          "named": true
+        },
+        {
+          "type": "list",
+          "named": true
+        },
+        {
+          "type": "list_comprehension",
+          "named": true
+        },
+        {
+          "type": "match_expression",
+          "named": true
+        },
+        {
+          "type": "member_access",
+          "named": true
+        },
+        {
+          "type": "null",
+          "named": true
+        },
+        {
+          "type": "null_safe_access",
+          "named": true
+        },
+        {
+          "type": "self",
+          "named": true
+        },
+        {
+          "type": "splice",
+          "named": true
+        },
+        {
+          "type": "string",
+          "named": true
+        },
+        {
+          "type": "suffix_if",
+          "named": true
+        },
+        {
+          "type": "super_call",
+          "named": true
+        },
+        {
+          "type": "suppress_throw_expression",
+          "named": true
+        },
+        {
+          "type": "symbol",
+          "named": true
+        },
+        {
+          "type": "true",
+          "named": true
+        },
+        {
+          "type": "unary_expression",
           "named": true
         }
       ]
@@ -6130,149 +6273,6 @@
     }
   },
   {
-    "type": "raise_statement",
-    "named": true,
-    "fields": {},
-    "children": {
-      "multiple": false,
-      "required": true,
-      "types": [
-        {
-          "type": "Self",
-          "named": true
-        },
-        {
-          "type": "ast_block",
-          "named": true
-        },
-        {
-          "type": "await_expression",
-          "named": true
-        },
-        {
-          "type": "binary_expression",
-          "named": true
-        },
-        {
-          "type": "block_closure_call",
-          "named": true
-        },
-        {
-          "type": "call",
-          "named": true
-        },
-        {
-          "type": "cast_expression",
-          "named": true
-        },
-        {
-          "type": "closure",
-          "named": true
-        },
-        {
-          "type": "dict",
-          "named": true
-        },
-        {
-          "type": "false",
-          "named": true
-        },
-        {
-          "type": "float",
-          "named": true
-        },
-        {
-          "type": "fstring",
-          "named": true
-        },
-        {
-          "type": "grouped_expression",
-          "named": true
-        },
-        {
-          "type": "identifier",
-          "named": true
-        },
-        {
-          "type": "if_expression",
-          "named": true
-        },
-        {
-          "type": "index_expression",
-          "named": true
-        },
-        {
-          "type": "instance_variable",
-          "named": true
-        },
-        {
-          "type": "integer",
-          "named": true
-        },
-        {
-          "type": "list",
-          "named": true
-        },
-        {
-          "type": "list_comprehension",
-          "named": true
-        },
-        {
-          "type": "match_expression",
-          "named": true
-        },
-        {
-          "type": "member_access",
-          "named": true
-        },
-        {
-          "type": "null",
-          "named": true
-        },
-        {
-          "type": "null_safe_access",
-          "named": true
-        },
-        {
-          "type": "self",
-          "named": true
-        },
-        {
-          "type": "splice",
-          "named": true
-        },
-        {
-          "type": "string",
-          "named": true
-        },
-        {
-          "type": "suffix_if",
-          "named": true
-        },
-        {
-          "type": "super_call",
-          "named": true
-        },
-        {
-          "type": "suppress_throw_expression",
-          "named": true
-        },
-        {
-          "type": "symbol",
-          "named": true
-        },
-        {
-          "type": "true",
-          "named": true
-        },
-        {
-          "type": "unary_expression",
-          "named": true
-        }
-      ]
-    }
-  },
-  {
     "type": "range_pattern",
     "named": true,
     "fields": {},
@@ -6844,6 +6844,10 @@
           "named": true
         },
         {
+          "type": "fail_statement",
+          "named": true
+        },
+        {
           "type": "for_loop",
           "named": true
         },
@@ -6901,10 +6905,6 @@
         },
         {
           "type": "protocol_definition",
-          "named": true
-        },
-        {
-          "type": "raise_statement",
           "named": true
         },
         {
@@ -8011,6 +8011,10 @@
     "named": false
   },
   {
+    "type": "fail",
+    "named": false
+  },
+  {
     "type": "false",
     "named": true
   },
@@ -8141,10 +8145,6 @@
   {
     "type": "question_mark",
     "named": true
-  },
-  {
-    "type": "raise",
-    "named": false
   },
   {
     "type": "receive",

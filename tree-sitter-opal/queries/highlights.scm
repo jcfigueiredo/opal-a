@@ -5,7 +5,7 @@
   "for" "while" "in" "do"
   "match" "case"
   "return"
-  "try" "catch" "ensure" "raise"
+  "try" "catch" "ensure" "fail"
   "let" "needs" "requires"
   "import" "from" "export" "as"
   "actor" "receive" "reply" "await"

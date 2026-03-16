@@ -10,6 +10,34 @@ from Math import sqrt, PI
   (from_import (identifier) (identifier) (identifier)))
 
 ================
+Dotted from import
+================
+
+from MySite.Routes import posts_path
+
+---
+
+(source_file
+  (from_import
+    (identifier)
+    (identifier)
+    (identifier)))
+
+================
+Fail statement
+================
+
+fail Error("boom")
+
+---
+
+(source_file
+  (fail_statement
+    (call
+      (identifier)
+      (string))))
+
+================
 Try catch
 ================
 

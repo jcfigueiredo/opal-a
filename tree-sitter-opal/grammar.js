@@ -63,7 +63,7 @@ module.exports = grammar({
       $.emit_statement,
       $.type_alias,
       $.requires_statement,
-      $.raise_statement,
+      $.fail_statement,
       $.reply_statement,
       $.extern_definition,
       $.retroactive_impl,
@@ -536,7 +536,7 @@ module.exports = grammar({
       optional(field('body', $.body)),
     ),
 
-    raise_statement: $ => prec.right(seq('raise', $._expression)),
+    fail_statement: $ => prec.right(seq('fail', $._expression)),
 
     requires_statement: $ => prec.right(seq(
       'requires',
@@ -548,6 +548,7 @@ module.exports = grammar({
     from_import: $ => seq(
       'from',
       field('module', $.identifier),
+      repeat(seq('.', $.identifier)),
       'import',
       $.identifier,
       repeat(seq(',', $.identifier)),
