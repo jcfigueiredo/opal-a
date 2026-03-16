@@ -1,4 +1,4 @@
-use opal_lexer::{source_location, Span};
+use opal_lexer::{Span, source_location};
 use opal_parser::{Program, Stmt, StmtKind};
 use tower_lsp::lsp_types::*;
 
@@ -44,7 +44,10 @@ fn stmt_to_symbol(stmt: &Stmt, source: &str) -> Option<DocumentSymbol> {
         }),
 
         StmtKind::ClassDef { name, methods, .. } => {
-            let children: Vec<_> = methods.iter().filter_map(|m| stmt_to_symbol(m, source)).collect();
+            let children: Vec<_> = methods
+                .iter()
+                .filter_map(|m| stmt_to_symbol(m, source))
+                .collect();
             Some(DocumentSymbol {
                 name: name.clone(),
                 detail: None,
@@ -53,12 +56,19 @@ fn stmt_to_symbol(stmt: &Stmt, source: &str) -> Option<DocumentSymbol> {
                 deprecated: None,
                 range,
                 selection_range: range,
-                children: if children.is_empty() { None } else { Some(children) },
+                children: if children.is_empty() {
+                    None
+                } else {
+                    Some(children)
+                },
             })
         }
 
         StmtKind::ModuleDef { name, body, .. } => {
-            let children: Vec<_> = body.iter().filter_map(|s| stmt_to_symbol(s, source)).collect();
+            let children: Vec<_> = body
+                .iter()
+                .filter_map(|s| stmt_to_symbol(s, source))
+                .collect();
             Some(DocumentSymbol {
                 name: name.clone(),
                 detail: None,
@@ -67,7 +77,11 @@ fn stmt_to_symbol(stmt: &Stmt, source: &str) -> Option<DocumentSymbol> {
                 deprecated: None,
                 range,
                 selection_range: range,
-                children: if children.is_empty() { None } else { Some(children) },
+                children: if children.is_empty() {
+                    None
+                } else {
+                    Some(children)
+                },
             })
         }
 
@@ -83,7 +97,10 @@ fn stmt_to_symbol(stmt: &Stmt, source: &str) -> Option<DocumentSymbol> {
         }),
 
         StmtKind::EnumDef {
-            name, variants, methods, ..
+            name,
+            variants,
+            methods,
+            ..
         } => {
             let mut children: Vec<_> = variants
                 .iter()
@@ -107,12 +124,19 @@ fn stmt_to_symbol(stmt: &Stmt, source: &str) -> Option<DocumentSymbol> {
                 deprecated: None,
                 range,
                 selection_range: range,
-                children: if children.is_empty() { None } else { Some(children) },
+                children: if children.is_empty() {
+                    None
+                } else {
+                    Some(children)
+                },
             })
         }
 
         StmtKind::ActorDef { name, methods, .. } => {
-            let children: Vec<_> = methods.iter().filter_map(|m| stmt_to_symbol(m, source)).collect();
+            let children: Vec<_> = methods
+                .iter()
+                .filter_map(|m| stmt_to_symbol(m, source))
+                .collect();
             Some(DocumentSymbol {
                 name: name.clone(),
                 detail: None,
@@ -121,12 +145,19 @@ fn stmt_to_symbol(stmt: &Stmt, source: &str) -> Option<DocumentSymbol> {
                 deprecated: None,
                 range,
                 selection_range: range,
-                children: if children.is_empty() { None } else { Some(children) },
+                children: if children.is_empty() {
+                    None
+                } else {
+                    Some(children)
+                },
             })
         }
 
         StmtKind::ModelDef { name, methods, .. } => {
-            let children: Vec<_> = methods.iter().filter_map(|m| stmt_to_symbol(m, source)).collect();
+            let children: Vec<_> = methods
+                .iter()
+                .filter_map(|m| stmt_to_symbol(m, source))
+                .collect();
             Some(DocumentSymbol {
                 name: name.clone(),
                 detail: None,
@@ -135,7 +166,11 @@ fn stmt_to_symbol(stmt: &Stmt, source: &str) -> Option<DocumentSymbol> {
                 deprecated: None,
                 range,
                 selection_range: range,
-                children: if children.is_empty() { None } else { Some(children) },
+                children: if children.is_empty() {
+                    None
+                } else {
+                    Some(children)
+                },
             })
         }
 

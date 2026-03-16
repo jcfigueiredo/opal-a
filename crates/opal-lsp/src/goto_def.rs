@@ -1,4 +1,4 @@
-use opal_lexer::{source_location, Span};
+use opal_lexer::{Span, source_location};
 use opal_parser::*;
 use tower_lsp::lsp_types::*;
 
@@ -91,7 +91,7 @@ fn is_ident_char(c: char) -> bool {
         || c.is_numeric()    // \p{N}
         || c == '_'
         || (!c.is_ascii() && !c.is_whitespace() && !c.is_ascii_punctuation())
-        // Non-ASCII, non-whitespace, non-punct covers \p{So} (emoji) and \p{M} (combining marks)
+    // Non-ASCII, non-whitespace, non-punct covers \p{So} (emoji) and \p{M} (combining marks)
 }
 
 fn collect_definitions(stmts: &[Stmt], symbols: &mut Vec<(String, Span)>) {
@@ -106,9 +106,7 @@ fn collect_definitions(stmts: &[Stmt], symbols: &mut Vec<(String, Span)>) {
                 }
                 collect_definitions(body, symbols);
             }
-            StmtKind::ClassDef {
-                name, methods, ..
-            } => {
+            StmtKind::ClassDef { name, methods, .. } => {
                 symbols.push((name.clone(), stmt.span));
                 collect_definitions(methods, symbols);
             }
@@ -119,9 +117,7 @@ fn collect_definitions(stmts: &[Stmt], symbols: &mut Vec<(String, Span)>) {
             StmtKind::ProtocolDef { name, .. } => {
                 symbols.push((name.clone(), stmt.span));
             }
-            StmtKind::EnumDef {
-                name, methods, ..
-            } => {
+            StmtKind::EnumDef { name, methods, .. } => {
                 symbols.push((name.clone(), stmt.span));
                 collect_definitions(methods, symbols);
             }
@@ -137,9 +133,7 @@ fn collect_definitions(stmts: &[Stmt], symbols: &mut Vec<(String, Span)>) {
                 }
                 collect_definitions(methods, symbols);
             }
-            StmtKind::ModelDef {
-                name, methods, ..
-            } => {
+            StmtKind::ModelDef { name, methods, .. } => {
                 symbols.push((name.clone(), stmt.span));
                 collect_definitions(methods, symbols);
             }

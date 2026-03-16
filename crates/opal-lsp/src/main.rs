@@ -111,10 +111,7 @@ impl LanguageServer for OpalBackend {
 
         match goto_def::goto_definition(&program, source, position) {
             Some(range) => {
-                let location = Location {
-                    uri,
-                    range,
-                };
+                let location = Location { uri, range };
                 Ok(Some(GotoDefinitionResponse::Scalar(location)))
             }
             None => Ok(None),

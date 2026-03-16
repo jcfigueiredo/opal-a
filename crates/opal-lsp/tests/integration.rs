@@ -32,12 +32,13 @@ end
     );
 
     // Check we got a FuncDef and ClassDef
-    let has_func = program.statements.iter().any(|s| {
-        matches!(&s.kind, opal_parser::StmtKind::FuncDef { name, .. } if name == "greet")
-    });
-    let has_class = program.statements.iter().any(|s| {
-        matches!(&s.kind, opal_parser::StmtKind::ClassDef { name, .. } if name == "Bounty")
-    });
+    let has_func = program
+        .statements
+        .iter()
+        .any(|s| matches!(&s.kind, opal_parser::StmtKind::FuncDef { name, .. } if name == "greet"));
+    let has_class = program.statements.iter().any(
+        |s| matches!(&s.kind, opal_parser::StmtKind::ClassDef { name, .. } if name == "Bounty"),
+    );
     assert!(has_func, "Should find greet function");
     assert!(has_class, "Should find Bounty class");
 }
@@ -48,9 +49,10 @@ fn test_goto_definition_finds_variable() {
     let program = opal_parser::parse(source).unwrap();
 
     // Check that 'x' is defined in the AST
-    let has_x = program.statements.iter().any(|s| {
-        matches!(&s.kind, opal_parser::StmtKind::Assign { name, .. } if name == "x")
-    });
+    let has_x = program
+        .statements
+        .iter()
+        .any(|s| matches!(&s.kind, opal_parser::StmtKind::Assign { name, .. } if name == "x"));
     assert!(has_x, "Should find x assignment");
 }
 
