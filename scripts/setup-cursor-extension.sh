@@ -19,12 +19,10 @@ else
     exit 1
 fi
 
-# Build LSP if not already built
+# Always rebuild LSP to pick up parser/interpreter changes
 LSP_BIN="$OPAL_ROOT/target/release/opal-lsp"
-if [ ! -f "$LSP_BIN" ]; then
-    echo "Building opal-lsp (release)..."
-    (cd "$OPAL_ROOT" && cargo build --release -p opal-lsp)
-fi
+echo "Building opal-lsp (release)..."
+(cd "$OPAL_ROOT" && cargo build --release -p opal-lsp)
 
 # Bundle the extension (inlines vscode-languageclient into a single file)
 echo "Bundling extension..."
