@@ -4,7 +4,7 @@
 
 ## Overview
 
-Opal uses a hybrid file-to-module mapping: each `.opl` file implicitly defines a module matching its filename, and `module` blocks inside a file create nested namespaces. Imports are always absolute from the project root. Circular dependencies are compile-time errors.
+Opal uses a hybrid file-to-module mapping: each `.opl` file implicitly defines a module matching its filename, directories can define namespace modules via `index.opl`, and `module` blocks inside a file create nested namespaces. Imports are always absolute from the project root or package root. Circular dependencies are compile-time errors.
 
 ---
 
@@ -17,6 +17,7 @@ src/
   app.opl           -> App
   math.opl          -> Math
   math/
+    index.opl       -> Math        (only if `math.opl` does not exist)
     vector.opl      -> Math.Vector
     matrix.opl      -> Math.Matrix
 ```
@@ -69,9 +70,11 @@ c.area()  # => 78.539...
 ### Rules
 
 - One top-level module per file, name derived from filename.
+- A directory becomes directly importable only if it contains `index.opl`.
 - `module` blocks inside a file create nested sub-modules.
 - Subdirectories also create nested modules (both approaches work).
 - If `src/math.opl` exists AND `src/math/` directory exists, the file defines the parent module and the directory holds child modules.
+- If `src/math/index.opl` exists, `import Math` resolves to that file only when `src/math.opl` does not exist.
 
 ---
 
@@ -82,6 +85,7 @@ Five forms, all using absolute paths from the project root:
 ```opal
 import Math                          # whole module -- access as Math.abs(), Math.PI
 import Math.Vector                   # nested module -- access as Math.Vector.dot()
+from Math.Vector import dot          # nested selective import -- dot() available directly
 from Math import abs, max            # selective -- abs() and max() available directly
 import Math.Vector as Vec            # aliased -- access as Vec.dot()
 from Math import abs, max as maximum # selective + alias -- abs() and maximum()
@@ -99,8 +103,10 @@ from Math import (
 
 ### What "import" Does
 
-- `import Module` loads the module and makes its public symbols accessible via `Module.name`.
+- `import Module` loads the module and makes its exported symbols accessible via `Module.name`.
+- `import MyWebApp.Routes` also materializes the namespace path, so `MyWebApp.Routes` is usable after the import.
 - `from Module import name` brings `name` directly into the current scope (no prefix needed).
+- `from MyWebApp.Routes import posts_path` does not materialize `MyWebApp` or `MyWebApp.Routes`; use `import MyWebApp.Routes` when you want the namespace path itself.
 - `as` renames for the current scope only.
 - All paths are absolute from the project root -- no relative imports.
 
@@ -118,35 +124,35 @@ from Stats import max as stats_max  # ok
 
 ---
 
-## 3. Re-exports
+## 3. Exports
 
-Modules can re-export symbols from their imports using `export`. This lets library authors expose a clean API without leaking internal structure.
+File-backed modules only expose names listed in `export { ... }`. This lets library authors define a clean public API without leaking helpers or intermediate bindings.
 
 ```opal
 # file: src/opal_web.opl
-import OpalWeb.Router
-import OpalWeb.Middleware
-import OpalWeb.Response
+from OpalWeb.Router import get, post
+from OpalWeb.Response import json
 
-# Re-export specific symbols
-export get, post, put, delete from Router
-export use from Middleware
-export json, html, redirect from Response
+def internal_helper()
+  # ...
+end
+
+export { get, post, json }
 ```
 
 ```opal
 # Consumer just imports the top-level module
 import OpalWeb
-OpalWeb.get("/", handler)     # works -- re-exported from Router
-OpalWeb.json({status: "ok"})  # works -- re-exported from Response
+OpalWeb.get("/", handler)     # works -- exported
+OpalWeb.json({status: "ok"})  # works -- exported
 ```
 
 ### Rules
 
-- `export names from Module` re-exports specific symbols from an imported module.
-- Re-exported symbols appear as if defined in the exporting module.
-- Only public symbols can be re-exported.
-- By default, all top-level `def`, `class`, `module`, `enum`, `model`, `protocol` in a file are public. Use `private` to hide.
+- File-backed modules export only the names listed in `export { ... }`.
+- Exporting an imported name re-exports it.
+- Names not listed in `export { ... }` remain private to the module file.
+- Exporting a name that is not defined in module scope is an error.
 
 ---
 
@@ -193,6 +199,7 @@ my_web_app/
     my_web_app.opl       # root module (MyWebApp)
     routes.opl            # MyWebApp.Routes
     models/
+      index.opl           # MyWebApp.Models
       user.opl            # MyWebApp.Models.User
 ```
 
@@ -213,6 +220,7 @@ opal_db = "0.5"
 - External packages are imported by their package name: `import OpalWeb`.
 - The package manager resolves package name to installed source.
 - Within a package, all imports are absolute from that package's root: `import MyWebApp.Routes`.
+- Directory namespaces use `index.opl`, so `import MyWebApp.Models` resolves `src/models/index.opl`.
 - Cross-package imports use the dependency's package name: `import OpalWeb.Router`.
 
 ---

@@ -261,10 +261,10 @@ end
 ```opal
 def withdraw(amount: Float64) -> Float64
   if !(amount > 0)
-    raise PreconditionError.new(message: "amount must be positive")
+    fail PreconditionError.new(message: "amount must be positive")
   end
   if !(amount <= .balance)
-    raise PreconditionError.new(message: "insufficient funds")
+    fail PreconditionError.new(message: "insufficient funds")
   end
 
   .balance -= amount
@@ -278,13 +278,13 @@ end
 macro requires(condition, message)
   ast
     if !($condition)
-      raise PreconditionError.new(message: $message)
+      fail PreconditionError.new(message: $message)
     end
   end
 end
 ```
 
-`requires` inserts a guard clause at the expansion site. The condition is evaluated at runtime -- if it fails, a `PreconditionError` is raised with the given message. The macro is intentionally simple: it doesn't need to understand the condition, just negate it and wrap it in an if/raise.
+`requires` inserts a guard clause at the expansion site. The condition is evaluated at runtime -- if it fails, a `PreconditionError` is thrown with the given message. The macro is intentionally simple: it doesn't need to understand the condition, just negate it and wrap it in an if/fail.
 
 The message parameter is optional. Without it, the macro uses the condition's source code as the message:
 
@@ -293,7 +293,7 @@ macro requires(condition)
   source = condition.to_string()
   ast
     if !($condition)
-      raise PreconditionError.new(message: $source)
+      fail PreconditionError.new(message: $source)
     end
   end
 end
@@ -354,7 +354,7 @@ actor AppSupervisor
     .restart_count += 1
 
     if .restart_count > .max_restarts
-      raise SupervisorError.new(
+      fail SupervisorError.new(
         message: f"Max restarts ({.max_restarts}) exceeded in {.restart_window}s"
       )
     end
@@ -485,7 +485,7 @@ This keeps Opal's core small (~20 keywords) while the ecosystem grows without bo
 | `event` | Trivial | Rewrites as `model` |
 | `emit` | Trivial | Wraps in `EventBus.dispatch()` |
 | `on` | Trivial | Wraps in `EventBus.register()` |
-| `requires` | Simple | Generates if/raise guard clause |
+| `requires` | Simple | Generates if/fail guard clause |
 | `needs` | Medium | Collects declarations, generates init + getters |
 | `supervisor` | Complex | Generates full actor with restart logic |
 

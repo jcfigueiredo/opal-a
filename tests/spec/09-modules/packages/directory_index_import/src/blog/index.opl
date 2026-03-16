@@ -1,0 +1,3 @@
+from MySite.Blog.Controllers import label
+
+export { label }

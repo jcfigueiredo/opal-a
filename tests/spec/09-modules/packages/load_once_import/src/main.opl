@@ -1,0 +1,5 @@
+# expect: loading counter\n42
+import MySite.Counter
+from MySite.Counter import value
+
+print(value)

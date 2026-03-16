@@ -212,7 +212,7 @@ end
 
 ### Rules
 
-- `raise expr` throws a value (wrapped in Error if not already).
+- `fail expr` throws a value (wrapped in Error if not already).
 - `catch e` (no type) catches any error, binds the Error wrapper.
 - `catch e as Type` matches on the cause type and binds the cause directly.
 - `ensure` always executes, whether the block succeeded or failed.
@@ -340,7 +340,7 @@ end
 | Auto-throw | Functions returning Error automatically throw |
 | `?` operator | Suppress auto-throw — return Error as value |
 | `? or default` | Fallback when Error (Error is falsy) |
-| `raise expr` | Throw explicitly (wraps in Error) |
+| `fail expr` | Throw explicitly (wraps in Error) |
 | `try / catch / ensure` | Catch thrown errors, run cleanup |
 | `catch e as Type` | Match on cause type, bind cause |
 | Panics | Uncatchable runtime errors (bugs) |
@@ -349,7 +349,7 @@ end
 
 | Keyword / Operator | Role |
 |---|---|
-| `raise` | Throw a value (wrapped in Error) |
+| `fail` | Throw a value (wrapped in Error) |
 | `try` | Begin a block that may throw |
 | `catch` | Handle a thrown error |
 | `catch e as Type` | Handle a specific cause type |

@@ -33,10 +33,10 @@ Error("not found")
 Error(NotFoundError(resource: "User", id: 42))
 # => Error(cause: NotFoundError(...), message: "User 42 not found")
 
-raise "something broke"
+fail "something broke"
 # => throws Error(message: "something broke")
 
-raise NotFoundError(resource: "User", id: 42)
+fail NotFoundError(resource: "User", id: 42)
 # => throws Error(cause: NotFoundError(...), message: "User 42 not found")
 ```
 
@@ -164,20 +164,20 @@ Cases match on the cause type and bind the cause directly. The catch-all `case _
 
 ---
 
-## The `raise` Keyword
+## The `fail` Keyword
 
-`raise` throws directly. Strings and class instances are wrapped into `Error` automatically:
+`fail` throws directly. Strings and class instances are wrapped into `Error` automatically:
 
 ```opal
 def withdraw(account, amount)
   if amount > account.balance
-    raise InsufficientFunds(amount: amount, balance: account.balance)
+    fail InsufficientFunds(amount: amount, balance: account.balance)
   end
   account.debit(amount)
 end
 ```
 
-`raise` and returning `Error(...)` do the same thing — they throw. `raise` is for explicit "stop here" failures. `Error(...)` is for functions that signal failure as part of their return.
+`fail` and returning `Error(...)` do the same thing — they throw. `fail` is for explicit "stop here" failures. `Error(...)` is for functions that signal failure as part of their return.
 
 ---
 
@@ -205,7 +205,7 @@ class InsufficientFunds
 end
 ```
 
-Use them with `Error(...)` or `raise`:
+Use them with `Error(...)` or `fail`:
 
 ```opal
 def find_user(id: Int32)
@@ -218,7 +218,7 @@ end
 
 def withdraw(account, amount)
   if amount > account.balance
-    raise InsufficientFunds(amount: amount, balance: account.balance)
+    fail InsufficientFunds(amount: amount, balance: account.balance)
   end
   account.debit(amount)
 end

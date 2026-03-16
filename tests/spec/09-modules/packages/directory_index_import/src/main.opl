@@ -1,0 +1,4 @@
+# expect: posts
+from MySite.Blog import label
+
+print(label)

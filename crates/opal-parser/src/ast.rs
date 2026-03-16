@@ -20,7 +20,11 @@ pub enum StmtKind {
     /// Variable assignment: `name = expr`
     Assign { name: String, value: Expr },
     /// Compound assignment: `name += expr`, `name -= expr`, etc.
-    CompoundAssign { name: String, op: BinOp, value: Expr },
+    CompoundAssign {
+        name: String,
+        op: BinOp,
+        value: Expr,
+    },
     /// Let binding: `let name = expr`
     Let { name: String, value: Expr },
     /// Function definition: `def name(params) -> ReturnType ... end`
@@ -57,7 +61,11 @@ pub enum StmtKind {
         methods: Vec<ProtocolMethod>,
     },
     /// Module definition
-    ModuleDef { name: String, needs: Vec<NeedsDecl>, body: Vec<Stmt> },
+    ModuleDef {
+        name: String,
+        needs: Vec<NeedsDecl>,
+        body: Vec<Stmt>,
+    },
     // Deprecated: use Import instead
     /// Import: `from X import Y, Z`
     FromImport {
@@ -75,8 +83,8 @@ pub enum StmtKind {
         condition: Expr,
         message: Option<Expr>,
     },
-    /// Raise an error: `raise expr`
-    Raise(Expr),
+    /// Throw an error: `fail expr`
+    Fail(Expr),
     /// Actor definition
     ActorDef {
         name: String,
@@ -245,15 +253,9 @@ pub enum ExprKind {
         inclusive: bool,
     },
     /// Index access: `expr[expr]`
-    Index {
-        object: Box<Expr>,
-        index: Box<Expr>,
-    },
+    Index { object: Box<Expr>, index: Box<Expr> },
     /// Null-safe member access: `obj?.field`
-    NullSafeMemberAccess {
-        object: Box<Expr>,
-        field: String,
-    },
+    NullSafeMemberAccess { object: Box<Expr>, field: String },
     /// List comprehension: [expr for var in iter] or [expr for var in iter if cond]
     ListComprehension {
         expr: Box<Expr>,
@@ -262,10 +264,7 @@ pub enum ExprKind {
         condition: Option<Box<Expr>>,
     },
     /// Type cast: `expr as Type`
-    Cast {
-        expr: Box<Expr>,
-        type_name: String,
-    },
+    Cast { expr: Box<Expr>, type_name: String },
     /// super() call to parent method
     Super(Vec<Expr>),
     /// Suppress auto-throw: expr? — returns value or Error without throwing
@@ -298,7 +297,11 @@ pub enum Pattern {
     /// Or-pattern: matches if any sub-pattern matches
     Or(Vec<Pattern>),
     /// Range pattern: matches integers within range
-    Range { start: i64, end: i64, inclusive: bool },
+    Range {
+        start: i64,
+        end: i64,
+        inclusive: bool,
+    },
     /// As-binding: destructure AND bind whole value
     As(Box<Pattern>, String),
 }
@@ -361,7 +364,7 @@ pub struct NeedsDecl {
 pub struct ModelNeedsDecl {
     pub name: String,
     pub type_annotation: Option<String>,
-    pub validator: Option<Expr>,  // closure expression from `where |v| ...`
+    pub validator: Option<Expr>, // closure expression from `where |v| ...`
 }
 
 #[derive(Debug, Clone)]
@@ -369,7 +372,10 @@ pub enum FStringPart {
     Literal(String),
     Expr(Expr),
     /// Expression with format specifier: `{expr:.2}`, `{expr:>10}`, `{expr:<10}`
-    FormattedExpr { expr: Expr, spec: String },
+    FormattedExpr {
+        expr: Expr,
+        spec: String,
+    },
 }
 
 #[derive(Debug, Clone)]

@@ -1,0 +1,4 @@
+# expect: posts-controller
+from MySite.Blog.Controllers import PostsController
+
+print(PostsController.label())

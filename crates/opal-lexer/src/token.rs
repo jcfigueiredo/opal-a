@@ -217,8 +217,8 @@ pub enum Token {
     Catch,
     #[token("ensure")]
     Ensure,
-    #[token("raise")]
-    Raise,
+    #[token("fail")]
+    Fail,
     #[token("actor")]
     Actor,
     #[token("receive")]

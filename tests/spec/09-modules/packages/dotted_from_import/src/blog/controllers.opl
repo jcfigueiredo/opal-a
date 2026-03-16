@@ -1,0 +1,7 @@
+export { PostsController }
+
+class PostsController
+  def self.label()
+    "posts-controller"
+  end
+end

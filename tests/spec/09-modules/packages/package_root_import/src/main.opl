@@ -1,0 +1,4 @@
+# expect: my-site
+import MySite
+
+print(MySite.app_name)

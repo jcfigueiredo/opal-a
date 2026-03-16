@@ -1,4 +1,5 @@
 use std::io::Write;
+use std::path::PathBuf;
 
 use std::collections::{HashMap, HashSet};
 
@@ -36,7 +37,7 @@ pub enum EvalError {
     #[error("return")]
     Return(Value),
     #[error("{0}")]
-    Raise(Value),
+    Fail(Value),
     #[error("reply")]
     Reply(Value),
     #[error("break")]
@@ -114,6 +115,7 @@ struct StoredModule {
     #[allow(dead_code)]
     name: String,
     bindings: HashMap<String, Value>,
+    is_namespace: bool,
 }
 
 /// A stored macro definition
@@ -191,6 +193,10 @@ pub struct Interpreter<W: Write> {
     native_functions: Vec<String>,
     /// File-based module loader (set when running from a file)
     module_loader: Option<loader::ModuleLoader>,
+    /// Cache file-backed modules by resolved canonical path.
+    loaded_module_files: HashMap<PathBuf, ModuleId>,
+    /// Track the current module load stack for circular dependency errors.
+    module_load_stack: Vec<(PathBuf, String)>,
     /// Model class metadata: class_id -> list of (field_name, validator_expr)
     model_classes: HashMap<ClassId, Vec<(String, Expr)>>,
     /// Frozen (immutable) instance IDs (model instances)
@@ -227,6 +233,8 @@ impl Interpreter<std::io::Stdout> {
             native_objects: Vec::new(),
             native_functions: Vec::new(),
             module_loader: None,
+            loaded_module_files: HashMap::new(),
+            module_load_stack: Vec::new(),
             model_classes: HashMap::new(),
             frozen_instances: HashSet::new(),
             event_handlers: HashMap::new(),
@@ -271,6 +279,8 @@ impl<W: Write> Interpreter<W> {
             native_objects: Vec::new(),
             native_functions: Vec::new(),
             module_loader: None,
+            loaded_module_files: HashMap::new(),
+            module_load_stack: Vec::new(),
             model_classes: HashMap::new(),
             frozen_instances: HashSet::new(),
             event_handlers: HashMap::new(),
@@ -368,6 +378,7 @@ impl<W: Write> Interpreter<W> {
         self.modules.push(StoredModule {
             name: "Math".into(),
             bindings: math_bindings,
+            is_namespace: false,
         });
         self.env.set("Math".into(), Value::Module(math_module_id));
 
@@ -382,66 +393,266 @@ impl<W: Write> Interpreter<W> {
         module_key: &str,
         module_path: &[String],
     ) -> Result<Value, EvalError> {
-        // Check if already in scope
-        if let Some(val) = self.env.get(module_key).cloned() {
-            return Ok(val);
+        // Check if a real module is already bound for this key.
+        if let Some(module_id) = self.module_binding_id(module_key) {
+            if !self.modules[module_id.0].is_namespace {
+                return Ok(Value::Module(module_id));
+            }
         }
 
-        // Try file-based loading
-        let file_path = self
-            .module_loader
-            .as_ref()
-            .and_then(|loader| loader.resolve(module_path));
-
-        if let Some(file_path) = file_path {
-            let loader = self.module_loader.as_mut().unwrap();
-            if loader.is_loaded(module_key) {
-                // Already loaded, should be in env
-                if let Some(val) = self.env.get(module_key).cloned() {
-                    return Ok(val);
+        // Try file-based loading.
+        let resolved = match self.module_loader.as_ref() {
+            Some(loader) => match loader.resolve(module_path) {
+                Ok(resolved) => resolved,
+                Err(err) => {
+                    let searched = if err.searched_paths.is_empty() {
+                        "no search roots configured".to_string()
+                    } else {
+                        err.searched_paths
+                            .iter()
+                            .map(|path| path.display().to_string())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    };
+                    return Err(EvalError::Panic(
+                        PanicKind::NameError,
+                        format!("module '{}' not found (searched: {})", module_key, searched),
+                    ));
                 }
+            },
+            None => {
+                return Err(EvalError::Panic(
+                    PanicKind::NameError,
+                    module_key.to_string(),
+                ));
             }
+        };
 
-            if !loader.mark_loading(module_key) {
-                return Err(EvalError::Panic(PanicKind::RuntimeError,format!(
-                    "circular dependency: {}",
-                    module_key
-                )));
+        if let Some(module_id) = self.loaded_module_files.get(&resolved.file_path).copied() {
+            if let Some(namespace_id) = self.namespace_module_binding(module_key) {
+                self.merge_namespace_bindings(module_id, namespace_id)?;
             }
+            let module_val = Value::Module(module_id);
+            self.env.set(module_key.to_string(), module_val.clone());
+            return Ok(module_val);
+        }
 
-            let source = std::fs::read_to_string(&file_path)
-                .map_err(|e| EvalError::Panic(PanicKind::RuntimeError,e.to_string()))?;
+        if let Some(cycle_start) = self
+            .module_load_stack
+            .iter()
+            .position(|(path, _)| *path == resolved.file_path)
+        {
+            let cycle = self.module_load_stack[cycle_start..]
+                .iter()
+                .map(|(_, name)| name.clone())
+                .chain(std::iter::once(module_key.to_string()))
+                .collect::<Vec<_>>()
+                .join(" -> ");
+            return Err(EvalError::Panic(
+                PanicKind::RuntimeError,
+                format!("circular dependency detected: {}", cycle),
+            ));
+        }
+
+        self.module_load_stack
+            .push((resolved.file_path.clone(), resolved.canonical_name.clone()));
+
+        let result = (|| -> Result<Value, EvalError> {
+            let source = std::fs::read_to_string(&resolved.file_path)
+                .map_err(|e| EvalError::Panic(PanicKind::RuntimeError, e.to_string()))?;
             let program = opal_parser::parse(&source).map_err(|e| {
-                EvalError::Panic(PanicKind::RuntimeError,format!("parse error in {}: {}", file_path.display(), e))
+                EvalError::Panic(
+                    PanicKind::RuntimeError,
+                    format!("parse error in {}: {}", resolved.file_path.display(), e),
+                )
             })?;
 
-            // Evaluate in a new scope, capture bindings as module
+            // Evaluate in a new scope, capture bindings as module.
             let was_loading = self.loading_module;
             self.loading_module = true;
             self.env.push_scope();
-            for stmt in &program.statements {
-                self.eval_stmt(stmt)?;
-            }
-            let bindings = self.env.current_scope_bindings();
+            let eval_result = (|| -> Result<HashMap<String, Value>, EvalError> {
+                for stmt in &program.statements {
+                    self.eval_stmt(stmt)?;
+                }
+                Ok(self.env.current_scope_bindings())
+            })();
             self.env.pop_scope();
             self.loading_module = was_loading;
 
+            let bindings = self.filter_module_exports(
+                &resolved.canonical_name,
+                &program.statements,
+                eval_result?,
+            )?;
+            let existing_namespace = self.namespace_module_binding(module_key);
             let module_id = ModuleId(self.modules.len());
             self.modules.push(StoredModule {
-                name: module_key.to_string(),
+                name: resolved.canonical_name.clone(),
                 bindings,
+                is_namespace: false,
             });
-            self.env
-                .set(module_key.to_string(), Value::Module(module_id));
-
-            if let Some(loader) = self.module_loader.as_mut() {
-                loader.mark_loaded(module_key);
+            if let Some(namespace_id) = existing_namespace {
+                self.merge_namespace_bindings(module_id, namespace_id)?;
             }
+            self.loaded_module_files
+                .insert(resolved.file_path.clone(), module_id);
 
-            return Ok(Value::Module(module_id));
+            let module_val = Value::Module(module_id);
+            self.env.set(module_key.to_string(), module_val.clone());
+            Ok(module_val)
+        })();
+
+        self.module_load_stack.pop();
+        result
+    }
+
+    fn filter_module_exports(
+        &self,
+        module_name: &str,
+        statements: &[Stmt],
+        bindings: HashMap<String, Value>,
+    ) -> Result<HashMap<String, Value>, EvalError> {
+        let exports = collect_export_names(statements);
+        let mut exported_bindings = HashMap::new();
+
+        for export_name in exports {
+            let Some(value) = bindings.get(&export_name).cloned() else {
+                return Err(EvalError::Panic(
+                    PanicKind::NameError,
+                    format!(
+                        "module '{}' exports undefined name '{}'",
+                        module_name, export_name
+                    ),
+                ));
+            };
+            exported_bindings.insert(export_name, value);
         }
 
-        Err(EvalError::Panic(PanicKind::NameError,module_key.to_string()))
+        Ok(exported_bindings)
+    }
+
+    fn module_binding_id(&self, module_key: &str) -> Option<ModuleId> {
+        match self.env.get(module_key) {
+            Some(Value::Module(id)) => Some(*id),
+            _ => None,
+        }
+    }
+
+    fn namespace_module_binding(&self, module_key: &str) -> Option<ModuleId> {
+        let module_id = self.module_binding_id(module_key)?;
+        self.modules[module_id.0].is_namespace.then_some(module_id)
+    }
+
+    fn ensure_namespace_module(&mut self, module_key: &str) -> Result<ModuleId, EvalError> {
+        if let Some(value) = self.env.get(module_key).cloned() {
+            return match value {
+                Value::Module(id) => Ok(id),
+                _ => Err(EvalError::Panic(
+                    PanicKind::RuntimeError,
+                    format!(
+                        "cannot materialize namespace '{}' because that name is already bound",
+                        module_key
+                    ),
+                )),
+            };
+        }
+
+        let module_id = ModuleId(self.modules.len());
+        self.modules.push(StoredModule {
+            name: module_key.to_string(),
+            bindings: HashMap::new(),
+            is_namespace: true,
+        });
+        self.env
+            .set(module_key.to_string(), Value::Module(module_id));
+        Ok(module_id)
+    }
+
+    fn bind_module_child(
+        &mut self,
+        parent_id: ModuleId,
+        child_name: &str,
+        child_id: ModuleId,
+    ) -> Result<(), EvalError> {
+        let parent = &mut self.modules[parent_id.0];
+        match parent.bindings.get(child_name) {
+            None => {
+                parent
+                    .bindings
+                    .insert(child_name.to_string(), Value::Module(child_id));
+                Ok(())
+            }
+            Some(Value::Module(existing_id)) if *existing_id == child_id => Ok(()),
+            Some(_) => Err(EvalError::Panic(
+                PanicKind::RuntimeError,
+                format!(
+                    "cannot bind module '{}.{}' because '{}' is already defined",
+                    parent.name, child_name, child_name
+                ),
+            )),
+        }
+    }
+
+    fn merge_namespace_bindings(
+        &mut self,
+        target_id: ModuleId,
+        namespace_id: ModuleId,
+    ) -> Result<(), EvalError> {
+        let namespace_bindings = self.modules[namespace_id.0].bindings.clone();
+        for (name, value) in namespace_bindings {
+            let target = &mut self.modules[target_id.0];
+            match target.bindings.get(&name) {
+                None => {
+                    target.bindings.insert(name, value);
+                }
+                Some(existing) if values_equal(existing, &value) => {}
+                Some(_) => {
+                    return Err(EvalError::Panic(
+                        PanicKind::RuntimeError,
+                        format!(
+                            "module '{}' already defines '{}', which conflicts with namespace materialization",
+                            target.name, name
+                        ),
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn materialize_module_namespace(
+        &mut self,
+        module_path: &[String],
+        leaf_module_id: ModuleId,
+    ) -> Result<(), EvalError> {
+        if module_path.len() < 2 {
+            return Ok(());
+        }
+
+        let mut current_name = String::new();
+        let mut parent_id = None;
+
+        for (idx, segment) in module_path.iter().enumerate() {
+            if idx > 0 {
+                current_name.push('.');
+            }
+            current_name.push_str(segment);
+
+            let current_id = if idx == module_path.len() - 1 {
+                leaf_module_id
+            } else {
+                self.ensure_namespace_module(&current_name)?
+            };
+
+            if let Some(parent_id) = parent_id {
+                self.bind_module_child(parent_id, segment, current_id)?;
+            }
+
+            parent_id = Some(current_id);
+        }
+
+        Ok(())
     }
 
     /// Apply import bindings from a module value according to the import kind.
@@ -449,15 +660,16 @@ impl<W: Write> Interpreter<W> {
         &mut self,
         kind: &ImportKind,
         module_key: &str,
+        module_path: &[String],
         module_val: Value,
     ) -> Result<(), EvalError> {
         let module_id = match module_val {
             Value::Module(id) => id,
             _ => {
-                return Err(EvalError::Panic(PanicKind::TypeError,format!(
-                    "'{}' is not a module",
-                    module_key
-                )));
+                return Err(EvalError::Panic(
+                    PanicKind::TypeError,
+                    format!("'{}' is not a module", module_key),
+                ));
             }
         };
 
@@ -469,14 +681,15 @@ impl<W: Write> Interpreter<W> {
                         let bind_name = item.alias.as_ref().unwrap_or(&item.name).clone();
                         self.env.set(bind_name, val.clone());
                     } else {
-                        return Err(EvalError::Panic(PanicKind::NameError,format!(
-                            "{}.{}",
-                            module_key, item.name
-                        )));
+                        return Err(EvalError::Panic(
+                            PanicKind::NameError,
+                            format!("{}.{}", module_key, item.name),
+                        ));
                     }
                 }
             }
             ImportKind::Module => {
+                self.materialize_module_namespace(module_path, module_id)?;
                 let bind_name = module_key
                     .rsplit('.')
                     .next()
@@ -485,6 +698,7 @@ impl<W: Write> Interpreter<W> {
                 self.env.set(bind_name, Value::Module(module_id));
             }
             ImportKind::ModuleAlias(alias) => {
+                self.materialize_module_namespace(module_path, module_id)?;
                 self.env.set(alias.clone(), Value::Module(module_id));
             }
         }
@@ -515,7 +729,8 @@ impl<W: Write> Interpreter<W> {
             methods: vec![],
             static_methods: vec![],
         });
-        self.env.set("Container".to_string(), Value::Class(container_class_id));
+        self.env
+            .set("Container".to_string(), Value::Class(container_class_id));
     }
 
     fn eval_stmt(&mut self, stmt: &Stmt) -> Result<(), EvalError> {
@@ -525,16 +740,21 @@ impl<W: Write> Interpreter<W> {
             }
             StmtKind::Assign { name, value } => {
                 let val = self.eval_expr(value)?;
-                self.env.assign(name.clone(), val)
-                    .map_err(|msg| EvalError::Panic(PanicKind::RuntimeError,msg))?;
+                self.env
+                    .assign(name.clone(), val)
+                    .map_err(|msg| EvalError::Panic(PanicKind::RuntimeError, msg))?;
             }
             StmtKind::CompoundAssign { name, op, value } => {
-                let current = self.env.get(name).cloned()
-                    .ok_or_else(|| EvalError::Panic(PanicKind::NameError,name.clone()))?;
+                let current = self
+                    .env
+                    .get(name)
+                    .cloned()
+                    .ok_or_else(|| EvalError::Panic(PanicKind::NameError, name.clone()))?;
                 let rhs = self.eval_expr(value)?;
                 let result = eval_binary_op(*op, current, rhs)?;
-                self.env.assign(name.clone(), result)
-                    .map_err(|msg| EvalError::Panic(PanicKind::RuntimeError,msg))?;
+                self.env
+                    .assign(name.clone(), result)
+                    .map_err(|msg| EvalError::Panic(PanicKind::RuntimeError, msg))?;
             }
             StmtKind::IndexAssign {
                 object,
@@ -548,22 +768,21 @@ impl<W: Write> Interpreter<W> {
                         .env
                         .get(name)
                         .cloned()
-                        .ok_or_else(|| EvalError::Panic(PanicKind::NameError,name.clone()))?;
+                        .ok_or_else(|| EvalError::Panic(PanicKind::NameError, name.clone()))?;
                     match (&mut obj, &idx) {
                         (Value::List(items), Value::Integer(i)) => {
-                            let i = if *i < 0 {
-                                items.len() as i64 + i
-                            } else {
-                                *i
-                            } as usize;
+                            let i = if *i < 0 { items.len() as i64 + i } else { *i } as usize;
                             if i < items.len() {
                                 items[i] = val;
                             } else {
-                                return Err(EvalError::Panic(PanicKind::RuntimeError,format!(
-                                    "index {} out of bounds for list of length {}",
-                                    i,
-                                    items.len()
-                                )));
+                                return Err(EvalError::Panic(
+                                    PanicKind::RuntimeError,
+                                    format!(
+                                        "index {} out of bounds for list of length {}",
+                                        i,
+                                        items.len()
+                                    ),
+                                ));
                             }
                         }
                         (Value::Dict(entries), Value::String(key)) => {
@@ -574,15 +793,18 @@ impl<W: Write> Interpreter<W> {
                             }
                         }
                         _ => {
-                            return Err(EvalError::Panic(PanicKind::TypeError,
+                            return Err(EvalError::Panic(
+                                PanicKind::TypeError,
                                 "invalid index assignment".into(),
                             ));
                         }
                     }
-                    self.env.assign(name.clone(), obj)
-                        .map_err(|msg| EvalError::Panic(PanicKind::RuntimeError,msg))?;
+                    self.env
+                        .assign(name.clone(), obj)
+                        .map_err(|msg| EvalError::Panic(PanicKind::RuntimeError, msg))?;
                 } else {
-                    return Err(EvalError::Panic(PanicKind::TypeError,
+                    return Err(EvalError::Panic(
+                        PanicKind::TypeError,
                         "index assignment target must be a variable".into(),
                     ));
                 }
@@ -595,19 +817,24 @@ impl<W: Write> Interpreter<W> {
                 }
                 // Then assign to names
                 for (name, val) in names.iter().zip(vals) {
-                    self.env.assign(name.clone(), val)
-                        .map_err(|msg| EvalError::Panic(PanicKind::RuntimeError,msg))?;
+                    self.env
+                        .assign(name.clone(), val)
+                        .map_err(|msg| EvalError::Panic(PanicKind::RuntimeError, msg))?;
                 }
             }
             StmtKind::DestructureAssign { pattern, value } => {
                 let val = self.eval_expr(value)?;
                 if let Some(bindings) = self.match_pattern(pattern, &val) {
                     for (name, bound_val) in bindings {
-                        self.env.assign(name, bound_val)
-                            .map_err(|msg| EvalError::Panic(PanicKind::RuntimeError,msg))?;
+                        self.env
+                            .assign(name, bound_val)
+                            .map_err(|msg| EvalError::Panic(PanicKind::RuntimeError, msg))?;
                     }
                 } else {
-                    return Err(EvalError::Panic(PanicKind::RuntimeError,"destructuring pattern did not match".into()));
+                    return Err(EvalError::Panic(
+                        PanicKind::RuntimeError,
+                        "destructuring pattern did not match".into(),
+                    ));
                 }
             }
             StmtKind::Let { name, value } => {
@@ -683,7 +910,9 @@ impl<W: Write> Interpreter<W> {
                             match result {
                                 Err(EvalError::Break) => break,
                                 Err(EvalError::Next) => continue,
-                                other => { other?; }
+                                other => {
+                                    other?;
+                                }
                             }
                         }
                     }
@@ -701,7 +930,9 @@ impl<W: Write> Interpreter<W> {
                             match result {
                                 Err(EvalError::Break) => break,
                                 Err(EvalError::Next) => continue,
-                                other => { other?; }
+                                other => {
+                                    other?;
+                                }
                             }
                         }
                     }
@@ -711,12 +942,28 @@ impl<W: Write> Interpreter<W> {
                         loop {
                             let next_val = self.call_method(iterator.clone(), "next", vec![])?;
                             // Check if it's None (Option enum variant index 1)
-                            if let Value::EnumVariant { enum_id, variant_index: 1, .. } = &next_val {
-                                if enum_id.0 == 1 { break; }
+                            if let Value::EnumVariant {
+                                enum_id,
+                                variant_index: 1,
+                                ..
+                            } = &next_val
+                            {
+                                if enum_id.0 == 1 {
+                                    break;
+                                }
                             }
                             // Extract value from Some(value)
-                            let item = if let Value::EnumVariant { enum_id, variant_index: 0, fields } = &next_val {
-                                if enum_id.0 == 1 { fields[0].clone() } else { next_val.clone() }
+                            let item = if let Value::EnumVariant {
+                                enum_id,
+                                variant_index: 0,
+                                fields,
+                            } = &next_val
+                            {
+                                if enum_id.0 == 1 {
+                                    fields[0].clone()
+                                } else {
+                                    next_val.clone()
+                                }
                             } else {
                                 next_val
                             };
@@ -742,7 +989,9 @@ impl<W: Write> Interpreter<W> {
                 match self.eval_block(body) {
                     Err(EvalError::Break) => break,
                     Err(EvalError::Next) => continue,
-                    other => { other?; }
+                    other => {
+                        other?;
+                    }
                 }
             },
             StmtKind::ClassDef {
@@ -753,9 +1002,19 @@ impl<W: Write> Interpreter<W> {
                 implements,
             } => {
                 let parent_id = if let Some(parent_name) = parent {
-                    let pid = self.env.get(parent_name)
-                        .and_then(|v| if let Value::Class(id) = v { Some(*id) } else { None })
-                        .ok_or_else(|| EvalError::Panic(PanicKind::NameError,parent_name.clone()))?;
+                    let pid = self
+                        .env
+                        .get(parent_name)
+                        .and_then(|v| {
+                            if let Value::Class(id) = v {
+                                Some(*id)
+                            } else {
+                                None
+                            }
+                        })
+                        .ok_or_else(|| {
+                            EvalError::Panic(PanicKind::NameError, parent_name.clone())
+                        })?;
                     Some(pid)
                 } else {
                     None
@@ -803,10 +1062,10 @@ impl<W: Write> Interpreter<W> {
                     let proto_id = match self.env.get(proto_name) {
                         Some(Value::Protocol(id)) => *id,
                         _ => {
-                            return Err(EvalError::Panic(PanicKind::NameError,format!(
-                                "protocol {}",
-                                proto_name
-                            )));
+                            return Err(EvalError::Panic(
+                                PanicKind::NameError,
+                                format!("protocol {}", proto_name),
+                            ));
                         }
                     };
                     let proto = self.protocols[proto_id.0].clone();
@@ -822,10 +1081,13 @@ impl<W: Write> Interpreter<W> {
                     for required in &proto.required_methods {
                         let has_it = stored_methods.iter().any(|m| m.name == *required);
                         if !has_it {
-                            return Err(EvalError::Panic(PanicKind::RuntimeError,format!(
-                                "class '{}' implements '{}' but missing required method '{}'",
-                                name, proto_name, required
-                            )));
+                            return Err(EvalError::Panic(
+                                PanicKind::RuntimeError,
+                                format!(
+                                    "class '{}' implements '{}' but missing required method '{}'",
+                                    name, proto_name, required
+                                ),
+                            ));
                         }
                     }
                 }
@@ -852,12 +1114,20 @@ impl<W: Write> Interpreter<W> {
                         default_methods.push(StoredFunction {
                             name: method.name.clone(),
                             params: method.params.iter().map(|p| p.name.clone()).collect(),
-                            param_types: method.params.iter().map(|p| p.type_annotation.clone()).collect(),
-                            param_defaults: method.params.iter().map(|p| p.default.clone()).collect(),
+                            param_types: method
+                                .params
+                                .iter()
+                                .map(|p| p.type_annotation.clone())
+                                .collect(),
+                            param_defaults: method
+                                .params
+                                .iter()
+                                .map(|p| p.default.clone())
+                                .collect(),
                             body: body.clone(),
                             captured_env: None,
                             annotations: vec![],
-                    visibility: Visibility::Public,
+                            visibility: Visibility::Public,
                         });
                     } else {
                         required_methods.push(method.name.clone());
@@ -879,25 +1149,36 @@ impl<W: Write> Interpreter<W> {
                     for stmt in body {
                         self.eval_stmt(stmt)?;
                     }
-                    // Collect all bindings from the module scope
-                    let bindings = self.env.current_scope_bindings();
+                    // Collect only explicitly exported bindings from the module scope.
+                    let bindings =
+                        self.filter_module_exports(name, body, self.env.current_scope_bindings())?;
                     self.env.pop_scope();
 
                     let module_id = ModuleId(self.modules.len());
                     self.modules.push(StoredModule {
                         name: name.clone(),
                         bindings,
+                        is_namespace: false,
                     });
                     self.env.set(name.clone(), Value::Module(module_id));
                 } else {
                     // New behavior: treat as class with methods
                     let mut stored_methods = Vec::new();
                     for stmt in body {
-                        if let StmtKind::FuncDef { name: mname, params, body: mbody, .. } = &stmt.kind {
+                        if let StmtKind::FuncDef {
+                            name: mname,
+                            params,
+                            body: mbody,
+                            ..
+                        } = &stmt.kind
+                        {
                             stored_methods.push(StoredFunction {
                                 name: mname.clone(),
                                 params: params.iter().map(|p| p.name.clone()).collect(),
-                                param_types: params.iter().map(|p| p.type_annotation.clone()).collect(),
+                                param_types: params
+                                    .iter()
+                                    .map(|p| p.type_annotation.clone())
+                                    .collect(),
                                 param_defaults: params.iter().map(|p| p.default.clone()).collect(),
                                 body: mbody.clone(),
                                 captured_env: None,
@@ -910,7 +1191,10 @@ impl<W: Write> Interpreter<W> {
                     self.classes.push(StoredClass {
                         name: name.clone(),
                         parent: None,
-                        needs: needs.iter().map(|n| (n.name.clone(), n.type_annotation.clone(), n.default.clone())).collect(),
+                        needs: needs
+                            .iter()
+                            .map(|n| (n.name.clone(), n.type_annotation.clone(), n.default.clone()))
+                            .collect(),
                         methods: stored_methods,
                         static_methods: vec![],
                     });
@@ -918,18 +1202,17 @@ impl<W: Write> Interpreter<W> {
                 }
             }
             StmtKind::FromImport { module_path, names } => {
-                let module_val = self
-                    .env
-                    .get(module_path)
-                    .cloned()
-                    .ok_or_else(|| EvalError::Panic(PanicKind::NameError,module_path.clone()))?;
+                let module_val =
+                    self.env.get(module_path).cloned().ok_or_else(|| {
+                        EvalError::Panic(PanicKind::NameError, module_path.clone())
+                    })?;
                 let module_id = match module_val {
                     Value::Module(id) => id,
                     _ => {
-                        return Err(EvalError::Panic(PanicKind::TypeError,format!(
-                            "'{}' is not a module",
-                            module_path
-                        )));
+                        return Err(EvalError::Panic(
+                            PanicKind::TypeError,
+                            format!("'{}' is not a module", module_path),
+                        ));
                     }
                 };
                 let module = self.modules[module_id.0].clone();
@@ -937,19 +1220,22 @@ impl<W: Write> Interpreter<W> {
                     if let Some(val) = module.bindings.get(name) {
                         self.env.set(name.clone(), val.clone());
                     } else {
-                        return Err(EvalError::Panic(PanicKind::NameError,format!(
-                            "{}.{}",
-                            module_path, name
-                        )));
+                        return Err(EvalError::Panic(
+                            PanicKind::NameError,
+                            format!("{}.{}", module_path, name),
+                        ));
                     }
                 }
             }
             StmtKind::Import(imp) => {
                 let module_key = imp.path.join(".");
                 let module_val = self.ensure_module_loaded(&module_key, &imp.path)?;
-                self.apply_import(&imp.kind, &module_key, module_val)?;
+                self.apply_import(&imp.kind, &module_key, &imp.path, module_val)?;
             }
-            StmtKind::Annotated { annotations, statement } => {
+            StmtKind::Annotated {
+                annotations,
+                statement,
+            } => {
                 // Evaluate annotation values and store them
                 let mut stored_anns: Vec<Vec<(String, Value)>> = Vec::new();
                 for ann in annotations {
@@ -984,6 +1270,8 @@ impl<W: Write> Interpreter<W> {
             }
             StmtKind::TypeAlias { name, definition } => {
                 self.type_aliases.insert(name.clone(), definition.clone());
+                self.env
+                    .set(name.clone(), Value::Type(TypeInfo::Alias(name.clone())));
             }
             StmtKind::EnumDef {
                 name,
@@ -996,17 +1284,27 @@ impl<W: Write> Interpreter<W> {
                     .iter()
                     .map(|v| StoredEnumVariant {
                         name: v.name.clone(),
-                        fields: v.fields.iter().map(|f| (f.name.clone(), f.type_annotation.clone())).collect(),
+                        fields: v
+                            .fields
+                            .iter()
+                            .map(|f| (f.name.clone(), f.type_annotation.clone()))
+                            .collect(),
                     })
                     .collect();
                 let mut stored_methods: Vec<StoredFunction> = methods
                     .iter()
                     .filter_map(|m| {
-                        if let StmtKind::FuncDef { name, params, body, .. } = &m.kind {
+                        if let StmtKind::FuncDef {
+                            name, params, body, ..
+                        } = &m.kind
+                        {
                             Some(StoredFunction {
                                 name: name.clone(),
                                 params: params.iter().map(|p| p.name.clone()).collect(),
-                                param_types: params.iter().map(|p| p.type_annotation.clone()).collect(),
+                                param_types: params
+                                    .iter()
+                                    .map(|p| p.type_annotation.clone())
+                                    .collect(),
                                 param_defaults: params.iter().map(|p| p.default.clone()).collect(),
                                 body: body.clone(),
                                 captured_env: None,
@@ -1020,14 +1318,16 @@ impl<W: Write> Interpreter<W> {
                     .collect();
 
                 // Apply protocol defaults and check required methods
-                let method_names: Vec<String> = stored_methods.iter().map(|m| m.name.clone()).collect();
+                let method_names: Vec<String> =
+                    stored_methods.iter().map(|m| m.name.clone()).collect();
                 for proto_name in implements {
                     let proto_id = match self.env.get(proto_name) {
                         Some(Value::Protocol(id)) => *id,
                         _ => {
-                            return Err(EvalError::Panic(PanicKind::NameError,format!(
-                                "protocol {}", proto_name
-                            )));
+                            return Err(EvalError::Panic(
+                                PanicKind::NameError,
+                                format!("protocol {}", proto_name),
+                            ));
                         }
                     };
                     let proto = self.protocols[proto_id.0].clone();
@@ -1041,10 +1341,13 @@ impl<W: Write> Interpreter<W> {
                     for required in &proto.required_methods {
                         let has_it = stored_methods.iter().any(|m| m.name == *required);
                         if !has_it {
-                            return Err(EvalError::Panic(PanicKind::RuntimeError,format!(
-                                "enum '{}' does not implement required method '{}' from protocol '{}'",
-                                name, required, proto_name
-                            )));
+                            return Err(EvalError::Panic(
+                                PanicKind::RuntimeError,
+                                format!(
+                                    "enum '{}' does not implement required method '{}' from protocol '{}'",
+                                    name, required, proto_name
+                                ),
+                            ));
                         }
                     }
                 }
@@ -1055,7 +1358,8 @@ impl<W: Write> Interpreter<W> {
                     methods: stored_methods,
                     implements: implements.clone(),
                 });
-                self.env.set(name.clone(), Value::Type(TypeInfo::Enum(enum_id)));
+                self.env
+                    .set(name.clone(), Value::Type(TypeInfo::Enum(enum_id)));
             }
             StmtKind::ExportBlock(_) => {
                 // Export blocks are metadata; no runtime effect for now
@@ -1071,13 +1375,13 @@ impl<W: Write> Interpreter<W> {
                         None => Value::String("requires condition failed".into()),
                     };
                     let error_val = self.wrap_in_error(msg);
-                    return Err(EvalError::Raise(error_val));
+                    return Err(EvalError::Fail(error_val));
                 }
             }
-            StmtKind::Raise(expr) => {
+            StmtKind::Fail(expr) => {
                 let val = self.eval_expr(expr)?;
                 let error_val = self.wrap_in_error(val);
-                return Err(EvalError::Raise(error_val));
+                return Err(EvalError::Fail(error_val));
             }
             StmtKind::ActorDef {
                 name,
@@ -1089,7 +1393,10 @@ impl<W: Write> Interpreter<W> {
                 let def_idx = self.actor_defs.len();
                 self.actor_defs.push(StoredActorDef {
                     name: name.clone(),
-                    needs: needs.iter().map(|n| (n.name.clone(), n.type_annotation.clone(), n.default.clone())).collect(),
+                    needs: needs
+                        .iter()
+                        .map(|n| (n.name.clone(), n.type_annotation.clone(), n.default.clone()))
+                        .collect(),
                     init: init.clone(),
                     receive_cases: receive_cases.clone(),
                 });
@@ -1114,7 +1421,8 @@ impl<W: Write> Interpreter<W> {
                 } else if let Some(instance_id) = self.current_self {
                     // Check immutability for model instances
                     if self.frozen_instances.contains(&instance_id) {
-                        return Err(EvalError::Panic(PanicKind::RuntimeError,
+                        return Err(EvalError::Panic(
+                            PanicKind::RuntimeError,
                             "cannot modify fields of an immutable model instance".into(),
                         ));
                     }
@@ -1122,7 +1430,8 @@ impl<W: Write> Interpreter<W> {
                         .fields
                         .insert(field.clone(), val);
                 } else {
-                    return Err(EvalError::Panic(PanicKind::RuntimeError,
+                    return Err(EvalError::Panic(
+                        PanicKind::RuntimeError,
                         "instance variable assignment outside of instance/actor context".into(),
                     ));
                 }
@@ -1139,7 +1448,7 @@ impl<W: Write> Interpreter<W> {
                 let macro_id = match self.env.get(name) {
                     Some(Value::Macro(id)) => *id,
                     _ => {
-                        return Err(EvalError::Panic(PanicKind::NameError,format!("@{}", name)));
+                        return Err(EvalError::Panic(PanicKind::NameError, format!("@{}", name)));
                     }
                 };
                 let mac = self.macros[macro_id.0].clone();
@@ -1287,9 +1596,10 @@ impl<W: Write> Interpreter<W> {
                 let proto_id = match self.env.get(protocol_name) {
                     Some(Value::Protocol(id)) => *id,
                     _ => {
-                        return Err(EvalError::Panic(PanicKind::NameError,format!(
-                            "protocol {}", protocol_name
-                        )));
+                        return Err(EvalError::Panic(
+                            PanicKind::NameError,
+                            format!("protocol {}", protocol_name),
+                        ));
                     }
                 };
                 let proto = self.protocols[proto_id.0].clone();
@@ -1300,13 +1610,20 @@ impl<W: Write> Interpreter<W> {
                     Some(Value::Class(class_id)) => {
                         // Add methods to the class
                         for m in &stored_methods {
-                            if !self.classes[class_id.0].methods.iter().any(|em| em.name == m.name) {
+                            if !self.classes[class_id.0]
+                                .methods
+                                .iter()
+                                .any(|em| em.name == m.name)
+                            {
                                 self.classes[class_id.0].methods.push(m.clone());
                             }
                         }
                         // Copy protocol default methods
-                        let class_method_names: Vec<String> =
-                            self.classes[class_id.0].methods.iter().map(|m| m.name.clone()).collect();
+                        let class_method_names: Vec<String> = self.classes[class_id.0]
+                            .methods
+                            .iter()
+                            .map(|m| m.name.clone())
+                            .collect();
                         for default in &proto.default_methods {
                             if !class_method_names.contains(&default.name) {
                                 self.classes[class_id.0].methods.push(default.clone());
@@ -1314,25 +1631,38 @@ impl<W: Write> Interpreter<W> {
                         }
                         // Check required methods
                         for required in &proto.required_methods {
-                            let has_it = self.classes[class_id.0].methods.iter().any(|m| m.name == *required);
+                            let has_it = self.classes[class_id.0]
+                                .methods
+                                .iter()
+                                .any(|m| m.name == *required);
                             if !has_it {
-                                return Err(EvalError::Panic(PanicKind::RuntimeError,format!(
-                                    "'{}' implements '{}' but missing required method '{}'",
-                                    type_name, protocol_name, required
-                                )));
+                                return Err(EvalError::Panic(
+                                    PanicKind::RuntimeError,
+                                    format!(
+                                        "'{}' implements '{}' but missing required method '{}'",
+                                        type_name, protocol_name, required
+                                    ),
+                                ));
                             }
                         }
                     }
                     Some(Value::Type(TypeInfo::Enum(enum_id))) => {
                         // Add methods to the enum
                         for m in &stored_methods {
-                            if !self.enums[enum_id.0].methods.iter().any(|em| em.name == m.name) {
+                            if !self.enums[enum_id.0]
+                                .methods
+                                .iter()
+                                .any(|em| em.name == m.name)
+                            {
                                 self.enums[enum_id.0].methods.push(m.clone());
                             }
                         }
                         // Copy protocol default methods
-                        let enum_method_names: Vec<String> =
-                            self.enums[enum_id.0].methods.iter().map(|m| m.name.clone()).collect();
+                        let enum_method_names: Vec<String> = self.enums[enum_id.0]
+                            .methods
+                            .iter()
+                            .map(|m| m.name.clone())
+                            .collect();
                         for default in &proto.default_methods {
                             if !enum_method_names.contains(&default.name) {
                                 self.enums[enum_id.0].methods.push(default.clone());
@@ -1340,12 +1670,18 @@ impl<W: Write> Interpreter<W> {
                         }
                         // Check required methods
                         for required in &proto.required_methods {
-                            let has_it = self.enums[enum_id.0].methods.iter().any(|m| m.name == *required);
+                            let has_it = self.enums[enum_id.0]
+                                .methods
+                                .iter()
+                                .any(|m| m.name == *required);
                             if !has_it {
-                                return Err(EvalError::Panic(PanicKind::RuntimeError,format!(
-                                    "'{}' implements '{}' but missing required method '{}'",
-                                    type_name, protocol_name, required
-                                )));
+                                return Err(EvalError::Panic(
+                                    PanicKind::RuntimeError,
+                                    format!(
+                                        "'{}' implements '{}' but missing required method '{}'",
+                                        type_name, protocol_name, required
+                                    ),
+                                ));
                             }
                         }
                         // Record that this enum implements the protocol
@@ -1354,9 +1690,10 @@ impl<W: Write> Interpreter<W> {
                         }
                     }
                     _ => {
-                        return Err(EvalError::Panic(PanicKind::NameError,format!(
-                            "type {}", type_name
-                        )));
+                        return Err(EvalError::Panic(
+                            PanicKind::NameError,
+                            format!("type {}", type_name),
+                        ));
                     }
                 }
             }
@@ -1365,13 +1702,20 @@ impl<W: Write> Interpreter<W> {
                 self.classes.push(StoredClass {
                     name: name.clone(),
                     parent: None,
-                    needs: fields.iter().map(|f| (f.name.clone(), f.type_annotation.clone(), None)).collect(),
+                    needs: fields
+                        .iter()
+                        .map(|f| (f.name.clone(), f.type_annotation.clone(), None))
+                        .collect(),
                     methods: vec![],
                     static_methods: vec![],
                 });
                 self.env.set(name.clone(), Value::Class(class_id));
             }
-            StmtKind::OnHandler { event_name, param, body } => {
+            StmtKind::OnHandler {
+                event_name,
+                param,
+                body,
+            } => {
                 self.event_handlers
                     .entry(event_name.clone())
                     .or_insert_with(Vec::new)
@@ -1384,7 +1728,12 @@ impl<W: Write> Interpreter<W> {
                         let class_id = self.instances[iid.0].class_id;
                         self.classes[class_id.0].name.clone()
                     }
-                    _ => return Err(EvalError::Panic(PanicKind::TypeError,"emit requires an instance".into())),
+                    _ => {
+                        return Err(EvalError::Panic(
+                            PanicKind::TypeError,
+                            "emit requires an instance".into(),
+                        ));
+                    }
                 };
                 if let Some(handlers) = self.event_handlers.get(&class_name).cloned() {
                     for (param_name, handler_body) in handlers {
@@ -1426,7 +1775,7 @@ impl<W: Write> Interpreter<W> {
                 self.env
                     .get(name)
                     .cloned()
-                    .ok_or_else(|| EvalError::Panic(PanicKind::NameError,name.clone()))
+                    .ok_or_else(|| EvalError::Panic(PanicKind::NameError, name.clone()))
             }
 
             ExprKind::FString(parts) => {
@@ -1468,7 +1817,7 @@ impl<W: Write> Interpreter<W> {
                 self.env
                     .get(name)
                     .cloned()
-                    .ok_or_else(|| EvalError::Panic(PanicKind::NameError,format!("${}", name)))
+                    .ok_or_else(|| EvalError::Panic(PanicKind::NameError, format!("${}", name)))
             }
 
             ExprKind::List(elements) => {
@@ -1479,15 +1828,29 @@ impl<W: Write> Interpreter<W> {
                 Ok(Value::List(values))
             }
 
-            ExprKind::ListComprehension { expr, var, iterable, condition } => {
+            ExprKind::ListComprehension {
+                expr,
+                var,
+                iterable,
+                condition,
+            } => {
                 let iter_val = self.eval_expr(iterable)?;
                 let items = match iter_val {
                     Value::List(items) => items,
-                    Value::Range { start, end, inclusive } => {
+                    Value::Range {
+                        start,
+                        end,
+                        inclusive,
+                    } => {
                         let end_val = if inclusive { end + 1 } else { end };
                         (start..end_val).map(Value::Integer).collect()
                     }
-                    _ => return Err(EvalError::Panic(PanicKind::TypeError,"comprehension requires an iterable".into())),
+                    _ => {
+                        return Err(EvalError::Panic(
+                            PanicKind::TypeError,
+                            "comprehension requires an iterable".into(),
+                        ));
+                    }
                 };
                 let mut result = Vec::new();
                 self.env.push_scope();
@@ -1518,19 +1881,28 @@ impl<W: Write> Interpreter<W> {
                     (Value::Float(n), "Int") => Ok(Value::Integer(n as i64)),
                     // String as Int → parse
                     (Value::String(s), "Int") => {
-                        s.trim().parse::<i64>()
-                            .map(Value::Integer)
-                            .map_err(|_| EvalError::Panic(PanicKind::RuntimeError,format!("cannot cast '{}' to Int", s)))
+                        s.trim().parse::<i64>().map(Value::Integer).map_err(|_| {
+                            EvalError::Panic(
+                                PanicKind::RuntimeError,
+                                format!("cannot cast '{}' to Int", s),
+                            )
+                        })
                     }
                     // String as Float → parse
                     (Value::String(s), "Float") => {
-                        s.trim().parse::<f64>()
-                            .map(Value::Float)
-                            .map_err(|_| EvalError::Panic(PanicKind::RuntimeError,format!("cannot cast '{}' to Float", s)))
+                        s.trim().parse::<f64>().map(Value::Float).map_err(|_| {
+                            EvalError::Panic(
+                                PanicKind::RuntimeError,
+                                format!("cannot cast '{}' to Float", s),
+                            )
+                        })
                     }
                     // anything as String → format_value
                     (v, "String") => Ok(Value::String(self.format_value(&v))),
-                    (_, t) => Err(EvalError::Panic(PanicKind::TypeError,format!("unsupported cast to '{}'", t))),
+                    (_, t) => Err(EvalError::Panic(
+                        PanicKind::TypeError,
+                        format!("unsupported cast to '{}'", t),
+                    )),
                 }
             }
 
@@ -1545,14 +1917,21 @@ impl<W: Write> Interpreter<W> {
             }
 
             ExprKind::Super(args) => {
-                let method_name = self.current_method_name.clone()
-                    .ok_or_else(|| EvalError::Panic(PanicKind::RuntimeError,"super() outside of method".into()))?;
-                let class_id = self.current_class_id
-                    .ok_or_else(|| EvalError::Panic(PanicKind::RuntimeError,"super() outside of class".into()))?;
-                let parent_id = self.classes[class_id.0].parent
-                    .ok_or_else(|| EvalError::Panic(PanicKind::RuntimeError,"super() in class with no parent".into()))?;
-                let instance_id = self.current_self
-                    .ok_or_else(|| EvalError::Panic(PanicKind::RuntimeError,"super() with no self".into()))?;
+                let method_name = self.current_method_name.clone().ok_or_else(|| {
+                    EvalError::Panic(PanicKind::RuntimeError, "super() outside of method".into())
+                })?;
+                let class_id = self.current_class_id.ok_or_else(|| {
+                    EvalError::Panic(PanicKind::RuntimeError, "super() outside of class".into())
+                })?;
+                let parent_id = self.classes[class_id.0].parent.ok_or_else(|| {
+                    EvalError::Panic(
+                        PanicKind::RuntimeError,
+                        "super() in class with no parent".into(),
+                    )
+                })?;
+                let instance_id = self.current_self.ok_or_else(|| {
+                    EvalError::Panic(PanicKind::RuntimeError, "super() with no self".into())
+                })?;
 
                 // Evaluate arguments
                 let mut eval_args = Vec::new();
@@ -1572,8 +1951,12 @@ impl<W: Write> Interpreter<W> {
                     search_id = pc.parent;
                 }
 
-                let (func, found_class_id) = found
-                    .ok_or_else(|| EvalError::Panic(PanicKind::RuntimeError,format!("super(): no '{}' in parent", method_name)))?;
+                let (func, found_class_id) = found.ok_or_else(|| {
+                    EvalError::Panic(
+                        PanicKind::RuntimeError,
+                        format!("super(): no '{}' in parent", method_name),
+                    )
+                })?;
 
                 // Call the parent method with current self
                 let prev_method = self.current_method_name.take();
@@ -1582,7 +1965,8 @@ impl<W: Write> Interpreter<W> {
                 self.current_class_id = Some(found_class_id);
 
                 self.env.push_scope();
-                self.env.set("self".to_string(), Value::Instance(instance_id));
+                self.env
+                    .set("self".to_string(), Value::Instance(instance_id));
                 for (i, param) in func.params.iter().enumerate() {
                     if let Some(val) = eval_args.get(i) {
                         self.env.set(param.clone(), val.clone());
@@ -1621,7 +2005,9 @@ impl<W: Write> Interpreter<W> {
                     let left_val = self.eval_expr(left)?;
                     let right_val = self.eval_expr(right)?;
                     let result = match &right_val {
-                        Value::List(items) => items.iter().any(|item| values_equal(&left_val, item)),
+                        Value::List(items) => {
+                            items.iter().any(|item| values_equal(&left_val, item))
+                        }
                         Value::Dict(entries) => {
                             if let Value::String(key) = &left_val {
                                 entries.iter().any(|(k, _)| k == key)
@@ -1636,7 +2022,11 @@ impl<W: Write> Interpreter<W> {
                                 false
                             }
                         }
-                        Value::Range { start, end, inclusive } => {
+                        Value::Range {
+                            start,
+                            end,
+                            inclusive,
+                        } => {
                             if let Value::Integer(n) = &left_val {
                                 if *inclusive {
                                     *n >= *start && *n <= *end
@@ -1647,9 +2037,12 @@ impl<W: Write> Interpreter<W> {
                                 false
                             }
                         }
-                        _ => return Err(EvalError::Panic(PanicKind::TypeError,format!(
-                            "cannot use 'in' with {:?}", right_val
-                        ))),
+                        _ => {
+                            return Err(EvalError::Panic(
+                                PanicKind::TypeError,
+                                format!("cannot use 'in' with {:?}", right_val),
+                            ));
+                        }
                     };
                     return Ok(Value::Bool(if *op == BinOp::In { result } else { !result }));
                 }
@@ -1658,7 +2051,12 @@ impl<W: Write> Interpreter<W> {
                     let left_val = self.eval_expr(left)?;
                     let type_name = match &right.kind {
                         ExprKind::Identifier(name) => name.clone(),
-                        _ => return Err(EvalError::Panic(PanicKind::TypeError,"is operator requires a type name".into())),
+                        _ => {
+                            return Err(EvalError::Panic(
+                                PanicKind::TypeError,
+                                "is operator requires a type name".into(),
+                            ));
+                        }
                     };
                     let result = self.value_is_type(&left_val, &type_name);
                     return Ok(Value::Bool(if *op == BinOp::Is { result } else { !result }));
@@ -1702,7 +2100,8 @@ impl<W: Write> Interpreter<W> {
                     if let Some(method) = op_method {
                         match self.call_method(lval.clone(), method, vec![(None, rval.clone())]) {
                             Ok(v) => return Ok(v),
-                            Err(EvalError::Panic(PanicKind::TypeError,msg)) if msg.contains("no method") => {} // fall through to default
+                            Err(EvalError::Panic(PanicKind::TypeError, msg))
+                                if msg.contains("no method") => {} // fall through to default
                             Err(e) => return Err(e),
                         }
                     }
@@ -1751,17 +2150,19 @@ impl<W: Write> Interpreter<W> {
                         .fields
                         .get(field)
                         .cloned()
-                        .ok_or_else(|| EvalError::Panic(PanicKind::NameError,format!(".{}", field)));
+                        .ok_or_else(|| {
+                            EvalError::Panic(PanicKind::NameError, format!(".{}", field))
+                        });
                 }
-                let instance_id = self
-                    .current_self
-                    .ok_or_else(|| EvalError::Panic(PanicKind::RuntimeError,"no self in scope".into()))?;
+                let instance_id = self.current_self.ok_or_else(|| {
+                    EvalError::Panic(PanicKind::RuntimeError, "no self in scope".into())
+                })?;
                 let instance = &self.instances[instance_id.0];
                 instance
                     .fields
                     .get(field)
                     .cloned()
-                    .ok_or_else(|| EvalError::Panic(PanicKind::NameError,format!(".{}", field)))
+                    .ok_or_else(|| EvalError::Panic(PanicKind::NameError, format!(".{}", field)))
             }
 
             ExprKind::Dict(entries) => {
@@ -1774,7 +2175,8 @@ impl<W: Write> Interpreter<W> {
                             match k {
                                 Value::String(s) => s,
                                 _ => {
-                                    return Err(EvalError::Panic(PanicKind::TypeError,
+                                    return Err(EvalError::Panic(
+                                        PanicKind::TypeError,
                                         "dict key must be a string or identifier".into(),
                                     ));
                                 }
@@ -1800,7 +2202,10 @@ impl<W: Write> Interpreter<W> {
                         end: *e,
                         inclusive: *inclusive,
                     }),
-                    _ => Err(EvalError::Panic(PanicKind::TypeError,"range bounds must be integers".into())),
+                    _ => Err(EvalError::Panic(
+                        PanicKind::TypeError,
+                        "range bounds must be integers".into(),
+                    )),
                 }
             }
 
@@ -1809,11 +2214,7 @@ impl<W: Write> Interpreter<W> {
                 let idx = self.eval_expr(index)?;
                 match (&obj, &idx) {
                     (Value::List(items), Value::Integer(i)) => {
-                        let i = if *i < 0 {
-                            items.len() as i64 + i
-                        } else {
-                            *i
-                        } as usize;
+                        let i = if *i < 0 { items.len() as i64 + i } else { *i } as usize;
                         Ok(items.get(i).cloned().unwrap_or(Value::Null))
                     }
                     (Value::Dict(entries), Value::String(key)) => Ok(entries
@@ -1822,17 +2223,16 @@ impl<W: Write> Interpreter<W> {
                         .map(|(_, v)| v.clone())
                         .unwrap_or(Value::Null)),
                     (Value::String(s), Value::Integer(i)) => {
-                        let i = if *i < 0 {
-                            s.len() as i64 + i
-                        } else {
-                            *i
-                        } as usize;
+                        let i = if *i < 0 { s.len() as i64 + i } else { *i } as usize;
                         Ok(s.chars()
                             .nth(i)
                             .map(|c| Value::String(c.to_string()))
                             .unwrap_or(Value::Null))
                     }
-                    _ => Err(EvalError::Panic(PanicKind::TypeError,"invalid index operation".into())),
+                    _ => Err(EvalError::Panic(
+                        PanicKind::TypeError,
+                        "invalid index operation".into(),
+                    )),
                 }
             }
 
@@ -1844,10 +2244,10 @@ impl<W: Write> Interpreter<W> {
                         if let Some(val) = instance.fields.get(field) {
                             Ok(val.clone())
                         } else {
-                            Err(EvalError::Panic(PanicKind::NameError,format!(
-                                "instance has no field '{}'",
-                                field
-                            )))
+                            Err(EvalError::Panic(
+                                PanicKind::NameError,
+                                format!("instance has no field '{}'", field),
+                            ))
                         }
                     }
                     Value::Module(id) => {
@@ -1855,16 +2255,21 @@ impl<W: Write> Interpreter<W> {
                         if let Some(val) = module.bindings.get(field) {
                             Ok(val.clone())
                         } else {
-                            Err(EvalError::Panic(PanicKind::NameError,format!(
-                                "module has no member '{}'",
-                                field
-                            )))
+                            Err(EvalError::Panic(
+                                PanicKind::NameError,
+                                format!("module has no member '{}'", field),
+                            ))
                         }
                     }
                     Value::Type(TypeInfo::Enum(enum_id)) => {
                         let e = &self.enums[enum_id.0].clone();
                         // Check if field is a variant name
-                        if let Some((vi, variant)) = e.variants.iter().enumerate().find(|(_, v)| v.name == *field) {
+                        if let Some((vi, variant)) = e
+                            .variants
+                            .iter()
+                            .enumerate()
+                            .find(|(_, v)| v.name == *field)
+                        {
                             if variant.fields.is_empty() {
                                 // Singleton variant — return directly
                                 return Ok(Value::EnumVariant {
@@ -1880,34 +2285,44 @@ impl<W: Write> Interpreter<W> {
                         // Fall through to Type methods (.name, .fields)
                         match field.as_str() {
                             "name" => Ok(Value::String(e.name.clone())),
-                            _ => Err(EvalError::Panic(PanicKind::TypeError,format!("enum '{}' has no variant or field '{}'", e.name, field))),
+                            _ => Err(EvalError::Panic(
+                                PanicKind::TypeError,
+                                format!("enum '{}' has no variant or field '{}'", e.name, field),
+                            )),
                         }
                     }
-                    Value::Type(info) => {
-                        match field.as_str() {
-                            "name" => Ok(Value::String(self.type_info_name(info))),
-                            "fields" => {
-                                match info {
-                                    TypeInfo::Class(id) => {
-                                        let class = &self.classes[id.0];
-                                        let field_list: Vec<Value> = class.needs.iter().map(|(name, type_ann, _)| {
-                                            Value::List(vec![
-                                                Value::Symbol(name.clone()),
-                                                Value::String(type_ann.clone().unwrap_or_else(|| "Any".to_string())),
-                                            ])
-                                        }).collect();
-                                        Ok(Value::List(field_list))
-                                    }
-                                    _ => Ok(Value::List(vec![])),
-                                }
+                    Value::Type(info) => match field.as_str() {
+                        "name" => Ok(Value::String(self.type_info_name(info))),
+                        "fields" => match info {
+                            TypeInfo::Class(id) => {
+                                let class = &self.classes[id.0];
+                                let field_list: Vec<Value> = class
+                                    .needs
+                                    .iter()
+                                    .map(|(name, type_ann, _)| {
+                                        Value::List(vec![
+                                            Value::Symbol(name.clone()),
+                                            Value::String(
+                                                type_ann
+                                                    .clone()
+                                                    .unwrap_or_else(|| "Any".to_string()),
+                                            ),
+                                        ])
+                                    })
+                                    .collect();
+                                Ok(Value::List(field_list))
                             }
-                            _ => Err(EvalError::Panic(PanicKind::TypeError,format!("Type has no field '{}'", field))),
-                        }
-                    }
-                    _ => Err(EvalError::Panic(PanicKind::TypeError,format!(
-                        "cannot access field '{}' on this value",
-                        field
-                    ))),
+                            _ => Ok(Value::List(vec![])),
+                        },
+                        _ => Err(EvalError::Panic(
+                            PanicKind::TypeError,
+                            format!("Type has no field '{}'", field),
+                        )),
+                    },
+                    _ => Err(EvalError::Panic(
+                        PanicKind::TypeError,
+                        format!("cannot access field '{}' on this value", field),
+                    )),
                 }
             }
 
@@ -1963,21 +2378,30 @@ impl<W: Write> Interpreter<W> {
                     let e = &self.enums[enum_id.0];
                     let has_wildcard = cases.iter().any(|c| matches!(c.pattern, Pattern::Wildcard));
                     if !has_wildcard {
-                        let covered: Vec<&str> = cases.iter().filter_map(|c| {
-                            if let Pattern::EnumVariant(_, vname, _) = &c.pattern {
-                                Some(vname.as_str())
-                            } else if let Pattern::Constructor(vname, _) = &c.pattern {
-                                Some(vname.as_str())
-                            } else {
-                                None
-                            }
-                        }).collect();
-                        let missing: Vec<&str> = e.variants.iter()
+                        let covered: Vec<&str> = cases
+                            .iter()
+                            .filter_map(|c| {
+                                if let Pattern::EnumVariant(_, vname, _) = &c.pattern {
+                                    Some(vname.as_str())
+                                } else if let Pattern::Constructor(vname, _) = &c.pattern {
+                                    Some(vname.as_str())
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect();
+                        let missing: Vec<&str> = e
+                            .variants
+                            .iter()
                             .filter(|v| !covered.contains(&v.name.as_str()))
                             .map(|v| v.name.as_str())
                             .collect();
                         if !missing.is_empty() {
-                            eprintln!("warning: non-exhaustive match on {} — missing: {}", e.name, missing.join(", "));
+                            eprintln!(
+                                "warning: non-exhaustive match on {} — missing: {}",
+                                e.name,
+                                missing.join(", ")
+                            );
                         }
                     }
                 }
@@ -1989,8 +2413,8 @@ impl<W: Write> Interpreter<W> {
                 // and returning the Error value instead of propagating
                 match self.eval_expr(inner) {
                     Ok(val) => Ok(val),
-                    Err(EvalError::Raise(val)) => Ok(val), // suppress throw, return Error value
-                    Err(e) => Err(e), // panics and control flow pass through
+                    Err(EvalError::Fail(val)) => Ok(val), // suppress throw, return Error value
+                    Err(e) => Err(e),                     // panics and control flow pass through
                 }
             }
 
@@ -2002,11 +2426,15 @@ impl<W: Write> Interpreter<W> {
                 let result = self.eval_block(body);
 
                 let value = match result {
-                    Err(EvalError::Raise(val)) => {
+                    Err(EvalError::Fail(val)) => {
                         // Extract cause from Error wrapper for type matching
                         let cause = if self.is_error_instance(&val) {
                             if let Value::Instance(id) = &val {
-                                self.instances[id.0].fields.get("cause").cloned().unwrap_or(Value::Null)
+                                self.instances[id.0]
+                                    .fields
+                                    .get("cause")
+                                    .cloned()
+                                    .unwrap_or(Value::Null)
                             } else {
                                 val.clone()
                             }
@@ -2041,7 +2469,7 @@ impl<W: Write> Interpreter<W> {
                             if let Some(ensure_body) = ensure {
                                 self.eval_block(ensure_body)?;
                             }
-                            return Err(EvalError::Raise(val));
+                            return Err(EvalError::Fail(val));
                         }
                         caught_val
                     }
@@ -2094,7 +2522,7 @@ impl<W: Write> Interpreter<W> {
     fn substitute_stmt_inner(&self, stmt: &Stmt) -> Stmt {
         let kind = match &stmt.kind {
             StmtKind::Expr(expr) => StmtKind::Expr(self.substitute_expr(expr)),
-            StmtKind::Raise(expr) => StmtKind::Raise(self.substitute_expr(expr)),
+            StmtKind::Fail(expr) => StmtKind::Fail(self.substitute_expr(expr)),
             StmtKind::Return(Some(expr)) => StmtKind::Return(Some(self.substitute_expr(expr))),
             StmtKind::Assign { name, value } => StmtKind::Assign {
                 name: name.clone(),
@@ -2125,11 +2553,14 @@ impl<W: Write> Interpreter<W> {
             StmtKind::MacroInvoke { name, args, block } => StmtKind::MacroInvoke {
                 name: name.clone(),
                 args: args.iter().map(|a| self.substitute_expr(a)).collect(),
-                block: block
-                    .as_ref()
-                    .map(|b| self.substitute_splices(b)),
+                block: block.as_ref().map(|b| self.substitute_splices(b)),
             },
-            StmtKind::For { var, pattern, iterable, body } => StmtKind::For {
+            StmtKind::For {
+                var,
+                pattern,
+                iterable,
+                body,
+            } => StmtKind::For {
                 var: var.clone(),
                 pattern: pattern.clone(),
                 iterable: self.substitute_expr(iterable),
@@ -2196,10 +2627,12 @@ impl<W: Write> Interpreter<W> {
                         .map(|part| match part {
                             FStringPart::Literal(s) => FStringPart::Literal(s.clone()),
                             FStringPart::Expr(e) => FStringPart::Expr(self.substitute_expr(e)),
-                            FStringPart::FormattedExpr { expr, spec } => FStringPart::FormattedExpr {
-                                expr: self.substitute_expr(expr),
-                                spec: spec.clone(),
-                            },
+                            FStringPart::FormattedExpr { expr, spec } => {
+                                FStringPart::FormattedExpr {
+                                    expr: self.substitute_expr(expr),
+                                    spec: spec.clone(),
+                                }
+                            }
                         })
                         .collect(),
                 ),
@@ -2241,9 +2674,7 @@ impl<W: Write> Interpreter<W> {
                 span: expr.span,
             },
             ExprKind::List(items) => Expr {
-                kind: ExprKind::List(
-                    items.iter().map(|e| self.substitute_expr(e)).collect(),
-                ),
+                kind: ExprKind::List(items.iter().map(|e| self.substitute_expr(e)).collect()),
                 span: expr.span,
             },
             ExprKind::TryCatch {
@@ -2294,12 +2725,16 @@ impl<W: Write> Interpreter<W> {
                         // Match Error class instance — extract .message
                         if let Value::Instance(iid) = value {
                             if let Some(inst) = self.instances.get(iid.0) {
-                                if self.classes.get(inst.class_id.0)
+                                if self
+                                    .classes
+                                    .get(inst.class_id.0)
                                     .map(|c| c.name == "Error")
                                     .unwrap_or(false)
                                 {
                                     if sub_patterns.len() == 1 {
-                                        let msg = inst.fields.get("message")
+                                        let msg = inst
+                                            .fields
+                                            .get("message")
                                             .cloned()
                                             .unwrap_or(Value::Null);
                                         return self.match_pattern(&sub_patterns[0], &msg);
@@ -2310,7 +2745,12 @@ impl<W: Write> Interpreter<W> {
                         None
                     }
                     "Some" => {
-                        if let Value::EnumVariant { enum_id, variant_index: 0, fields } = value {
+                        if let Value::EnumVariant {
+                            enum_id,
+                            variant_index: 0,
+                            fields,
+                        } = value
+                        {
                             if enum_id.0 == 1 && sub_patterns.len() == 1 {
                                 return self.match_pattern(&sub_patterns[0], &fields[0]);
                             }
@@ -2318,7 +2758,12 @@ impl<W: Write> Interpreter<W> {
                         None
                     }
                     "None" if sub_patterns.is_empty() => {
-                        if let Value::EnumVariant { enum_id, variant_index: 1, fields } = value {
+                        if let Value::EnumVariant {
+                            enum_id,
+                            variant_index: 1,
+                            fields,
+                        } = value
+                        {
                             if enum_id.0 == 1 && fields.is_empty() {
                                 return Some(vec![]);
                             }
@@ -2370,7 +2815,12 @@ impl<W: Write> Interpreter<W> {
                 }
             }
             Pattern::EnumVariant(enum_name, variant_name, sub_patterns) => {
-                if let Value::EnumVariant { enum_id, variant_index, fields } = value {
+                if let Value::EnumVariant {
+                    enum_id,
+                    variant_index,
+                    fields,
+                } = value
+                {
                     let e = &self.enums[enum_id.0];
                     if e.name != *enum_name {
                         return None;
@@ -2432,12 +2882,24 @@ impl<W: Write> Interpreter<W> {
                 }
                 None
             }
-            Pattern::Range { start, end, inclusive } => {
+            Pattern::Range {
+                start,
+                end,
+                inclusive,
+            } => {
                 if let Value::Integer(n) = value {
                     if *inclusive {
-                        if *n >= *start && *n <= *end { Some(vec![]) } else { None }
+                        if *n >= *start && *n <= *end {
+                            Some(vec![])
+                        } else {
+                            None
+                        }
                     } else {
-                        if *n >= *start && *n < *end { Some(vec![]) } else { None }
+                        if *n >= *start && *n < *end {
+                            Some(vec![])
+                        } else {
+                            None
+                        }
                     }
                 } else {
                     None
@@ -2479,9 +2941,9 @@ impl<W: Write> Interpreter<W> {
 
         // Self method call: .method(args) inside a class method
         if let ExprKind::InstanceVar(method_name) = &function.kind {
-            let instance_id = self
-                .current_self
-                .ok_or_else(|| EvalError::Panic(PanicKind::RuntimeError,"no self in scope".into()))?;
+            let instance_id = self.current_self.ok_or_else(|| {
+                EvalError::Panic(PanicKind::RuntimeError, "no self in scope".into())
+            })?;
             let obj = Value::Instance(instance_id);
             let mut eval_args = Vec::new();
             for arg in args {
@@ -2494,7 +2956,8 @@ impl<W: Write> Interpreter<W> {
         let func_name = match &function.kind {
             ExprKind::Identifier(name) => name.clone(),
             _ => {
-                return Err(EvalError::Panic(PanicKind::TypeError,
+                return Err(EvalError::Panic(
+                    PanicKind::TypeError,
                     "only named function calls supported".into(),
                 ));
             }
@@ -2535,18 +2998,20 @@ impl<W: Write> Interpreter<W> {
                         let mut err = None;
                         for stmt in &stmts {
                             match &stmt.kind {
-                                StmtKind::Expr(expr) => {
-                                    match self.eval_expr(expr) {
-                                        Ok(v) => result = v,
-                                        Err(e) => { err = Some(e); break; }
+                                StmtKind::Expr(expr) => match self.eval_expr(expr) {
+                                    Ok(v) => result = v,
+                                    Err(e) => {
+                                        err = Some(e);
+                                        break;
                                     }
-                                }
-                                _ => {
-                                    match self.eval_stmt(stmt) {
-                                        Ok(()) => result = Value::Null,
-                                        Err(e) => { err = Some(e); break; }
+                                },
+                                _ => match self.eval_stmt(stmt) {
+                                    Ok(()) => result = Value::Null,
+                                    Err(e) => {
+                                        err = Some(e);
+                                        break;
                                     }
-                                }
+                                },
                             }
                         }
                         // Restore env (discarding eval's mutations)
@@ -2557,7 +3022,8 @@ impl<W: Write> Interpreter<W> {
                         return Ok(result);
                     }
                     _ => {
-                        return Err(EvalError::Panic(PanicKind::TypeError,
+                        return Err(EvalError::Panic(
+                            PanicKind::TypeError,
                             "eval() requires an AST value (from ast ... end block)".into(),
                         ));
                     }
@@ -2575,9 +3041,17 @@ impl<W: Write> Interpreter<W> {
                     }
                     _ => vec![],
                 };
-                let ann_list: Vec<Value> = anns.iter().map(|entries| {
-                    Value::Dict(entries.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
-                }).collect();
+                let ann_list: Vec<Value> = anns
+                    .iter()
+                    .map(|entries| {
+                        Value::Dict(
+                            entries
+                                .iter()
+                                .map(|(k, v)| (k.clone(), v.clone()))
+                                .collect(),
+                        )
+                    })
+                    .collect();
                 return Ok(Value::List(ann_list));
             }
             _ => {}
@@ -2585,7 +3059,10 @@ impl<W: Write> Interpreter<W> {
 
         // Intercept print/println to use format_value for proper display
         if func_name == "print" || func_name == "println" {
-            let output: Vec<String> = arg_values.iter().map(|v| self.format_value_display(v)).collect();
+            let output: Vec<String> = arg_values
+                .iter()
+                .map(|v| self.format_value_display(v))
+                .collect();
             writeln!(self.writer, "{}", output.join(" ")).ok();
             return Ok(Value::Null);
         }
@@ -2595,7 +3072,7 @@ impl<W: Write> Interpreter<W> {
             return match result {
                 Ok(opal_stdlib::BuiltinResult::Value(v)) => Ok(v),
                 Ok(opal_stdlib::BuiltinResult::Void) => Ok(Value::Null),
-                Err(e) => Err(EvalError::Panic(PanicKind::RuntimeError,e)),
+                Err(e) => Err(EvalError::Panic(PanicKind::RuntimeError, e)),
             };
         }
 
@@ -2616,7 +3093,7 @@ impl<W: Write> Interpreter<W> {
                 // and writer are disjoint fields so Rust allows this split borrow.
                 return match native_fn(&arg_values, &mut self.writer) {
                     Ok(v) => Ok(v),
-                    Err(e) => Err(EvalError::Panic(PanicKind::RuntimeError,e)),
+                    Err(e) => Err(EvalError::Panic(PanicKind::RuntimeError, e)),
                 };
             }
         }
@@ -2628,7 +3105,7 @@ impl<W: Write> Interpreter<W> {
                     return self.call_function(id, &func_name, arg_values);
                 }
                 Value::MultiFunction(ids) => {
-                    return self.dispatch_multi(&ids, &func_name, arg_values)
+                    return self.dispatch_multi(&ids, &func_name, arg_values);
                 }
                 Value::Closure(id) => return self.call_closure(id, arg_values),
                 Value::Class(class_id) => {
@@ -2643,7 +3120,7 @@ impl<W: Write> Interpreter<W> {
             }
         }
 
-        Err(EvalError::Panic(PanicKind::NameError,func_name))
+        Err(EvalError::Panic(PanicKind::NameError, func_name))
     }
 
     fn call_method(
@@ -2659,7 +3136,8 @@ impl<W: Write> Interpreter<W> {
             (Value::List(items), "length") => Ok(Value::Integer(items.len() as i64)),
             (Value::List(items), "push") => {
                 if args.len() != 1 {
-                    return Err(EvalError::Panic(PanicKind::TypeError,
+                    return Err(EvalError::Panic(
+                        PanicKind::TypeError,
                         "push() takes exactly 1 argument".into(),
                     ));
                 }
@@ -2669,7 +3147,8 @@ impl<W: Write> Interpreter<W> {
             }
             (Value::List(items), "get") => {
                 if args.len() != 1 {
-                    return Err(EvalError::Panic(PanicKind::TypeError,
+                    return Err(EvalError::Panic(
+                        PanicKind::TypeError,
                         "get() takes exactly 1 argument".into(),
                     ));
                 }
@@ -2678,19 +3157,24 @@ impl<W: Write> Interpreter<W> {
                         let idx = *idx as usize;
                         Ok(items.get(idx).cloned().unwrap_or(Value::Null))
                     }
-                    _ => Err(EvalError::Panic(PanicKind::TypeError,"list index must be an integer".into())),
+                    _ => Err(EvalError::Panic(
+                        PanicKind::TypeError,
+                        "list index must be an integer".into(),
+                    )),
                 }
             }
             (Value::List(items), "map") => {
                 if args.len() != 1 {
-                    return Err(EvalError::Panic(PanicKind::TypeError,
+                    return Err(EvalError::Panic(
+                        PanicKind::TypeError,
                         "map() takes exactly 1 argument (a closure)".into(),
                     ));
                 }
                 let closure_id = match &args[0] {
                     Value::Closure(id) => *id,
                     _ => {
-                        return Err(EvalError::Panic(PanicKind::TypeError,
+                        return Err(EvalError::Panic(
+                            PanicKind::TypeError,
                             "map() argument must be a closure".into(),
                         ));
                     }
@@ -2703,14 +3187,16 @@ impl<W: Write> Interpreter<W> {
             }
             (Value::List(items), "filter") => {
                 if args.len() != 1 {
-                    return Err(EvalError::Panic(PanicKind::TypeError,
+                    return Err(EvalError::Panic(
+                        PanicKind::TypeError,
                         "filter() takes exactly 1 argument (a closure)".into(),
                     ));
                 }
                 let closure_id = match &args[0] {
                     Value::Closure(id) => *id,
                     _ => {
-                        return Err(EvalError::Panic(PanicKind::TypeError,
+                        return Err(EvalError::Panic(
+                            PanicKind::TypeError,
                             "filter() argument must be a closure".into(),
                         ));
                     }
@@ -2726,7 +3212,8 @@ impl<W: Write> Interpreter<W> {
             }
             (Value::List(items), "reduce") => {
                 if args.len() != 2 {
-                    return Err(EvalError::Panic(PanicKind::TypeError,
+                    return Err(EvalError::Panic(
+                        PanicKind::TypeError,
                         "reduce() takes 2 arguments (initial, closure)".into(),
                     ));
                 }
@@ -2734,7 +3221,8 @@ impl<W: Write> Interpreter<W> {
                 let closure_id = match &args[1] {
                     Value::Closure(id) => *id,
                     _ => {
-                        return Err(EvalError::Panic(PanicKind::TypeError,
+                        return Err(EvalError::Panic(
+                            PanicKind::TypeError,
                             "reduce() second argument must be a closure".into(),
                         ));
                     }
@@ -2755,7 +3243,12 @@ impl<W: Write> Interpreter<W> {
                     // Custom comparator
                     let closure_id = match &args[0] {
                         Value::Closure(id) => *id,
-                        _ => return Err(EvalError::Panic(PanicKind::TypeError,"sort() argument must be a closure".into())),
+                        _ => {
+                            return Err(EvalError::Panic(
+                                PanicKind::TypeError,
+                                "sort() argument must be a closure".into(),
+                            ));
+                        }
                     };
                     let mut sorted = items.clone();
                     let mut sort_error: Option<EvalError> = None;
@@ -2765,12 +3258,19 @@ impl<W: Write> Interpreter<W> {
                         }
                         match self.call_closure(closure_id, vec![a.clone(), b.clone()]) {
                             Ok(Value::Integer(n)) => {
-                                if n < 0 { std::cmp::Ordering::Less }
-                                else if n > 0 { std::cmp::Ordering::Greater }
-                                else { std::cmp::Ordering::Equal }
+                                if n < 0 {
+                                    std::cmp::Ordering::Less
+                                } else if n > 0 {
+                                    std::cmp::Ordering::Greater
+                                } else {
+                                    std::cmp::Ordering::Equal
+                                }
                             }
                             Ok(_) => {
-                                sort_error = Some(EvalError::Panic(PanicKind::TypeError,"sort comparator must return an integer".into()));
+                                sort_error = Some(EvalError::Panic(
+                                    PanicKind::TypeError,
+                                    "sort comparator must return an integer".into(),
+                                ));
                                 std::cmp::Ordering::Equal
                             }
                             Err(e) => {
@@ -2784,7 +3284,10 @@ impl<W: Write> Interpreter<W> {
                     }
                     Ok(Value::List(sorted))
                 } else {
-                    Err(EvalError::Panic(PanicKind::TypeError,"sort() takes 0 or 1 arguments".into()))
+                    Err(EvalError::Panic(
+                        PanicKind::TypeError,
+                        "sort() takes 0 or 1 arguments".into(),
+                    ))
                 }
             }
             (Value::List(items), "reverse") => {
@@ -2794,11 +3297,19 @@ impl<W: Write> Interpreter<W> {
             }
             (Value::List(items), "find") => {
                 if args.len() != 1 {
-                    return Err(EvalError::Panic(PanicKind::TypeError,"find() takes exactly 1 argument (a closure)".into()));
+                    return Err(EvalError::Panic(
+                        PanicKind::TypeError,
+                        "find() takes exactly 1 argument (a closure)".into(),
+                    ));
                 }
                 let closure_id = match &args[0] {
                     Value::Closure(id) => *id,
-                    _ => return Err(EvalError::Panic(PanicKind::TypeError,"find() argument must be a closure".into())),
+                    _ => {
+                        return Err(EvalError::Panic(
+                            PanicKind::TypeError,
+                            "find() argument must be a closure".into(),
+                        ));
+                    }
                 };
                 for item in items.clone() {
                     let result = self.call_closure(closure_id, vec![item.clone()])?;
@@ -2810,11 +3321,19 @@ impl<W: Write> Interpreter<W> {
             }
             (Value::List(items), "any") => {
                 if args.len() != 1 {
-                    return Err(EvalError::Panic(PanicKind::TypeError,"any() takes exactly 1 argument (a closure)".into()));
+                    return Err(EvalError::Panic(
+                        PanicKind::TypeError,
+                        "any() takes exactly 1 argument (a closure)".into(),
+                    ));
                 }
                 let closure_id = match &args[0] {
                     Value::Closure(id) => *id,
-                    _ => return Err(EvalError::Panic(PanicKind::TypeError,"any() argument must be a closure".into())),
+                    _ => {
+                        return Err(EvalError::Panic(
+                            PanicKind::TypeError,
+                            "any() argument must be a closure".into(),
+                        ));
+                    }
                 };
                 for item in items.clone() {
                     let result = self.call_closure(closure_id, vec![item])?;
@@ -2826,11 +3345,19 @@ impl<W: Write> Interpreter<W> {
             }
             (Value::List(items), "all") => {
                 if args.len() != 1 {
-                    return Err(EvalError::Panic(PanicKind::TypeError,"all() takes exactly 1 argument (a closure)".into()));
+                    return Err(EvalError::Panic(
+                        PanicKind::TypeError,
+                        "all() takes exactly 1 argument (a closure)".into(),
+                    ));
                 }
                 let closure_id = match &args[0] {
                     Value::Closure(id) => *id,
-                    _ => return Err(EvalError::Panic(PanicKind::TypeError,"all() argument must be a closure".into())),
+                    _ => {
+                        return Err(EvalError::Panic(
+                            PanicKind::TypeError,
+                            "all() argument must be a closure".into(),
+                        ));
+                    }
                 };
                 for item in items.clone() {
                     let result = self.call_closure(closure_id, vec![item])?;
@@ -2846,7 +3373,12 @@ impl<W: Write> Interpreter<W> {
                 } else if args.len() == 1 {
                     let closure_id = match &args[0] {
                         Value::Closure(id) => *id,
-                        _ => return Err(EvalError::Panic(PanicKind::TypeError,"count() argument must be a closure".into())),
+                        _ => {
+                            return Err(EvalError::Panic(
+                                PanicKind::TypeError,
+                                "count() argument must be a closure".into(),
+                            ));
+                        }
                     };
                     let mut count = 0i64;
                     for item in items.clone() {
@@ -2857,16 +3389,27 @@ impl<W: Write> Interpreter<W> {
                     }
                     Ok(Value::Integer(count))
                 } else {
-                    Err(EvalError::Panic(PanicKind::TypeError,"count() takes 0 or 1 arguments".into()))
+                    Err(EvalError::Panic(
+                        PanicKind::TypeError,
+                        "count() takes 0 or 1 arguments".into(),
+                    ))
                 }
             }
             (Value::List(items), "each") => {
                 if args.len() != 1 {
-                    return Err(EvalError::Panic(PanicKind::TypeError,"each() takes exactly 1 argument (a closure)".into()));
+                    return Err(EvalError::Panic(
+                        PanicKind::TypeError,
+                        "each() takes exactly 1 argument (a closure)".into(),
+                    ));
                 }
                 let closure_id = match &args[0] {
                     Value::Closure(id) => *id,
-                    _ => return Err(EvalError::Panic(PanicKind::TypeError,"each() argument must be a closure".into())),
+                    _ => {
+                        return Err(EvalError::Panic(
+                            PanicKind::TypeError,
+                            "each() argument must be a closure".into(),
+                        ));
+                    }
                 };
                 for item in items.clone() {
                     self.call_closure(closure_id, vec![item])?;
@@ -2875,22 +3418,38 @@ impl<W: Write> Interpreter<W> {
             }
             (Value::List(items), "take") => {
                 if args.len() != 1 {
-                    return Err(EvalError::Panic(PanicKind::TypeError,"take() takes exactly 1 argument".into()));
+                    return Err(EvalError::Panic(
+                        PanicKind::TypeError,
+                        "take() takes exactly 1 argument".into(),
+                    ));
                 }
                 let n = match &args[0] {
                     Value::Integer(n) => *n as usize,
-                    _ => return Err(EvalError::Panic(PanicKind::TypeError,"take() argument must be an integer".into())),
+                    _ => {
+                        return Err(EvalError::Panic(
+                            PanicKind::TypeError,
+                            "take() argument must be an integer".into(),
+                        ));
+                    }
                 };
                 let taken: Vec<Value> = items.iter().take(n).cloned().collect();
                 Ok(Value::List(taken))
             }
             (Value::List(items), "drop") => {
                 if args.len() != 1 {
-                    return Err(EvalError::Panic(PanicKind::TypeError,"drop() takes exactly 1 argument".into()));
+                    return Err(EvalError::Panic(
+                        PanicKind::TypeError,
+                        "drop() takes exactly 1 argument".into(),
+                    ));
                 }
                 let n = match &args[0] {
                     Value::Integer(n) => *n as usize,
-                    _ => return Err(EvalError::Panic(PanicKind::TypeError,"drop() argument must be an integer".into())),
+                    _ => {
+                        return Err(EvalError::Panic(
+                            PanicKind::TypeError,
+                            "drop() argument must be an integer".into(),
+                        ));
+                    }
                 };
                 let remaining: Vec<Value> = items.iter().skip(n).cloned().collect();
                 Ok(Value::List(remaining))
@@ -2907,24 +3466,42 @@ impl<W: Write> Interpreter<W> {
             }
             (Value::List(items), "zip") => {
                 if args.len() != 1 {
-                    return Err(EvalError::Panic(PanicKind::TypeError,"zip() takes exactly 1 argument".into()));
+                    return Err(EvalError::Panic(
+                        PanicKind::TypeError,
+                        "zip() takes exactly 1 argument".into(),
+                    ));
                 }
                 let other = match &args[0] {
                     Value::List(l) => l.clone(),
-                    _ => return Err(EvalError::Panic(PanicKind::TypeError,"zip() argument must be a list".into())),
+                    _ => {
+                        return Err(EvalError::Panic(
+                            PanicKind::TypeError,
+                            "zip() argument must be a list".into(),
+                        ));
+                    }
                 };
-                let pairs: Vec<Value> = items.iter().zip(other.iter())
+                let pairs: Vec<Value> = items
+                    .iter()
+                    .zip(other.iter())
                     .map(|(a, b)| Value::List(vec![a.clone(), b.clone()]))
                     .collect();
                 Ok(Value::List(pairs))
             }
             (Value::List(items), "group_by") => {
                 if args.len() != 1 {
-                    return Err(EvalError::Panic(PanicKind::TypeError,"group_by() takes exactly 1 argument (a closure)".into()));
+                    return Err(EvalError::Panic(
+                        PanicKind::TypeError,
+                        "group_by() takes exactly 1 argument (a closure)".into(),
+                    ));
                 }
                 let closure_id = match &args[0] {
                     Value::Closure(id) => *id,
-                    _ => return Err(EvalError::Panic(PanicKind::TypeError,"group_by() argument must be a closure".into())),
+                    _ => {
+                        return Err(EvalError::Panic(
+                            PanicKind::TypeError,
+                            "group_by() argument must be a closure".into(),
+                        ));
+                    }
                 };
                 let mut groups: Vec<(String, Value)> = Vec::new();
                 for item in items.clone() {
@@ -2942,11 +3519,19 @@ impl<W: Write> Interpreter<W> {
             }
             (Value::List(items), "join") => {
                 if args.len() != 1 {
-                    return Err(EvalError::Panic(PanicKind::TypeError,"join() takes exactly 1 argument".into()));
+                    return Err(EvalError::Panic(
+                        PanicKind::TypeError,
+                        "join() takes exactly 1 argument".into(),
+                    ));
                 }
                 let sep = match &args[0] {
                     Value::String(s) => s.clone(),
-                    _ => return Err(EvalError::Panic(PanicKind::TypeError,"join() argument must be a string".into())),
+                    _ => {
+                        return Err(EvalError::Panic(
+                            PanicKind::TypeError,
+                            "join() argument must be a string".into(),
+                        ));
+                    }
                 };
                 let parts: Vec<String> = items.iter().map(|v| self.format_value(v)).collect();
                 Ok(Value::String(parts.join(&sep)))
@@ -2954,17 +3539,18 @@ impl<W: Write> Interpreter<W> {
             (Value::List(items), "empty?") => Ok(Value::Bool(items.is_empty())),
             (Value::List(items), "contains") => {
                 if args.len() != 1 {
-                    return Err(EvalError::Panic(PanicKind::TypeError,"contains() takes exactly 1 argument".into()));
+                    return Err(EvalError::Panic(
+                        PanicKind::TypeError,
+                        "contains() takes exactly 1 argument".into(),
+                    ));
                 }
                 let needle = &args[0];
-                Ok(Value::Bool(items.iter().any(|item| values_equal(item, needle))))
+                Ok(Value::Bool(
+                    items.iter().any(|item| values_equal(item, needle)),
+                ))
             }
-            (Value::List(items), "first") => {
-                Ok(items.first().cloned().unwrap_or(Value::Null))
-            }
-            (Value::List(items), "last") => {
-                Ok(items.last().cloned().unwrap_or(Value::Null))
-            }
+            (Value::List(items), "first") => Ok(items.first().cloned().unwrap_or(Value::Null)),
+            (Value::List(items), "last") => Ok(items.last().cloned().unwrap_or(Value::Null)),
             (Value::List(items), "min") => {
                 if items.is_empty() {
                     return Ok(Value::Null);
@@ -2991,7 +3577,10 @@ impl<W: Write> Interpreter<W> {
             }
             (Value::List(items), "index") => {
                 if args.len() != 1 {
-                    return Err(EvalError::Panic(PanicKind::TypeError,"index() takes exactly 1 argument".into()));
+                    return Err(EvalError::Panic(
+                        PanicKind::TypeError,
+                        "index() takes exactly 1 argument".into(),
+                    ));
                 }
                 let needle = &args[0];
                 match items.iter().position(|item| values_equal(item, needle)) {
@@ -3003,14 +3592,16 @@ impl<W: Write> Interpreter<W> {
             (Value::String(s), "length") => Ok(Value::Integer(s.len() as i64)),
             (Value::String(s), "split") => {
                 if args.len() != 1 {
-                    return Err(EvalError::Panic(PanicKind::TypeError,
+                    return Err(EvalError::Panic(
+                        PanicKind::TypeError,
                         "split() takes exactly 1 argument".into(),
                     ));
                 }
                 let sep = match &args[0] {
                     Value::String(sep) => sep.clone(),
                     _ => {
-                        return Err(EvalError::Panic(PanicKind::TypeError,
+                        return Err(EvalError::Panic(
+                            PanicKind::TypeError,
                             "split() argument must be a string".into(),
                         ));
                     }
@@ -3024,14 +3615,16 @@ impl<W: Write> Interpreter<W> {
             (Value::String(s), "trim") => Ok(Value::String(s.trim().to_string())),
             (Value::String(s), "contains") => {
                 if args.len() != 1 {
-                    return Err(EvalError::Panic(PanicKind::TypeError,
+                    return Err(EvalError::Panic(
+                        PanicKind::TypeError,
                         "contains() takes exactly 1 argument".into(),
                     ));
                 }
                 let sub = match &args[0] {
                     Value::String(sub) => sub.clone(),
                     _ => {
-                        return Err(EvalError::Panic(PanicKind::TypeError,
+                        return Err(EvalError::Panic(
+                            PanicKind::TypeError,
                             "contains() argument must be a string".into(),
                         ));
                     }
@@ -3040,14 +3633,16 @@ impl<W: Write> Interpreter<W> {
             }
             (Value::String(s), "replace") => {
                 if args.len() != 2 {
-                    return Err(EvalError::Panic(PanicKind::TypeError,
+                    return Err(EvalError::Panic(
+                        PanicKind::TypeError,
                         "replace() takes exactly 2 arguments".into(),
                     ));
                 }
                 let old = match &args[0] {
                     Value::String(o) => o.clone(),
                     _ => {
-                        return Err(EvalError::Panic(PanicKind::TypeError,
+                        return Err(EvalError::Panic(
+                            PanicKind::TypeError,
                             "replace() first argument must be a string".into(),
                         ));
                     }
@@ -3055,7 +3650,8 @@ impl<W: Write> Interpreter<W> {
                 let new = match &args[1] {
                     Value::String(n) => n.clone(),
                     _ => {
-                        return Err(EvalError::Panic(PanicKind::TypeError,
+                        return Err(EvalError::Panic(
+                            PanicKind::TypeError,
                             "replace() second argument must be a string".into(),
                         ));
                     }
@@ -3064,14 +3660,16 @@ impl<W: Write> Interpreter<W> {
             }
             (Value::String(s), "starts_with") => {
                 if args.len() != 1 {
-                    return Err(EvalError::Panic(PanicKind::TypeError,
+                    return Err(EvalError::Panic(
+                        PanicKind::TypeError,
                         "starts_with() takes exactly 1 argument".into(),
                     ));
                 }
                 let prefix = match &args[0] {
                     Value::String(p) => p.clone(),
                     _ => {
-                        return Err(EvalError::Panic(PanicKind::TypeError,
+                        return Err(EvalError::Panic(
+                            PanicKind::TypeError,
                             "starts_with() argument must be a string".into(),
                         ));
                     }
@@ -3080,14 +3678,16 @@ impl<W: Write> Interpreter<W> {
             }
             (Value::String(s), "ends_with") => {
                 if args.len() != 1 {
-                    return Err(EvalError::Panic(PanicKind::TypeError,
+                    return Err(EvalError::Panic(
+                        PanicKind::TypeError,
                         "ends_with() takes exactly 1 argument".into(),
                     ));
                 }
                 let suffix = match &args[0] {
                     Value::String(sf) => sf.clone(),
                     _ => {
-                        return Err(EvalError::Panic(PanicKind::TypeError,
+                        return Err(EvalError::Panic(
+                            PanicKind::TypeError,
                             "ends_with() argument must be a string".into(),
                         ));
                     }
@@ -3100,45 +3700,64 @@ impl<W: Write> Interpreter<W> {
                 let chars: Vec<Value> = s.chars().map(|c| Value::String(c.to_string())).collect();
                 Ok(Value::List(chars))
             }
-            (Value::String(s), "to_int") => {
-                match s.trim().parse::<i64>() {
-                    Ok(n) => Ok(Value::Integer(n)),
-                    Err(_) => Ok(Value::Null),
-                }
-            }
-            (Value::String(s), "to_float") => {
-                match s.trim().parse::<f64>() {
-                    Ok(n) => Ok(Value::Float(n)),
-                    Err(_) => Ok(Value::Null),
-                }
-            }
-            (Value::String(s), "reverse") => {
-                Ok(Value::String(s.chars().rev().collect()))
-            }
+            (Value::String(s), "to_int") => match s.trim().parse::<i64>() {
+                Ok(n) => Ok(Value::Integer(n)),
+                Err(_) => Ok(Value::Null),
+            },
+            (Value::String(s), "to_float") => match s.trim().parse::<f64>() {
+                Ok(n) => Ok(Value::Float(n)),
+                Err(_) => Ok(Value::Null),
+            },
+            (Value::String(s), "reverse") => Ok(Value::String(s.chars().rev().collect())),
             (Value::String(s), "upcase") => Ok(Value::String(s.to_uppercase())),
             (Value::String(s), "downcase") => Ok(Value::String(s.to_lowercase())),
             (Value::String(s), "slice") => {
                 if args.len() != 2 {
-                    return Err(EvalError::Panic(PanicKind::TypeError,"slice() takes exactly 2 arguments (start, end)".into()));
+                    return Err(EvalError::Panic(
+                        PanicKind::TypeError,
+                        "slice() takes exactly 2 arguments (start, end)".into(),
+                    ));
                 }
                 let start = match &args[0] {
                     Value::Integer(n) => *n as usize,
-                    _ => return Err(EvalError::Panic(PanicKind::TypeError,"slice() start must be an integer".into())),
+                    _ => {
+                        return Err(EvalError::Panic(
+                            PanicKind::TypeError,
+                            "slice() start must be an integer".into(),
+                        ));
+                    }
                 };
                 let end = match &args[1] {
                     Value::Integer(n) => *n as usize,
-                    _ => return Err(EvalError::Panic(PanicKind::TypeError,"slice() end must be an integer".into())),
+                    _ => {
+                        return Err(EvalError::Panic(
+                            PanicKind::TypeError,
+                            "slice() end must be an integer".into(),
+                        ));
+                    }
                 };
-                let result: String = s.chars().skip(start).take(end.saturating_sub(start)).collect();
+                let result: String = s
+                    .chars()
+                    .skip(start)
+                    .take(end.saturating_sub(start))
+                    .collect();
                 Ok(Value::String(result))
             }
             (Value::String(s), "index") => {
                 if args.len() != 1 {
-                    return Err(EvalError::Panic(PanicKind::TypeError,"index() takes exactly 1 argument".into()));
+                    return Err(EvalError::Panic(
+                        PanicKind::TypeError,
+                        "index() takes exactly 1 argument".into(),
+                    ));
                 }
                 let substr = match &args[0] {
                     Value::String(sub) => sub.clone(),
-                    _ => return Err(EvalError::Panic(PanicKind::TypeError,"index() argument must be a string".into())),
+                    _ => {
+                        return Err(EvalError::Panic(
+                            PanicKind::TypeError,
+                            "index() argument must be a string".into(),
+                        ));
+                    }
                 };
                 match s.find(&substr) {
                     Some(byte_pos) => {
@@ -3155,13 +3774,19 @@ impl<W: Write> Interpreter<W> {
             (Value::Dict(entries), "length") => Ok(Value::Integer(entries.len() as i64)),
             (Value::Dict(entries), "get") => {
                 if args.len() != 1 {
-                    return Err(EvalError::Panic(PanicKind::TypeError,
+                    return Err(EvalError::Panic(
+                        PanicKind::TypeError,
                         "get() takes exactly 1 argument".into(),
                     ));
                 }
                 let key = match &args[0] {
                     Value::String(s) => s.clone(),
-                    _ => return Err(EvalError::Panic(PanicKind::TypeError,"dict key must be a string".into())),
+                    _ => {
+                        return Err(EvalError::Panic(
+                            PanicKind::TypeError,
+                            "dict key must be a string".into(),
+                        ));
+                    }
                 };
                 Ok(entries
                     .iter()
@@ -3182,13 +3807,19 @@ impl<W: Write> Interpreter<W> {
             }
             (Value::Dict(entries), "set") => {
                 if args.len() != 2 {
-                    return Err(EvalError::Panic(PanicKind::TypeError,
+                    return Err(EvalError::Panic(
+                        PanicKind::TypeError,
                         "set() takes exactly 2 arguments (key, value)".into(),
                     ));
                 }
                 let key = match &args[0] {
                     Value::String(s) => s.clone(),
-                    _ => return Err(EvalError::Panic(PanicKind::TypeError,"dict key must be a string".into())),
+                    _ => {
+                        return Err(EvalError::Panic(
+                            PanicKind::TypeError,
+                            "dict key must be a string".into(),
+                        ));
+                    }
                 };
                 let value = args[1].clone();
                 let mut new_entries = entries.clone();
@@ -3201,21 +3832,37 @@ impl<W: Write> Interpreter<W> {
             }
             (Value::Dict(entries), "has_key") => {
                 if args.len() != 1 {
-                    return Err(EvalError::Panic(PanicKind::TypeError,"has_key() takes exactly 1 argument".into()));
+                    return Err(EvalError::Panic(
+                        PanicKind::TypeError,
+                        "has_key() takes exactly 1 argument".into(),
+                    ));
                 }
                 let key = match &args[0] {
                     Value::String(s) => s.clone(),
-                    _ => return Err(EvalError::Panic(PanicKind::TypeError,"has_key() argument must be a string".into())),
+                    _ => {
+                        return Err(EvalError::Panic(
+                            PanicKind::TypeError,
+                            "has_key() argument must be a string".into(),
+                        ));
+                    }
                 };
                 Ok(Value::Bool(entries.iter().any(|(k, _)| k == &key)))
             }
             (Value::Dict(entries), "merge") => {
                 if args.len() != 1 {
-                    return Err(EvalError::Panic(PanicKind::TypeError,"merge() takes exactly 1 argument".into()));
+                    return Err(EvalError::Panic(
+                        PanicKind::TypeError,
+                        "merge() takes exactly 1 argument".into(),
+                    ));
                 }
                 let other = match &args[0] {
                     Value::Dict(d) => d.clone(),
-                    _ => return Err(EvalError::Panic(PanicKind::TypeError,"merge() argument must be a dict".into())),
+                    _ => {
+                        return Err(EvalError::Panic(
+                            PanicKind::TypeError,
+                            "merge() argument must be a dict".into(),
+                        ));
+                    }
                 };
                 let mut merged = entries.clone();
                 for (key, value) in other {
@@ -3252,10 +3899,10 @@ impl<W: Write> Interpreter<W> {
                         other => Ok(other.clone()),
                     };
                 }
-                return Err(EvalError::Panic(PanicKind::NameError,format!(
-                    "{}.{}",
-                    module.name, method
-                )));
+                return Err(EvalError::Panic(
+                    PanicKind::NameError,
+                    format!("{}.{}", module.name, method),
+                ));
             }
 
             // Actor .new()
@@ -3267,7 +3914,8 @@ impl<W: Write> Interpreter<W> {
                 // Resolve needs
                 let mut fields = HashMap::new();
                 for (need_name, _type_ann, default) in &def.needs {
-                    let value = named_args.iter()
+                    let value = named_args
+                        .iter()
                         .find(|(name, _)| name.as_deref() == Some(need_name.as_str()))
                         .map(|(_, v)| v.clone());
                     if let Some(val) = value {
@@ -3276,21 +3924,23 @@ impl<W: Write> Interpreter<W> {
                         let val = self.eval_expr(default_expr)?;
                         fields.insert(need_name.clone(), val);
                     } else {
-                        let idx = def.needs.iter().position(|(n, _, _)| n == need_name).unwrap();
+                        let idx = def
+                            .needs
+                            .iter()
+                            .position(|(n, _, _)| n == need_name)
+                            .unwrap();
                         if idx < args.len() {
                             fields.insert(need_name.clone(), args[idx].clone());
                         } else {
-                            return Err(EvalError::Panic(PanicKind::TypeError,format!(
-                                "missing required field '{}' in actor .new()", need_name
-                            )));
+                            return Err(EvalError::Panic(
+                                PanicKind::TypeError,
+                                format!("missing required field '{}' in actor .new()", need_name),
+                            ));
                         }
                     }
                 }
 
-                self.actors.push(StoredActorInstance {
-                    def_idx,
-                    fields,
-                });
+                self.actors.push(StoredActorInstance { def_idx, fields });
                 // Run init if present
                 if let Some(init_body) = &def.init {
                     let prev_actor = self.current_actor;
@@ -3307,7 +3957,8 @@ impl<W: Write> Interpreter<W> {
             // Actor .send(:msg)
             (Value::Actor(actor_id), "send") => {
                 if args.len() != 1 {
-                    return Err(EvalError::Panic(PanicKind::TypeError,
+                    return Err(EvalError::Panic(
+                        PanicKind::TypeError,
                         "send() takes exactly 1 argument".into(),
                     ));
                 }
@@ -3371,10 +4022,10 @@ impl<W: Write> Interpreter<W> {
                         } else if let Some(default_expr) = default {
                             self.eval_expr(default_expr)?
                         } else {
-                            return Err(EvalError::Panic(PanicKind::TypeError,format!(
-                                "missing required field '{}' in .new()",
-                                need_name
-                            )));
+                            return Err(EvalError::Panic(
+                                PanicKind::TypeError,
+                                format!("missing required field '{}' in .new()", need_name),
+                            ));
                         }
                     };
 
@@ -3389,7 +4040,7 @@ impl<W: Write> Interpreter<W> {
                                 _ => true,
                             };
                             if !conforms {
-                                return Err(EvalError::Raise(Value::String(format!(
+                                return Err(EvalError::Fail(Value::String(format!(
                                     "{}.new() — '{}' must implement {}",
                                     class.name, need_name, type_name
                                 ))));
@@ -3418,7 +4069,8 @@ impl<W: Write> Interpreter<W> {
                         let mut current = class.parent;
                         while let Some(pid) = current {
                             let parent_class = &self.classes[pid.0];
-                            if let Some(f) = parent_class.methods.iter().find(|m| m.name == "init") {
+                            if let Some(f) = parent_class.methods.iter().find(|m| m.name == "init")
+                            {
                                 init_fn = Some((f.clone(), pid));
                                 break;
                             }
@@ -3433,7 +4085,8 @@ impl<W: Write> Interpreter<W> {
                         self.current_method_name = Some("init".to_string());
                         self.current_class_id = Some(found_class_id);
                         self.env.push_scope();
-                        self.env.set("self".to_string(), Value::Instance(instance_id));
+                        self.env
+                            .set("self".to_string(), Value::Instance(instance_id));
                         let result = self.eval_block(&func.body);
                         self.env.pop_scope();
                         self.current_self = prev_self;
@@ -3458,10 +4111,13 @@ impl<W: Write> Interpreter<W> {
                         let validator_fn = self.eval_expr(validator_expr)?;
                         let result = self.call_value(validator_fn, vec![(None, field_val)])?;
                         if !result.is_truthy() {
-                            return Err(EvalError::Panic(PanicKind::RuntimeError,format!(
-                                "validation failed for field '{}' in {}.new()",
-                                field_name, class.name
-                            )));
+                            return Err(EvalError::Panic(
+                                PanicKind::RuntimeError,
+                                format!(
+                                    "validation failed for field '{}' in {}.new()",
+                                    field_name, class.name
+                                ),
+                            ));
                         }
                     }
                     self.frozen_instances.insert(instance_id);
@@ -3509,10 +4165,10 @@ impl<W: Write> Interpreter<W> {
                         Err(e) => Err(e),
                     };
                 }
-                return Err(EvalError::Panic(PanicKind::RuntimeError,format!(
-                    "undefined static method '{}' on class",
-                    method
-                )));
+                return Err(EvalError::Panic(
+                    PanicKind::RuntimeError,
+                    format!("undefined static method '{}' on class", method),
+                ));
             }
 
             // Instance methods — dispatch to class
@@ -3527,9 +4183,12 @@ impl<W: Write> Interpreter<W> {
                             let proto_name = match &args[0] {
                                 Value::Protocol(pid) => self.protocols[pid.0].name.clone(),
                                 Value::Class(cid) => self.classes[cid.0].name.clone(),
-                                _ => return Err(EvalError::Panic(PanicKind::TypeError,
-                                    "register() first arg must be a Protocol or Class".into(),
-                                )),
+                                _ => {
+                                    return Err(EvalError::Panic(
+                                        PanicKind::TypeError,
+                                        "register() first arg must be a Protocol or Class".into(),
+                                    ));
+                                }
                             };
                             self.container_registrations
                                 .entry(*instance_id)
@@ -3540,9 +4199,12 @@ impl<W: Write> Interpreter<W> {
                         "resolve" => {
                             let (target_class_id, target_class) = match &args[0] {
                                 Value::Class(cid) => (*cid, self.classes[cid.0].clone()),
-                                _ => return Err(EvalError::Panic(PanicKind::TypeError,
-                                    "resolve() arg must be a Class".into(),
-                                )),
+                                _ => {
+                                    return Err(EvalError::Panic(
+                                        PanicKind::TypeError,
+                                        "resolve() arg must be a Class".into(),
+                                    ));
+                                }
                             };
                             let regs = self
                                 .container_registrations
@@ -3563,7 +4225,7 @@ impl<W: Write> Interpreter<W> {
                                     fields.insert(need_name.clone(), val);
                                     continue;
                                 }
-                                return Err(EvalError::Raise(Value::String(format!(
+                                return Err(EvalError::Fail(Value::String(format!(
                                     "Container cannot resolve '{}' for {}.new() — no registration for {}",
                                     need_name,
                                     target_class.name,
@@ -3581,9 +4243,12 @@ impl<W: Write> Interpreter<W> {
                         "resolve_name" => {
                             let name = match &args[0] {
                                 Value::String(s) => s.clone(),
-                                _ => return Err(EvalError::Panic(PanicKind::TypeError,
-                                    "resolve_name() arg must be a String".into(),
-                                )),
+                                _ => {
+                                    return Err(EvalError::Panic(
+                                        PanicKind::TypeError,
+                                        "resolve_name() arg must be a String".into(),
+                                    ));
+                                }
                             };
                             let regs = self
                                 .container_registrations
@@ -3593,7 +4258,7 @@ impl<W: Write> Interpreter<W> {
                             if let Some(val) = regs.get(&name) {
                                 return Ok(val.clone());
                             }
-                            return Err(EvalError::Raise(Value::String(format!(
+                            return Err(EvalError::Fail(Value::String(format!(
                                 "No registration for {}",
                                 name
                             ))));
@@ -3605,7 +4270,9 @@ impl<W: Write> Interpreter<W> {
                 // Auto-methods for model instances
                 if self.model_classes.contains_key(&instance.class_id) {
                     if method == "to_dict" {
-                        let entries: Vec<(String, Value)> = class.needs.iter()
+                        let entries: Vec<(String, Value)> = class
+                            .needs
+                            .iter()
                             .map(|(name, _, _)| {
                                 let val = instance.fields.get(name).cloned().unwrap_or(Value::Null);
                                 (name.clone(), val)
@@ -3627,7 +4294,9 @@ impl<W: Write> Interpreter<W> {
                             fields: new_fields,
                         });
                         // Run validators on the new instance
-                        if let Some(validators) = self.model_classes.get(&instance.class_id).cloned() {
+                        if let Some(validators) =
+                            self.model_classes.get(&instance.class_id).cloned()
+                        {
                             for (field_name, validator_expr) in &validators {
                                 let field_val = self.instances[new_instance_id.0]
                                     .fields
@@ -3635,12 +4304,16 @@ impl<W: Write> Interpreter<W> {
                                     .cloned()
                                     .unwrap_or(Value::Null);
                                 let validator_fn = self.eval_expr(validator_expr)?;
-                                let result = self.call_value(validator_fn, vec![(None, field_val)])?;
+                                let result =
+                                    self.call_value(validator_fn, vec![(None, field_val)])?;
                                 if !result.is_truthy() {
-                                    return Err(EvalError::Panic(PanicKind::RuntimeError,format!(
-                                        "validation failed for field '{}' in {}.copy()",
-                                        field_name, class.name
-                                    )));
+                                    return Err(EvalError::Panic(
+                                        PanicKind::RuntimeError,
+                                        format!(
+                                            "validation failed for field '{}' in {}.copy()",
+                                            field_name, class.name
+                                        ),
+                                    ));
                                 }
                             }
                         }
@@ -3694,21 +4367,28 @@ impl<W: Write> Interpreter<W> {
                 if let Some((func, found_class_id)) = method_fn {
                     // Enforce visibility: private methods only callable from same class
                     if func.visibility == Visibility::Private {
-                        let caller_class = self.current_self.map(|id| self.instances[id.0].class_id);
+                        let caller_class =
+                            self.current_self.map(|id| self.instances[id.0].class_id);
                         if caller_class != Some(instance.class_id) {
-                            return Err(EvalError::Panic(PanicKind::RuntimeError,format!(
-                                "private method '{}' cannot be called from outside the class",
-                                method
-                            )));
+                            return Err(EvalError::Panic(
+                                PanicKind::RuntimeError,
+                                format!(
+                                    "private method '{}' cannot be called from outside the class",
+                                    method
+                                ),
+                            ));
                         }
                     }
                     if args.len() != func.params.len() {
-                        return Err(EvalError::Panic(PanicKind::TypeError,format!(
-                            "{}() expected {} arguments, got {}",
-                            method,
-                            func.params.len(),
-                            args.len()
-                        )));
+                        return Err(EvalError::Panic(
+                            PanicKind::TypeError,
+                            format!(
+                                "{}() expected {} arguments, got {}",
+                                method,
+                                func.params.len(),
+                                args.len()
+                            ),
+                        ));
                     }
 
                     // Set self, method tracking, and push scope
@@ -3735,17 +4415,22 @@ impl<W: Write> Interpreter<W> {
                         Err(e) => Err(e),
                     }
                 } else {
-                    Err(EvalError::Panic(PanicKind::TypeError,format!(
-                        "no method '{}' on instance of class",
-                        method
-                    )))
+                    Err(EvalError::Panic(
+                        PanicKind::TypeError,
+                        format!("no method '{}' on instance of class", method),
+                    ))
                 }
             }
 
             // Enum variant construction: EnumName.Variant(args)
             (Value::Type(TypeInfo::Enum(enum_id)), _) => {
                 let e = self.enums[enum_id.0].clone();
-                if let Some((vi, variant)) = e.variants.iter().enumerate().find(|(_, v)| v.name == method) {
+                if let Some((vi, variant)) = e
+                    .variants
+                    .iter()
+                    .enumerate()
+                    .find(|(_, v)| v.name == method)
+                {
                     if variant.fields.is_empty() && args.is_empty() {
                         return Ok(Value::EnumVariant {
                             enum_id: *enum_id,
@@ -3756,18 +4441,29 @@ impl<W: Write> Interpreter<W> {
                     // Support named arguments: match by field name
                     let has_named = named_args.iter().any(|(name, _)| name.is_some());
                     let field_values = if has_named {
-                        variant.fields.iter().map(|(field_name, _)| {
-                            named_args.iter()
-                                .find(|(name, _)| name.as_deref() == Some(field_name.as_str()))
-                                .map(|(_, v)| v.clone())
-                                .unwrap_or(Value::Null)
-                        }).collect::<Vec<_>>()
+                        variant
+                            .fields
+                            .iter()
+                            .map(|(field_name, _)| {
+                                named_args
+                                    .iter()
+                                    .find(|(name, _)| name.as_deref() == Some(field_name.as_str()))
+                                    .map(|(_, v)| v.clone())
+                                    .unwrap_or(Value::Null)
+                            })
+                            .collect::<Vec<_>>()
                     } else {
                         if args.len() != variant.fields.len() {
-                            return Err(EvalError::Panic(PanicKind::TypeError,format!(
-                                "{}.{}() expected {} arguments, got {}",
-                                e.name, variant.name, variant.fields.len(), args.len()
-                            )));
+                            return Err(EvalError::Panic(
+                                PanicKind::TypeError,
+                                format!(
+                                    "{}.{}() expected {} arguments, got {}",
+                                    e.name,
+                                    variant.name,
+                                    variant.fields.len(),
+                                    args.len()
+                                ),
+                            ));
                         }
                         args
                     };
@@ -3777,7 +4473,10 @@ impl<W: Write> Interpreter<W> {
                         fields: field_values,
                     });
                 }
-                return Err(EvalError::Panic(PanicKind::TypeError,format!("enum '{}' has no variant '{}'", e.name, method)));
+                return Err(EvalError::Panic(
+                    PanicKind::TypeError,
+                    format!("enum '{}' has no variant '{}'", e.name, method),
+                ));
             }
             // Enum variant method calls (including Result helpers)
             (Value::EnumVariant { enum_id, .. }, _) => {
@@ -3798,38 +4497,46 @@ impl<W: Write> Interpreter<W> {
                         Err(e) => Err(e),
                     };
                 }
-                return Err(EvalError::Panic(PanicKind::TypeError,format!("enum '{}' has no method '{}'", e.name, method)));
+                return Err(EvalError::Panic(
+                    PanicKind::TypeError,
+                    format!("enum '{}' has no method '{}'", e.name, method),
+                ));
             }
             // Type methods
-            (Value::Type(info), _) => {
-                match method {
-                    "name" => {
-                        let name = self.type_info_name(info);
-                        Ok(Value::String(name))
-                    }
-                    "fields" => {
-                        match info {
-                            TypeInfo::Class(id) => {
-                                let class = &self.classes[id.0];
-                                let field_list: Vec<Value> = class.needs.iter().map(|(name, type_ann, _)| {
-                                    Value::List(vec![
-                                        Value::Symbol(name.clone()),
-                                        Value::String(type_ann.clone().unwrap_or_else(|| "Any".to_string())),
-                                    ])
-                                }).collect();
-                                Ok(Value::List(field_list))
-                            }
-                            _ => Ok(Value::List(vec![])),
-                        }
-                    }
-                    _ => Err(EvalError::Panic(PanicKind::RuntimeError,format!("Type has no method '{}'", method))),
+            (Value::Type(info), _) => match method {
+                "name" => {
+                    let name = self.type_info_name(info);
+                    Ok(Value::String(name))
                 }
-            }
+                "fields" => match info {
+                    TypeInfo::Class(id) => {
+                        let class = &self.classes[id.0];
+                        let field_list: Vec<Value> = class
+                            .needs
+                            .iter()
+                            .map(|(name, type_ann, _)| {
+                                Value::List(vec![
+                                    Value::Symbol(name.clone()),
+                                    Value::String(
+                                        type_ann.clone().unwrap_or_else(|| "Any".to_string()),
+                                    ),
+                                ])
+                            })
+                            .collect();
+                        Ok(Value::List(field_list))
+                    }
+                    _ => Ok(Value::List(vec![])),
+                },
+                _ => Err(EvalError::Panic(
+                    PanicKind::RuntimeError,
+                    format!("Type has no method '{}'", method),
+                )),
+            },
 
-            _ => Err(EvalError::Panic(PanicKind::TypeError,format!(
-                "no method '{}' on {:?}",
-                method, obj
-            ))),
+            _ => Err(EvalError::Panic(
+                PanicKind::TypeError,
+                format!("no method '{}' on {:?}", method, obj),
+            )),
         }
     }
 
@@ -3846,23 +4553,21 @@ impl<W: Write> Interpreter<W> {
                     return match result {
                         Ok(opal_stdlib::BuiltinResult::Value(v)) => Ok(v),
                         Ok(opal_stdlib::BuiltinResult::Void) => Ok(Value::Null),
-                        Err(e) => Err(EvalError::Panic(PanicKind::RuntimeError,e)),
+                        Err(e) => Err(EvalError::Panic(PanicKind::RuntimeError, e)),
                     };
                 }
                 if let Some(val) = self.env.get(name).cloned() {
                     match val {
                         Value::Function(id) => self.call_function(id, name, vec![arg]),
-                        Value::MultiFunction(ids) => {
-                            self.dispatch_multi(&ids, name, vec![arg])
-                        }
+                        Value::MultiFunction(ids) => self.dispatch_multi(&ids, name, vec![arg]),
                         Value::Closure(id) => self.call_closure(id, vec![arg]),
-                        _ => Err(EvalError::Panic(PanicKind::TypeError,format!(
-                            "pipe target '{}' is not a function",
-                            name
-                        ))),
+                        _ => Err(EvalError::Panic(
+                            PanicKind::TypeError,
+                            format!("pipe target '{}' is not a function", name),
+                        )),
                     }
                 } else {
-                    Err(EvalError::Panic(PanicKind::NameError,name.clone()))
+                    Err(EvalError::Panic(PanicKind::NameError, name.clone()))
                 }
             }
             ExprKind::Call { function, args } => {
@@ -3870,7 +4575,8 @@ impl<W: Write> Interpreter<W> {
                 let func_name = match &function.kind {
                     ExprKind::Identifier(name) => name.clone(),
                     _ => {
-                        return Err(EvalError::Panic(PanicKind::TypeError,
+                        return Err(EvalError::Panic(
+                            PanicKind::TypeError,
                             "pipe target must be a function call".into(),
                         ));
                     }
@@ -3885,16 +4591,17 @@ impl<W: Write> Interpreter<W> {
                         Value::MultiFunction(ids) => {
                             self.dispatch_multi(&ids, &func_name, arg_values)
                         }
-                        _ => Err(EvalError::Panic(PanicKind::TypeError,format!(
-                            "pipe target '{}' is not a function",
-                            func_name
-                        ))),
+                        _ => Err(EvalError::Panic(
+                            PanicKind::TypeError,
+                            format!("pipe target '{}' is not a function", func_name),
+                        )),
                     }
                 } else {
-                    Err(EvalError::Panic(PanicKind::NameError,func_name))
+                    Err(EvalError::Panic(PanicKind::NameError, func_name))
                 }
             }
-            _ => Err(EvalError::Panic(PanicKind::TypeError,
+            _ => Err(EvalError::Panic(
+                PanicKind::TypeError,
                 "pipe operator requires a function on the right side".into(),
             )),
         }
@@ -3918,12 +4625,15 @@ impl<W: Write> Interpreter<W> {
                 .iter()
                 .map(|id| self.functions[id.0].params.len().to_string())
                 .collect();
-            return Err(EvalError::Panic(PanicKind::TypeError,format!(
-                "{}() no variant accepts {} arguments (available: {})",
-                name,
-                arg_values.len(),
-                arities.join(", ")
-            )));
+            return Err(EvalError::Panic(
+                PanicKind::TypeError,
+                format!(
+                    "{}() no variant accepts {} arguments (available: {})",
+                    name,
+                    arg_values.len(),
+                    arities.join(", ")
+                ),
+            ));
         }
 
         // 1. Try exact class type match (most specific)
@@ -3933,7 +4643,7 @@ impl<W: Write> Interpreter<W> {
                 && self.args_match_types_exact(&arg_values, &stored.param_types)
             {
                 match self.call_function(*id, name, arg_values.clone()) {
-                    Err(EvalError::Raise(_)) => continue,
+                    Err(EvalError::Fail(_)) => continue,
                     result => return result,
                 }
             }
@@ -3946,7 +4656,7 @@ impl<W: Write> Interpreter<W> {
                 && self.args_match_types(&arg_values, &stored.param_types)
             {
                 match self.call_function(*id, name, arg_values.clone()) {
-                    Err(EvalError::Raise(_)) => continue,
+                    Err(EvalError::Fail(_)) => continue,
                     result => return result,
                 }
             }
@@ -4009,8 +4719,10 @@ impl<W: Write> Interpreter<W> {
     fn value_matches_type(&self, value: &Value, type_name: &str) -> bool {
         // Handle nullable types: T? accepts null or T
         if type_name.ends_with('?') {
-            if matches!(value, Value::Null) { return true; }
-            let base = &type_name[..type_name.len()-1];
+            if matches!(value, Value::Null) {
+                return true;
+            }
+            let base = &type_name[..type_name.len() - 1];
             return self.value_matches_type(value, base);
         }
         match (value, type_name) {
@@ -4039,8 +4751,10 @@ impl<W: Write> Interpreter<W> {
     fn value_is_type(&self, value: &Value, type_name: &str) -> bool {
         // Handle nullable types: T? accepts null or T
         if type_name.ends_with('?') {
-            if matches!(value, Value::Null) { return true; }
-            let base = &type_name[..type_name.len()-1];
+            if matches!(value, Value::Null) {
+                return true;
+            }
+            let base = &type_name[..type_name.len() - 1];
             return self.value_is_type(value, base);
         }
         match type_name {
@@ -4053,7 +4767,10 @@ impl<W: Write> Interpreter<W> {
             "List" => matches!(value, Value::List(_)),
             "Dict" => matches!(value, Value::Dict(_)),
             "Range" => matches!(value, Value::Range { .. }),
-            "Fn" => matches!(value, Value::Function(_) | Value::MultiFunction(_) | Value::Closure(_)),
+            "Fn" => matches!(
+                value,
+                Value::Function(_) | Value::MultiFunction(_) | Value::Closure(_)
+            ),
             name => {
                 if let Value::Instance(id) = value {
                     let inst = &self.instances[id.0];
@@ -4096,9 +4813,7 @@ impl<W: Write> Interpreter<W> {
                     false
                 }
             }
-            TypeExpr::Union(parts) => {
-                parts.iter().any(|p| self.value_matches_type_expr(value, p))
-            }
+            TypeExpr::Union(parts) => parts.iter().any(|p| self.value_matches_type_expr(value, p)),
         }
     }
 
@@ -4131,7 +4846,11 @@ impl<W: Write> Interpreter<W> {
 
     // Helper constructors for built-in Result/Option enum values
     fn make_ok(val: Value) -> Value {
-        Value::EnumVariant { enum_id: EnumId(0), variant_index: 0, fields: vec![val] }
+        Value::EnumVariant {
+            enum_id: EnumId(0),
+            variant_index: 0,
+            fields: vec![val],
+        }
     }
     /// Create an Error class instance with .message and .cause fields
     fn make_error_instance(&mut self, val: Value) -> Value {
@@ -4139,7 +4858,10 @@ impl<W: Write> Interpreter<W> {
             Value::String(s) => (s.clone(), Value::Null),
             other => (format!("{}", other), val.clone()),
         };
-        let error_class_id = self.classes.iter().position(|c| c.name == "Error")
+        let error_class_id = self
+            .classes
+            .iter()
+            .position(|c| c.name == "Error")
             .expect("Error class not registered");
         let instance_id = InstanceId(self.instances.len());
         let mut fields = HashMap::new();
@@ -4156,7 +4878,9 @@ impl<W: Write> Interpreter<W> {
     fn is_error_instance(&self, val: &Value) -> bool {
         if let Value::Instance(iid) = val {
             if let Some(inst) = self.instances.get(iid.0) {
-                return self.classes.get(inst.class_id.0)
+                return self
+                    .classes
+                    .get(inst.class_id.0)
                     .map(|c| c.name == "Error")
                     .unwrap_or(false);
             }
@@ -4180,25 +4904,37 @@ impl<W: Write> Interpreter<W> {
         self.make_error_instance(val)
     }
     fn make_some(val: Value) -> Value {
-        Value::EnumVariant { enum_id: EnumId(1), variant_index: 0, fields: vec![val] }
+        Value::EnumVariant {
+            enum_id: EnumId(1),
+            variant_index: 0,
+            fields: vec![val],
+        }
     }
     fn make_none() -> Value {
-        Value::EnumVariant { enum_id: EnumId(1), variant_index: 1, fields: vec![] }
+        Value::EnumVariant {
+            enum_id: EnumId(1),
+            variant_index: 1,
+            fields: vec![],
+        }
     }
 
     fn is_ok(val: &Value) -> Option<&Value> {
         match val {
-            Value::EnumVariant { enum_id, variant_index: 0, fields } if enum_id.0 == 0 => {
-                fields.first()
-            }
+            Value::EnumVariant {
+                enum_id,
+                variant_index: 0,
+                fields,
+            } if enum_id.0 == 0 => fields.first(),
             _ => None,
         }
     }
     fn is_err(val: &Value) -> Option<&Value> {
         match val {
-            Value::EnumVariant { enum_id, variant_index: 1, fields } if enum_id.0 == 0 => {
-                fields.first()
-            }
+            Value::EnumVariant {
+                enum_id,
+                variant_index: 1,
+                fields,
+            } if enum_id.0 == 0 => fields.first(),
             _ => None,
         }
     }
@@ -4214,16 +4950,15 @@ impl<W: Write> Interpreter<W> {
             Value::List(_) => TypeInfo::Builtin(BuiltinType::List),
             Value::Dict(_) => TypeInfo::Builtin(BuiltinType::Dict),
             Value::Range { .. } => TypeInfo::Builtin(BuiltinType::Range),
-            Value::Function(_) | Value::MultiFunction(_) | Value::Closure(_) | Value::NativeFunction(_) => {
-                TypeInfo::Builtin(BuiltinType::Fn)
-            }
+            Value::Function(_)
+            | Value::MultiFunction(_)
+            | Value::Closure(_)
+            | Value::NativeFunction(_) => TypeInfo::Builtin(BuiltinType::Fn),
             Value::Instance(id) => {
                 let inst = &self.instances[id.0];
                 TypeInfo::Class(inst.class_id)
             }
-            Value::EnumVariant { enum_id, .. } => {
-                TypeInfo::Enum(*enum_id)
-            }
+            Value::EnumVariant { enum_id, .. } => TypeInfo::Enum(*enum_id),
             _ => TypeInfo::Builtin(BuiltinType::Fn),
         }
     }
@@ -4241,12 +4976,17 @@ impl<W: Write> Interpreter<W> {
                 BuiltinType::Dict => "Dict",
                 BuiltinType::Range => "Range",
                 BuiltinType::Fn => "Fn",
-            }.to_string(),
+            }
+            .to_string(),
+            TypeInfo::Alias(name) => name.clone(),
             TypeInfo::Class(id) => self.classes[id.0].name.clone(),
             TypeInfo::Protocol(id) => self.protocols[id.0].name.clone(),
             TypeInfo::Enum(id) => self.enums[id.0].name.clone(),
             TypeInfo::EnumVariant(id, vi) => {
-                format!("{}.{}", self.enums[id.0].name, self.enums[id.0].variants[*vi].name)
+                format!(
+                    "{}.{}",
+                    self.enums[id.0].name, self.enums[id.0].variants[*vi].name
+                )
             }
         }
     }
@@ -4257,7 +4997,10 @@ impl<W: Write> Interpreter<W> {
         let class = self.classes[instance.class_id.0].clone();
 
         // Search class for to_string method
-        let mut method_fn = class.methods.iter().find(|m| m.name == "to_string")
+        let mut method_fn = class
+            .methods
+            .iter()
+            .find(|m| m.name == "to_string")
             .map(|f| (f.clone(), instance.class_id));
 
         // Walk parent chain
@@ -4317,7 +5060,11 @@ impl<W: Write> Interpreter<W> {
     fn format_value(&self, value: &Value) -> String {
         match value {
             Value::Type(info) => self.type_info_name(info),
-            Value::EnumVariant { enum_id, variant_index, fields } => {
+            Value::EnumVariant {
+                enum_id,
+                variant_index,
+                fields,
+            } => {
                 let e = &self.enums[enum_id.0];
                 let v = &e.variants[*variant_index];
                 // Special display for Result/Option (indices 0/1)
@@ -4325,7 +5072,8 @@ impl<W: Write> Interpreter<W> {
                     if fields.is_empty() {
                         return v.name.clone();
                     } else {
-                        let args: Vec<String> = fields.iter().map(|f| self.format_value(f)).collect();
+                        let args: Vec<String> =
+                            fields.iter().map(|f| self.format_value(f)).collect();
                         return format!("{}({})", v.name, args.join(", "));
                     }
                 }
@@ -4369,21 +5117,27 @@ impl<W: Write> Interpreter<W> {
                     let val = self.eval_expr(default_expr)?;
                     arg_values.push(val);
                 } else {
-                    return Err(EvalError::Panic(PanicKind::TypeError,format!(
-                        "{}() expected {} arguments, got {}",
-                        name,
-                        stored.params.len(),
-                        arg_values.len()
-                    )));
+                    return Err(EvalError::Panic(
+                        PanicKind::TypeError,
+                        format!(
+                            "{}() expected {} arguments, got {}",
+                            name,
+                            stored.params.len(),
+                            arg_values.len()
+                        ),
+                    ));
                 }
             }
         } else if arg_values.len() > stored.params.len() {
-            return Err(EvalError::Panic(PanicKind::TypeError,format!(
-                "{}() expected {} arguments, got {}",
-                name,
-                stored.params.len(),
-                arg_values.len()
-            )));
+            return Err(EvalError::Panic(
+                PanicKind::TypeError,
+                format!(
+                    "{}() expected {} arguments, got {}",
+                    name,
+                    stored.params.len(),
+                    arg_values.len()
+                ),
+            ));
         }
 
         // If function has a captured env (defined in a module), use it
@@ -4416,7 +5170,7 @@ impl<W: Write> Interpreter<W> {
     /// Auto-throw if value is an Error class instance
     fn maybe_auto_throw(&self, val: Value) -> Result<Value, EvalError> {
         if self.is_error_instance(&val) {
-            return Err(EvalError::Raise(val));
+            return Err(EvalError::Fail(val));
         }
         Ok(val)
     }
@@ -4425,30 +5179,38 @@ impl<W: Write> Interpreter<W> {
     /// requests to Opal closure handlers registered via `add_route`.
     fn serve_http(&mut self, args: &[Value]) -> Result<Value, EvalError> {
         if args.len() < 2 {
-            return Err(EvalError::Panic(PanicKind::TypeError,
+            return Err(EvalError::Panic(
+                PanicKind::TypeError,
                 "serve requires 2 arguments: app_id, port".into(),
             ));
         }
         let app_id = match &args[0] {
             Value::Integer(id) => *id,
             _ => {
-                return Err(EvalError::Panic(PanicKind::TypeError,
+                return Err(EvalError::Panic(
+                    PanicKind::TypeError,
                     "serve: expected integer app id".into(),
                 ));
             }
         };
         let port = match &args[1] {
             Value::Integer(p) => *p,
-            _ => return Err(EvalError::Panic(PanicKind::TypeError,"serve: expected integer port".into())),
+            _ => {
+                return Err(EvalError::Panic(
+                    PanicKind::TypeError,
+                    "serve: expected integer port".into(),
+                ));
+            }
         };
 
         // Retrieve routes via the http plugin's get_routes function
         let routes_val =
             if let Some(native_fn) = self.plugin_registry.get_function("http", "get_routes") {
                 native_fn(&[Value::Integer(app_id)], &mut self.writer)
-                    .map_err(|e| EvalError::Panic(PanicKind::RuntimeError,e))?
+                    .map_err(|e| EvalError::Panic(PanicKind::RuntimeError, e))?
             } else {
-                return Err(EvalError::Panic(PanicKind::RuntimeError,
+                return Err(EvalError::Panic(
+                    PanicKind::RuntimeError,
                     "http plugin missing get_routes".into(),
                 ));
             };
@@ -4457,7 +5219,8 @@ impl<W: Write> Interpreter<W> {
         let routes = match routes_val {
             Value::List(items) => items,
             _ => {
-                return Err(EvalError::Panic(PanicKind::RuntimeError,
+                return Err(EvalError::Panic(
+                    PanicKind::RuntimeError,
                     "get_routes returned non-list".into(),
                 ));
             }
@@ -4495,8 +5258,12 @@ impl<W: Write> Interpreter<W> {
         }
 
         // Bind TCP listener
-        let listener = std::net::TcpListener::bind(format!("0.0.0.0:{}", port))
-            .map_err(|e| EvalError::Panic(PanicKind::RuntimeError,format!("Failed to bind port {}: {}", port, e)))?;
+        let listener = std::net::TcpListener::bind(format!("0.0.0.0:{}", port)).map_err(|e| {
+            EvalError::Panic(
+                PanicKind::RuntimeError,
+                format!("Failed to bind port {}: {}", port, e),
+            )
+        })?;
 
         writeln!(self.writer, "Opal HTTP server listening on port {}", port).ok();
 
@@ -4598,12 +5365,19 @@ impl<W: Write> Interpreter<W> {
     }
 
     /// Call a value (closure or function) with the given args
-    fn call_value(&mut self, val: Value, named_args: Vec<(Option<String>, Value)>) -> Result<Value, EvalError> {
+    fn call_value(
+        &mut self,
+        val: Value,
+        named_args: Vec<(Option<String>, Value)>,
+    ) -> Result<Value, EvalError> {
         let args: Vec<Value> = named_args.into_iter().map(|(_, v)| v).collect();
         match val {
             Value::Closure(id) => self.call_closure(id, args),
             Value::Function(id) => self.call_function(id, "<validator>", args),
-            _ => Err(EvalError::Panic(PanicKind::TypeError,"expected a callable value".into())),
+            _ => Err(EvalError::Panic(
+                PanicKind::TypeError,
+                "expected a callable value".into(),
+            )),
         }
     }
 
@@ -4683,7 +5457,10 @@ fn eval_binary_op(op: BinOp, left: Value, right: Value) -> Result<Value, EvalErr
         (BinOp::Mul, Value::Integer(a), Value::Integer(b)) => Ok(Value::Integer(a * b)),
         (BinOp::Div, Value::Integer(a), Value::Integer(b)) => {
             if *b == 0 {
-                Err(EvalError::Panic(PanicKind::RuntimeError,"division by zero".into()))
+                Err(EvalError::Panic(
+                    PanicKind::RuntimeError,
+                    "division by zero".into(),
+                ))
             } else {
                 Ok(Value::Integer(a / b))
             }
@@ -4763,10 +5540,13 @@ fn eval_binary_op(op: BinOp, left: Value, right: Value) -> Result<Value, EvalErr
             }
         }
 
-        _ => Err(EvalError::Panic(PanicKind::TypeError,format!(
-            "unsupported operation {:?} on {:?} and {:?}",
-            op, left, right
-        ))),
+        _ => Err(EvalError::Panic(
+            PanicKind::TypeError,
+            format!(
+                "unsupported operation {:?} on {:?} and {:?}",
+                op, left, right
+            ),
+        )),
     }
 }
 
@@ -4775,11 +5555,27 @@ fn eval_unary_op(op: UnOp, val: Value) -> Result<Value, EvalError> {
         (UnOp::Neg, Value::Integer(n)) => Ok(Value::Integer(-n)),
         (UnOp::Neg, Value::Float(n)) => Ok(Value::Float(-n)),
         (UnOp::Not, _) => Ok(Value::Bool(!val.is_truthy())),
-        _ => Err(EvalError::Panic(PanicKind::TypeError,format!(
-            "unsupported unary {:?} on {:?}",
-            op, val
-        ))),
+        _ => Err(EvalError::Panic(
+            PanicKind::TypeError,
+            format!("unsupported unary {:?} on {:?}", op, val),
+        )),
     }
+}
+
+fn collect_export_names(statements: &[Stmt]) -> Vec<String> {
+    let mut exports = Vec::new();
+
+    for stmt in statements {
+        if let StmtKind::ExportBlock(names) = &stmt.kind {
+            for name in names {
+                if !exports.contains(name) {
+                    exports.push(name.clone());
+                }
+            }
+        }
+    }
+
+    exports
 }
 
 fn values_equal(a: &Value, b: &Value) -> bool {
@@ -4790,11 +5586,24 @@ fn values_equal(a: &Value, b: &Value) -> bool {
         (Value::Bool(a), Value::Bool(b)) => a == b,
         (Value::Symbol(a), Value::Symbol(b)) => a == b,
         (Value::Null, Value::Null) => true,
+        (Value::Module(a), Value::Module(b)) => a == b,
         (Value::Type(a), Value::Type(b)) => a == b,
-        (Value::EnumVariant { enum_id: a_id, variant_index: a_vi, fields: a_f },
-         Value::EnumVariant { enum_id: b_id, variant_index: b_vi, fields: b_f }) => {
-            a_id == b_id && a_vi == b_vi && a_f.len() == b_f.len() &&
-            a_f.iter().zip(b_f.iter()).all(|(a, b)| values_equal(a, b))
+        (
+            Value::EnumVariant {
+                enum_id: a_id,
+                variant_index: a_vi,
+                fields: a_f,
+            },
+            Value::EnumVariant {
+                enum_id: b_id,
+                variant_index: b_vi,
+                fields: b_f,
+            },
+        ) => {
+            a_id == b_id
+                && a_vi == b_vi
+                && a_f.len() == b_f.len()
+                && a_f.iter().zip(b_f.iter()).all(|(a, b)| values_equal(a, b))
         }
         _ => false,
     }
@@ -4805,8 +5614,12 @@ fn value_compare(a: &Value, b: &Value) -> std::cmp::Ordering {
         (Value::Integer(a), Value::Integer(b)) => a.cmp(b),
         (Value::Float(a), Value::Float(b)) => a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal),
         (Value::String(a), Value::String(b)) => a.cmp(b),
-        (Value::Integer(a), Value::Float(b)) => (*a as f64).partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal),
-        (Value::Float(a), Value::Integer(b)) => a.partial_cmp(&(*b as f64)).unwrap_or(std::cmp::Ordering::Equal),
+        (Value::Integer(a), Value::Float(b)) => (*a as f64)
+            .partial_cmp(b)
+            .unwrap_or(std::cmp::Ordering::Equal),
+        (Value::Float(a), Value::Integer(b)) => a
+            .partial_cmp(&(*b as f64))
+            .unwrap_or(std::cmp::Ordering::Equal),
         _ => std::cmp::Ordering::Equal,
     }
 }
@@ -4814,12 +5627,44 @@ fn value_compare(a: &Value, b: &Value) -> std::cmp::Ordering {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     fn run(source: &str) -> Result<String, EvalError> {
         let program = opal_parser::parse(source).expect("parse error");
         let mut output = Vec::new();
         {
             let mut interp = Interpreter::with_writer(&mut output);
+            interp.run(&program)?;
+        }
+        Ok(String::from_utf8(output).unwrap().trim_end().to_string())
+    }
+
+    fn temp_dir(prefix: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("opal-interp-{prefix}-{unique}"));
+        fs::create_dir_all(&path).unwrap();
+        path
+    }
+
+    fn write_file(path: &Path, source: &str) {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        fs::write(path, source).unwrap();
+    }
+
+    fn run_file(entry_file: &Path) -> Result<String, EvalError> {
+        let source = fs::read_to_string(entry_file).unwrap();
+        let program = opal_parser::parse(&source).expect("parse error");
+        let mut output = Vec::new();
+        {
+            let base_dir = entry_file.parent().unwrap_or(Path::new("."));
+            let mut interp = Interpreter::with_base_dir_writer(&mut output, base_dir);
             interp.run(&program)?;
         }
         Ok(String::from_utf8(output).unwrap().trim_end().to_string())
@@ -5022,7 +5867,7 @@ print(f"Sum of even squares: {total}")
     #[test]
     fn module_and_import() {
         let output = run(
-            "module Shapes\n  class Circle\n    needs radius: Float\n\n    def area()\n      .radius * .radius\n    end\n  end\nend\nimport Shapes.{Circle}\nc = Circle.new(radius: 5.0)\nprint(c.area())",
+            "module Shapes\n  export { Circle }\n\n  class Circle\n    needs radius: Float\n\n    def area()\n      .radius * .radius\n    end\n  end\nend\nimport Shapes.{Circle}\nc = Circle.new(radius: 5.0)\nprint(c.area())",
         )
         .unwrap();
         assert_eq!(output, "25.0");
@@ -5038,6 +5883,8 @@ print(f"Sum of even squares: {total}")
     fn shapes_target_program() {
         let output = run(r#"
 module Shapes
+  export { Circle, Rectangle }
+
   class Circle
     needs radius: Float
 
@@ -5073,13 +5920,13 @@ end
     // === Slice 5: Error handling tests ===
 
     #[test]
-    fn result_ok() {
+    fn ok_constructor_display() {
         let output = run("print(Ok(42))").unwrap();
         assert_eq!(output, "Ok(42)");
     }
 
     #[test]
-    fn result_error() {
+    fn error_constructor_message() {
         // Error() now creates an Error class instance with .message field
         let output = run("e = Error(\"oops\")\nprint(e.message)").unwrap();
         assert_eq!(output, "oops");
@@ -5105,7 +5952,7 @@ end
         // Error() is now a class instance — use try/catch for error matching
         let output = run(r#"
 try
-  raise "bad"
+  fail "bad"
 catch e
   print(f"Error: {e.message}")
 end
@@ -5145,7 +5992,8 @@ try
 catch e
   print(e.message)
 end
-"#).unwrap();
+"#)
+        .unwrap();
         assert_eq!(output, "division by zero");
     }
 
@@ -5153,7 +6001,7 @@ end
     fn try_catch() {
         let output = run(r#"
 try
-  raise "something went wrong"
+  fail "something went wrong"
 catch e
   print(f"Caught: {e.message}")
 end
@@ -5165,20 +6013,21 @@ end
     #[test]
     fn try_catch_binds_variable() {
         // catch binds the Error instance — .message has the string
-        let output = run("try\n  raise \"oops\"\ncatch e\n  print(e.message)\nend").unwrap();
+        let output = run("try\n  fail \"oops\"\ncatch e\n  print(e.message)\nend").unwrap();
         assert_eq!(output, "oops");
     }
 
     #[test]
     fn try_catch_with_type_filter() {
-        // raise wraps in Error, so catch binds Error instance
-        let output = run("try\n  raise \"boom\"\ncatch e\n  print(f\"caught: {e.message}\")\nend").unwrap();
+        // fail wraps in Error, so catch binds Error instance
+        let output =
+            run("try\n  fail \"boom\"\ncatch e\n  print(f\"caught: {e.message}\")\nend").unwrap();
         assert_eq!(output, "caught: boom");
     }
 
     #[test]
     fn try_catch_ensure() {
-        let output = run("x = \"start\"\ntry\n  raise \"err\"\ncatch e\n  x = f\"{x} caught\"\nensure\n  x = f\"{x} done\"\nend\nprint(x)").unwrap();
+        let output = run("x = \"start\"\ntry\n  fail \"err\"\ncatch e\n  x = f\"{x} caught\"\nensure\n  x = f\"{x} done\"\nend\nprint(x)").unwrap();
         assert_eq!(output, "start caught done");
     }
 
@@ -5190,7 +6039,9 @@ end
 
     #[test]
     fn predicate_function() {
-        let output = run("def adult?(age)\n  age >= 18\nend\nprint(f\"{adult?(21)} {adult?(15)}\")").unwrap();
+        let output =
+            run("def adult?(age)\n  age >= 18\nend\nprint(f\"{adult?(21)} {adult?(15)}\")")
+                .unwrap();
         assert_eq!(output, "true false");
     }
 
@@ -5333,7 +6184,7 @@ print("done")
 macro guard(condition, message)
   ast
     if not ($condition)
-      raise $message
+      fail $message
     end
   end
 end
@@ -5350,13 +6201,13 @@ withdraw(50)
     }
 
     #[test]
-    fn macro_splice_in_raise() {
-        // Bug: $var inside `raise $var` wasn't substituted
+    fn macro_splice_in_fail() {
+        // Bug: $var inside `fail $var` wasn't substituted
         let output = run(r#"
 macro check(cond, msg)
   ast
     if not ($cond)
-      raise $msg
+      fail $msg
     end
   end
 end
@@ -5491,7 +6342,14 @@ add_route(app, "GET", "/greet/:name", |name| name)
 serve(app, __PORT__)
 "#;
         // Bind a listener to get a free port, then close it so serve can use it.
-        let tmp_listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let tmp_listener = match std::net::TcpListener::bind("127.0.0.1:0") {
+            Ok(listener) => listener,
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+                eprintln!("skipping http_serve_loop: bind permission denied");
+                return;
+            }
+            Err(e) => panic!("failed to bind test listener: {e}"),
+        };
         let port = tmp_listener.local_addr().unwrap().port();
         drop(tmp_listener);
 
@@ -5515,7 +6373,14 @@ serve(app, __PORT__)
         std::thread::sleep(std::time::Duration::from_millis(100));
 
         // Send a GET / request
-        let mut stream = std::net::TcpStream::connect(format!("127.0.0.1:{}", port)).unwrap();
+        let mut stream = match std::net::TcpStream::connect(format!("127.0.0.1:{}", port)) {
+            Ok(stream) => stream,
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+                eprintln!("skipping http_serve_loop: connect permission denied");
+                return;
+            }
+            Err(e) => panic!("failed to connect to test server: {e}"),
+        };
         std::io::Write::write_all(&mut stream, b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n")
             .unwrap();
 
@@ -5528,7 +6393,14 @@ serve(app, __PORT__)
         );
 
         // Send a GET /greet/world request (path param)
-        let mut stream = std::net::TcpStream::connect(format!("127.0.0.1:{}", port)).unwrap();
+        let mut stream = match std::net::TcpStream::connect(format!("127.0.0.1:{}", port)) {
+            Ok(stream) => stream,
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+                eprintln!("skipping http_serve_loop: connect permission denied");
+                return;
+            }
+            Err(e) => panic!("failed to connect to test server: {e}"),
+        };
         std::io::Write::write_all(
             &mut stream,
             b"GET /greet/world HTTP/1.1\r\nHost: localhost\r\n\r\n",
@@ -5661,6 +6533,8 @@ serve(app, __PORT__)
     fn import_selective_new_syntax() {
         let output = run(r#"
 module Utils
+  export { double }
+
   def double(x)
     x * 2
   end
@@ -5679,6 +6553,8 @@ print(double(5))
     fn import_whole_module() {
         let output = run(r#"
 module Math2
+  export { abs }
+
   def abs(x)
     if x < 0 then -x else x end
   end
@@ -5694,6 +6570,8 @@ print(Math2.abs(-5))
     fn import_alias() {
         let output = run(r#"
 module LongModuleName
+  export { greet }
+
   def greet()
     "hello"
   end
@@ -5703,6 +6581,201 @@ print(L.greet())
 "#)
         .unwrap();
         assert_eq!(output, "hello");
+    }
+
+    #[test]
+    fn modules_require_explicit_exports() {
+        let err =
+            run("module Secrets\n  secret = 42\nend\nfrom Secrets import secret\nprint(secret)\n")
+                .unwrap_err();
+        assert!(err.to_string().contains("Secrets.secret"));
+    }
+
+    #[test]
+    fn file_modules_require_explicit_exports() {
+        let root = temp_dir("strict-exports");
+        write_file(
+            &root.join("opal.toml"),
+            "[package]\nname = \"my_site\"\nversion = \"0.1.0\"\n",
+        );
+        write_file(&root.join("src").join("secret.opl"), "secret_value = 42\n");
+        write_file(
+            &root.join("src").join("main.opl"),
+            "from MySite.Secret import secret_value\nprint(secret_value)\n",
+        );
+
+        let err = run_file(&root.join("src").join("main.opl")).unwrap_err();
+        assert!(err.to_string().contains("MySite.Secret.secret_value"));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn package_prefixed_import_resolves_from_src_root() {
+        let root = temp_dir("package-import");
+        write_file(
+            &root.join("opal.toml"),
+            "[package]\nname = \"my_site\"\nversion = \"0.1.0\"\n",
+        );
+        write_file(
+            &root.join("src").join("routes.opl"),
+            "export { router_name }\nrouter_name = \"blog\"\n",
+        );
+        write_file(
+            &root.join("src").join("main.opl"),
+            "from MySite.Routes import router_name\nprint(router_name)\n",
+        );
+
+        let output = run_file(&root.join("src").join("main.opl")).unwrap();
+        assert_eq!(output, "blog");
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn package_root_module_resolves_from_package_file() {
+        let root = temp_dir("package-root");
+        write_file(
+            &root.join("opal.toml"),
+            "[package]\nname = \"my_site\"\nversion = \"0.1.0\"\n",
+        );
+        write_file(
+            &root.join("src").join("my_site.opl"),
+            "export { app_name }\napp_name = \"my-site\"\n",
+        );
+        write_file(
+            &root.join("src").join("main.opl"),
+            "import MySite\nprint(MySite.app_name)\n",
+        );
+
+        let output = run_file(&root.join("src").join("main.opl")).unwrap();
+        assert_eq!(output, "my-site");
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn dotted_import_materializes_namespace_path() {
+        let root = temp_dir("namespace-materialize");
+        write_file(
+            &root.join("opal.toml"),
+            "[package]\nname = \"my_site\"\nversion = \"0.1.0\"\n",
+        );
+        write_file(
+            &root.join("src").join("routes.opl"),
+            "export { posts_path }\nposts_path = \"/blog/posts\"\n",
+        );
+        write_file(
+            &root.join("src").join("main.opl"),
+            "import MySite.Routes\nprint(MySite.Routes.posts_path)\n",
+        );
+
+        let output = run_file(&root.join("src").join("main.opl")).unwrap();
+        assert_eq!(output, "/blog/posts");
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn root_module_load_preserves_existing_namespace_children() {
+        let root = temp_dir("namespace-merge");
+        write_file(
+            &root.join("opal.toml"),
+            "[package]\nname = \"my_site\"\nversion = \"0.1.0\"\n",
+        );
+        write_file(
+            &root.join("src").join("my_site.opl"),
+            "export { app_name }\napp_name = \"my-site\"\n",
+        );
+        write_file(
+            &root.join("src").join("routes.opl"),
+            "export { posts_path }\nposts_path = \"/blog/posts\"\n",
+        );
+        write_file(
+            &root.join("src").join("main.opl"),
+            "import MySite.Routes\nimport MySite\nprint(f\"{MySite.app_name}:{MySite.Routes.posts_path}\")\n",
+        );
+
+        let output = run_file(&root.join("src").join("main.opl")).unwrap();
+        assert_eq!(output, "my-site:/blog/posts");
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn directory_module_resolves_via_index_file() {
+        let root = temp_dir("index-module");
+        write_file(
+            &root.join("opal.toml"),
+            "[package]\nname = \"my_site\"\nversion = \"0.1.0\"\n",
+        );
+        write_file(
+            &root.join("src").join("blog").join("controllers.opl"),
+            "export { label }\nlabel = \"posts\"\n",
+        );
+        write_file(
+            &root.join("src").join("blog").join("index.opl"),
+            "from MySite.Blog.Controllers import label\nexport { label }\n",
+        );
+        write_file(
+            &root.join("src").join("main.opl"),
+            "from MySite.Blog import label\nprint(label)\n",
+        );
+
+        let output = run_file(&root.join("src").join("main.opl")).unwrap();
+        assert_eq!(output, "posts");
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn file_backed_modules_execute_once_per_resolved_path() {
+        let root = temp_dir("module-cache");
+        write_file(
+            &root.join("opal.toml"),
+            "[package]\nname = \"my_site\"\nversion = \"0.1.0\"\n",
+        );
+        write_file(
+            &root.join("src").join("counter.opl"),
+            "export { value }\nprint(\"loading counter\")\nvalue = 42\n",
+        );
+        write_file(
+            &root.join("src").join("main.opl"),
+            "import MySite.Counter\nfrom MySite.Counter import value\nprint(value)\n",
+        );
+
+        let output = run_file(&root.join("src").join("main.opl")).unwrap();
+        assert_eq!(output, "loading counter\n42");
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn circular_file_import_reports_chain() {
+        let root = temp_dir("module-cycle");
+        write_file(
+            &root.join("opal.toml"),
+            "[package]\nname = \"my_site\"\nversion = \"0.1.0\"\n",
+        );
+        write_file(
+            &root.join("src").join("a.opl"),
+            "from MySite.B import value_b\nexport { value_a }\nvalue_a = value_b\n",
+        );
+        write_file(
+            &root.join("src").join("b.opl"),
+            "from MySite.A import value_a\nexport { value_b }\nvalue_b = value_a\n",
+        );
+        write_file(
+            &root.join("src").join("main.opl"),
+            "from MySite.A import value_a\nprint(value_a)\n",
+        );
+
+        let err = run_file(&root.join("src").join("main.opl")).unwrap_err();
+        let message = err.to_string();
+        assert!(message.contains("circular dependency detected"));
+        assert!(message.contains("MySite.A -> MySite.B -> MySite.A"));
+
+        fs::remove_dir_all(root).unwrap();
     }
 
     // === typeof tests ===
@@ -5724,7 +6797,8 @@ print(L.greet())
     #[test]
     fn typeof_class() {
         assert_eq!(
-            run("class Foo\n  needs x: Int\nend\nf = Foo.new(x: 1)\nprint(typeof(f).name)").unwrap(),
+            run("class Foo\n  needs x: Int\nend\nf = Foo.new(x: 1)\nprint(typeof(f).name)")
+                .unwrap(),
             "Foo"
         );
     }
@@ -5828,8 +6902,14 @@ print(L.greet())
 
     #[test]
     fn type_alias_symbol_set() {
-        assert_eq!(run("type Status = :ok | :error\nprint(:ok is Status)").unwrap(), "true");
-        assert_eq!(run("type Status = :ok | :error\nprint(:unknown is Status)").unwrap(), "false");
+        assert_eq!(
+            run("type Status = :ok | :error\nprint(:ok is Status)").unwrap(),
+            "true"
+        );
+        assert_eq!(
+            run("type Status = :ok | :error\nprint(:unknown is Status)").unwrap(),
+            "false"
+        );
     }
 
     // === enum tests ===
@@ -5868,17 +6948,26 @@ print(L.greet())
     // === AST eval tests ===
     #[test]
     fn ast_eval_basic() {
-        assert_eq!(run("code = ast\n  2 + 3\nend\nprint(eval(code))").unwrap(), "5");
+        assert_eq!(
+            run("code = ast\n  2 + 3\nend\nprint(eval(code))").unwrap(),
+            "5"
+        );
     }
 
     #[test]
     fn ast_eval_child_scope() {
-        assert_eq!(run("x = 1\ncode = ast\n  x = 99\nend\neval(code)\nprint(x)").unwrap(), "1");
+        assert_eq!(
+            run("x = 1\ncode = ast\n  x = 99\nend\neval(code)\nprint(x)").unwrap(),
+            "1"
+        );
     }
 
     #[test]
     fn ast_eval_reads_parent() {
-        assert_eq!(run("x = 10\ncode = ast\n  x * 2\nend\nprint(eval(code))").unwrap(), "20");
+        assert_eq!(
+            run("x = 10\ncode = ast\n  x * 2\nend\nprint(eval(code))").unwrap(),
+            "20"
+        );
     }
 
     #[test]
@@ -5891,10 +6980,20 @@ print(L.greet())
 
     #[test]
     fn type_alias_union() {
-        assert_eq!(run("type NumOrStr = Int | String\nprint(42 is NumOrStr)").unwrap(), "true");
-        assert_eq!(run(r#"type NumOrStr = Int | String
-print("hi" is NumOrStr)"#).unwrap(), "true");
-        assert_eq!(run("type NumOrStr = Int | String\nprint(true is NumOrStr)").unwrap(), "false");
+        assert_eq!(
+            run("type NumOrStr = Int | String\nprint(42 is NumOrStr)").unwrap(),
+            "true"
+        );
+        assert_eq!(
+            run(r#"type NumOrStr = Int | String
+print("hi" is NumOrStr)"#)
+            .unwrap(),
+            "true"
+        );
+        assert_eq!(
+            run("type NumOrStr = Int | String\nprint(true is NumOrStr)").unwrap(),
+            "false"
+        );
     }
 
     #[test]
@@ -5950,10 +7049,7 @@ print("hi" is NumOrStr)"#).unwrap(), "true");
 
     #[test]
     fn list_index_assign() {
-        assert_eq!(
-            run("l = [1, 2, 3]\nl[0] = 99\nprint(l[0])").unwrap(),
-            "99"
-        );
+        assert_eq!(run("l = [1, 2, 3]\nl[0] = 99\nprint(l[0])").unwrap(), "99");
     }
 
     #[test]
@@ -5987,12 +7083,19 @@ print("hi" is NumOrStr)"#).unwrap(), "true");
 
     #[test]
     fn suffix_if_next() {
-        assert_eq!(run("sum = 0\nfor i in 1..6\n  next if i % 2 == 0\n  sum += i\nend\nprint(sum)").unwrap(), "9");
+        assert_eq!(
+            run("sum = 0\nfor i in 1..6\n  next if i % 2 == 0\n  sum += i\nend\nprint(sum)")
+                .unwrap(),
+            "9"
+        );
     }
 
     #[test]
     fn suffix_if_break() {
-        assert_eq!(run("sum = 0\nfor i in 1..100\n  break if i > 5\n  sum += i\nend\nprint(sum)").unwrap(), "15");
+        assert_eq!(
+            run("sum = 0\nfor i in 1..100\n  break if i > 5\n  sum += i\nend\nprint(sum)").unwrap(),
+            "15"
+        );
     }
 
     #[test]
@@ -6002,7 +7105,10 @@ print("hi" is NumOrStr)"#).unwrap(), "true");
 
     #[test]
     fn parallel_assign_swap() {
-        assert_eq!(run("x, y = 1, 2\nx, y = y, x\nprint(f\"{x} {y}\")").unwrap(), "2 1");
+        assert_eq!(
+            run("x, y = 1, 2\nx, y = y, x\nprint(f\"{x} {y}\")").unwrap(),
+            "2 1"
+        );
     }
 
     #[test]
@@ -6031,7 +7137,8 @@ result = match c
     "red"
 end
 print(result)
-"#).unwrap();
+"#)
+        .unwrap();
         assert_eq!(output, "null");
     }
 
@@ -6044,7 +7151,8 @@ model Point
 end
 p = Point.new(x: 1, y: 2)
 print(p.to_dict())
-"#).unwrap();
+"#)
+        .unwrap();
         assert_eq!(output, "{x: 1, y: 2}");
     }
 
@@ -6076,7 +7184,8 @@ end
 p = Point.new(x: 1, y: 2)
 p2 = p.copy(x: 10)
 print(p2.to_dict())
-"#).unwrap();
+"#)
+        .unwrap();
         assert_eq!(output, "{x: 10, y: 2}");
     }
 
@@ -6089,7 +7198,12 @@ end
 Email.new(address: "invalid")
 "#);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("validation failed"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("validation failed")
+        );
     }
 
     #[test]
@@ -6097,7 +7211,8 @@ Email.new(address: "invalid")
         let output = run(r#"
 pi = 3.14159
 print(f"{pi:.2}")
-"#).unwrap();
+"#)
+        .unwrap();
         assert_eq!(output, "3.14");
     }
 
@@ -6105,7 +7220,8 @@ print(f"{pi:.2}")
     fn fstring_format_right_align() {
         let output = run(r#"
 print(f"{'hi':>5}")
-"#).unwrap();
+"#)
+        .unwrap();
         assert_eq!(output, "   hi");
     }
 
@@ -6131,7 +7247,8 @@ implements Speakable for Dog
 end
 d = Dog.new(name: "Rex")
 print(f"{d is Speakable} | {d.speak()}")
-"#).unwrap();
+"#)
+        .unwrap();
         assert_eq!(output, "true | Rex says woof");
     }
 
@@ -6213,7 +7330,9 @@ print(f"{d is Speakable} | {d.speak()}")
 
     #[test]
     fn init_sets_fields() {
-        let output = run("class Foo\n  def init()\n    .x = 42\n  end\nend\nf = Foo.new()\nprint(f.x)").unwrap();
+        let output =
+            run("class Foo\n  def init()\n    .x = 42\n  end\nend\nf = Foo.new()\nprint(f.x)")
+                .unwrap();
         assert_eq!(output, "42");
     }
 
@@ -6382,7 +7501,8 @@ print(f"{d is Speakable} | {d.speak()}")
 e = Error("test error")
 print(e.message)
 print(e.cause)
-"#).unwrap();
+"#)
+        .unwrap();
         assert_eq!(output, "test error\nnull");
     }
 
@@ -6395,7 +7515,8 @@ def risky()
 end
 result = risky()?
 print(result.message)
-"#).unwrap();
+"#)
+        .unwrap();
         assert_eq!(output, "fail");
     }
 
@@ -6408,8 +7529,8 @@ def risky()
 end
 result = risky()? or "default"
 print(result)
-"#).unwrap();
+"#)
+        .unwrap();
         assert_eq!(output, "default");
     }
-
 }

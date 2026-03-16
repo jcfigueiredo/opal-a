@@ -1,5 +1,5 @@
 # expect: 42 | caught: boom
-# Auto-throw replaces unwrap — Error return throws automatically
+# Auto-throw semantics — Error return throws automatically
 
 def get_value()
   42

@@ -121,9 +121,9 @@ impl<'src> Parser<'src> {
             return self.parse_try_catch(start);
         }
 
-        // Raise
-        if self.check(&Token::Raise) {
-            return self.parse_raise(start);
+        // Fail
+        if self.check(&Token::Fail) {
+            return self.parse_fail(start);
         }
 
         // Macro definition
@@ -173,7 +173,10 @@ impl<'src> Parser<'src> {
             let end = self.previous_span().end;
             let stmt = Stmt {
                 kind: StmtKind::Emit(expr),
-                span: Span { start: start.start, end },
+                span: Span {
+                    start: start.start,
+                    end,
+                },
             };
             self.expect_statement_end()?;
             return Ok(stmt);
@@ -388,7 +391,10 @@ impl<'src> Parser<'src> {
         self.parse_function_def_with_visibility(None)
     }
 
-    fn parse_function_def_with_visibility(&mut self, visibility: Option<String>) -> Result<Stmt, ParseError> {
+    fn parse_function_def_with_visibility(
+        &mut self,
+        visibility: Option<String>,
+    ) -> Result<Stmt, ParseError> {
         let start = self.current_span();
         self.advance(); // consume 'def'
 
@@ -496,7 +502,11 @@ impl<'src> Parser<'src> {
 
     fn parse_return_statement(&mut self, start: Span) -> Result<Stmt, ParseError> {
         self.advance(); // consume 'return'
-        let value = if self.is_at_end() || self.check(&Token::Newline) || self.check(&Token::End) || self.check(&Token::If) {
+        let value = if self.is_at_end()
+            || self.check(&Token::Newline)
+            || self.check(&Token::End)
+            || self.check(&Token::If)
+        {
             None
         } else {
             Some(self.parse_expression(0)?)
@@ -592,7 +602,10 @@ impl<'src> Parser<'src> {
                 annotations,
                 statement: Box::new(statement),
             },
-            span: Span { start: start.start, end },
+            span: Span {
+                start: start.start,
+                end,
+            },
         })
     }
 
@@ -696,7 +709,10 @@ impl<'src> Parser<'src> {
                 methods,
                 implements,
             },
-            span: Span { start: start.start, end },
+            span: Span {
+                start: start.start,
+                end,
+            },
         })
     }
 
@@ -709,7 +725,10 @@ impl<'src> Parser<'src> {
         self.expect_newline()?;
         Ok(Stmt {
             kind: StmtKind::TypeAlias { name, definition },
-            span: Span { start: start.start, end },
+            span: Span {
+                start: start.start,
+                end,
+            },
         })
     }
 
@@ -725,12 +744,17 @@ impl<'src> Parser<'src> {
                 parts.push(self.parse_type_atom()?);
             }
             // Check if all parts are symbols — if so, it's a SymbolSet
-            let all_symbols: Vec<String> = parts.iter().filter_map(|p| {
-                if let TypeExpr::SymbolSet(syms) = p {
-                    if syms.len() == 1 { return Some(syms[0].clone()); }
-                }
-                None
-            }).collect();
+            let all_symbols: Vec<String> = parts
+                .iter()
+                .filter_map(|p| {
+                    if let TypeExpr::SymbolSet(syms) = p {
+                        if syms.len() == 1 {
+                            return Some(syms[0].clone());
+                        }
+                    }
+                    None
+                })
+                .collect();
             if all_symbols.len() == parts.len() {
                 return Ok(TypeExpr::SymbolSet(all_symbols));
             }
@@ -1034,10 +1058,7 @@ impl<'src> Parser<'src> {
                 let body = if self.check(&Token::Newline) || self.is_at_end() {
                     self.skip_newlines();
                     // Check if next line starts a body (not another def or end)
-                    if !self.check(&Token::Def)
-                        && !self.check(&Token::End)
-                        && !self.is_at_end()
-                    {
+                    if !self.check(&Token::Def) && !self.check(&Token::End) && !self.is_at_end() {
                         // Has a body — parse until we hit end/def
                         let body = self.parse_block()?;
                         self.expect_token(&Token::End, "end")?;
@@ -1202,7 +1223,11 @@ impl<'src> Parser<'src> {
 
     fn parse_from_import(&mut self, start: Span) -> Result<Stmt, ParseError> {
         self.advance(); // consume 'from'
-        let module_path = self.expect_identifier()?;
+        let mut path = vec![self.expect_identifier()?];
+        while self.check(&Token::Dot) {
+            self.advance();
+            path.push(self.expect_identifier()?);
+        }
         self.expect_token(&Token::Import, "import")?;
         let mut items = Vec::new();
         loop {
@@ -1223,7 +1248,7 @@ impl<'src> Parser<'src> {
         let end = self.previous_span().end;
         Ok(Stmt {
             kind: StmtKind::Import(ImportStmt {
-                path: vec![module_path],
+                path,
                 kind: ImportKind::Selective(items),
             }),
             span: Span {
@@ -1388,13 +1413,13 @@ impl<'src> Parser<'src> {
         })
     }
 
-    fn parse_raise(&mut self, start: Span) -> Result<Stmt, ParseError> {
-        self.advance(); // consume 'raise'
+    fn parse_fail(&mut self, start: Span) -> Result<Stmt, ParseError> {
+        self.advance(); // consume 'fail'
         let expr = self.parse_expression(0)?;
         self.expect_statement_end()?;
         let end = expr.span.end;
         Ok(Stmt {
-            kind: StmtKind::Raise(expr),
+            kind: StmtKind::Fail(expr),
             span: Span {
                 start: start.start,
                 end,
@@ -1416,7 +1441,11 @@ impl<'src> Parser<'src> {
             } else {
                 None
             };
-            fields.push(NeedsDecl { name: field_name, type_annotation, default: None });
+            fields.push(NeedsDecl {
+                name: field_name,
+                type_annotation,
+                default: None,
+            });
             if !self.check(&Token::RParen) {
                 self.expect_token(&Token::Comma, ",")?;
             }
@@ -1426,7 +1455,10 @@ impl<'src> Parser<'src> {
         let end = self.previous_span().end;
         Ok(Stmt {
             kind: StmtKind::EventDef { name, fields },
-            span: Span { start: start.start, end },
+            span: Span {
+                start: start.start,
+                end,
+            },
         })
     }
 
@@ -1443,8 +1475,15 @@ impl<'src> Parser<'src> {
         self.expect_statement_end()?;
         let end = self.previous_span().end;
         Ok(Stmt {
-            kind: StmtKind::OnHandler { event_name, param, body },
-            span: Span { start: start.start, end },
+            kind: StmtKind::OnHandler {
+                event_name,
+                param,
+                body,
+            },
+            span: Span {
+                start: start.start,
+                end,
+            },
         })
     }
 
@@ -1488,7 +1527,11 @@ impl<'src> Parser<'src> {
                     let pattern = self.parse_pattern()?;
                     self.expect_newline()?;
                     let body = self.parse_block()?;
-                    receive_cases.push(MatchCase { pattern, guard: None, body });
+                    receive_cases.push(MatchCase {
+                        pattern,
+                        guard: None,
+                        body,
+                    });
                     self.skip_newlines();
                 }
                 self.expect_token(&Token::End, "end")?; // end of receive
@@ -1651,7 +1694,11 @@ impl<'src> Parser<'src> {
             };
             self.expect_newline()?;
             let body = self.parse_block()?;
-            cases.push(MatchCase { pattern, guard, body });
+            cases.push(MatchCase {
+                pattern,
+                guard,
+                body,
+            });
             self.skip_newlines();
         }
 
@@ -1776,7 +1823,11 @@ impl<'src> Parser<'src> {
                 self.advance();
                 let end_expr = self.parse_primary()?;
                 if let ExprKind::Integer(end) = &end_expr.kind {
-                    return Ok(Pattern::Range { start: *start, end: *end, inclusive: false });
+                    return Ok(Pattern::Range {
+                        start: *start,
+                        end: *end,
+                        inclusive: false,
+                    });
                 }
                 return Err(ParseError::UnexpectedToken {
                     found: Token::DotDot,
@@ -1788,7 +1839,11 @@ impl<'src> Parser<'src> {
                 self.advance();
                 let end_expr = self.parse_primary()?;
                 if let ExprKind::Integer(end) = &end_expr.kind {
-                    return Ok(Pattern::Range { start: *start, end: *end, inclusive: true });
+                    return Ok(Pattern::Range {
+                        start: *start,
+                        end: *end,
+                        inclusive: true,
+                    });
                 }
                 return Err(ParseError::UnexpectedToken {
                     found: Token::DotDotDot,
@@ -2009,7 +2064,10 @@ impl<'src> Parser<'src> {
                 self.advance(); // consume ?
                 expr = Expr {
                     kind: ExprKind::SuppressThrow(Box::new(expr)),
-                    span: Span { start, end: self.previous_span().end },
+                    span: Span {
+                        start,
+                        end: self.previous_span().end,
+                    },
                 };
             } else {
                 break;
@@ -2075,7 +2133,9 @@ impl<'src> Parser<'src> {
                 // Allow ? suffix for predicate identifiers: adult?(21) — only when followed by (
                 // Allow ! suffix for mutation identifiers: save!(record) — only when followed by (
                 // Otherwise leave ? for suppress-throw operator
-                let name = if self.check(&Token::Question) && self.peek_ahead(1) == Some(&Token::LParen) {
+                let name = if self.check(&Token::Question)
+                    && self.peek_ahead(1) == Some(&Token::LParen)
+                {
                     self.advance();
                     format!("{}?", name)
                 } else if self.check(&Token::Bang) && self.peek_ahead(1) == Some(&Token::LParen) {
@@ -2104,14 +2164,19 @@ impl<'src> Parser<'src> {
                 if !self.check(&Token::RParen) {
                     loop {
                         args.push(self.parse_expression(0)?);
-                        if !self.check(&Token::Comma) { break; }
+                        if !self.check(&Token::Comma) {
+                            break;
+                        }
                         self.advance();
                     }
                 }
                 self.expect_token(&Token::RParen, ")")?;
                 Ok(Expr {
                     kind: ExprKind::Super(args),
-                    span: Span { start, end: self.previous_span().end },
+                    span: Span {
+                        start,
+                        end: self.previous_span().end,
+                    },
                 })
             }
             Some(Token::If) => self.parse_if_expression(),
@@ -2140,7 +2205,10 @@ impl<'src> Parser<'src> {
                     let end = self.previous_span().end;
                     return Ok(Expr {
                         kind: ExprKind::List(vec![]),
-                        span: Span { start: span.start, end },
+                        span: Span {
+                            start: span.start,
+                            end,
+                        },
                     });
                 }
                 // Parse first expression
@@ -2168,7 +2236,10 @@ impl<'src> Parser<'src> {
                             iterable: Box::new(iterable),
                             condition,
                         },
-                        span: Span { start: span.start, end },
+                        span: Span {
+                            start: span.start,
+                            end,
+                        },
                     });
                 }
                 // Regular list literal
@@ -2785,18 +2856,54 @@ impl<'src> Parser<'src> {
             //   def -(other)  → stores as "sub"
             //   def *(other)  → stores as "mul"
             //   etc.
-            Some(Token::Plus) => { self.advance(); Ok("add".to_string()) }
-            Some(Token::Minus) => { self.advance(); Ok("sub".to_string()) }
-            Some(Token::Star) => { self.advance(); Ok("mul".to_string()) }
-            Some(Token::Slash) => { self.advance(); Ok("div".to_string()) }
-            Some(Token::Percent) => { self.advance(); Ok("mod".to_string()) }
-            Some(Token::DoubleStar) => { self.advance(); Ok("pow".to_string()) }
-            Some(Token::EqEq) => { self.advance(); Ok("eq".to_string()) }
-            Some(Token::BangEq) => { self.advance(); Ok("neq".to_string()) }
-            Some(Token::Lt) => { self.advance(); Ok("lt".to_string()) }
-            Some(Token::Gt) => { self.advance(); Ok("gt".to_string()) }
-            Some(Token::LtEq) => { self.advance(); Ok("lte".to_string()) }
-            Some(Token::GtEq) => { self.advance(); Ok("gte".to_string()) }
+            Some(Token::Plus) => {
+                self.advance();
+                Ok("add".to_string())
+            }
+            Some(Token::Minus) => {
+                self.advance();
+                Ok("sub".to_string())
+            }
+            Some(Token::Star) => {
+                self.advance();
+                Ok("mul".to_string())
+            }
+            Some(Token::Slash) => {
+                self.advance();
+                Ok("div".to_string())
+            }
+            Some(Token::Percent) => {
+                self.advance();
+                Ok("mod".to_string())
+            }
+            Some(Token::DoubleStar) => {
+                self.advance();
+                Ok("pow".to_string())
+            }
+            Some(Token::EqEq) => {
+                self.advance();
+                Ok("eq".to_string())
+            }
+            Some(Token::BangEq) => {
+                self.advance();
+                Ok("neq".to_string())
+            }
+            Some(Token::Lt) => {
+                self.advance();
+                Ok("lt".to_string())
+            }
+            Some(Token::Gt) => {
+                self.advance();
+                Ok("gt".to_string())
+            }
+            Some(Token::LtEq) => {
+                self.advance();
+                Ok("lte".to_string())
+            }
+            Some(Token::GtEq) => {
+                self.advance();
+                Ok("gte".to_string())
+            }
             Some(tok) => Err(ParseError::UnexpectedToken {
                 found: tok.clone(),
                 expected: "method name".to_string(),
@@ -3186,7 +3293,12 @@ mod tests {
     fn parse_class_with_parent() {
         let program = parse("class Dog < Animal\n  needs breed: String\nend\n");
         match &program.statements[0].kind {
-            StmtKind::ClassDef { name, parent, needs, .. } => {
+            StmtKind::ClassDef {
+                name,
+                parent,
+                needs,
+                ..
+            } => {
                 assert_eq!(name, "Dog");
                 assert_eq!(parent.as_deref(), Some("Animal"));
                 assert_eq!(needs.len(), 1);
@@ -3199,17 +3311,15 @@ mod tests {
     fn parse_super_call() {
         let program = parse("class Dog < Animal\n  def speak()\n    super()\n  end\nend\n");
         match &program.statements[0].kind {
-            StmtKind::ClassDef { methods, .. } => {
-                match &methods[0].kind {
-                    StmtKind::FuncDef { body, .. } => {
-                        match &body[0].kind {
-                            StmtKind::Expr(expr) => assert!(matches!(&expr.kind, ExprKind::Super(args) if args.is_empty())),
-                            _ => panic!("expected Expr statement"),
-                        }
+            StmtKind::ClassDef { methods, .. } => match &methods[0].kind {
+                StmtKind::FuncDef { body, .. } => match &body[0].kind {
+                    StmtKind::Expr(expr) => {
+                        assert!(matches!(&expr.kind, ExprKind::Super(args) if args.is_empty()))
                     }
-                    _ => panic!("expected FuncDef"),
-                }
-            }
+                    _ => panic!("expected Expr statement"),
+                },
+                _ => panic!("expected FuncDef"),
+            },
             _ => panic!("expected ClassDef"),
         }
     }
@@ -3233,6 +3343,23 @@ mod tests {
                     assert_eq!(items.len(), 2);
                     assert_eq!(items[0].name, "Circle");
                     assert_eq!(items[1].name, "Rectangle");
+                } else {
+                    panic!("expected selective");
+                }
+            }
+            _ => panic!("expected import"),
+        }
+    }
+
+    #[test]
+    fn parse_from_import_dotted_path() {
+        let prog = parse("from MySite.Blog.Controllers import PostsController");
+        match &prog.statements[0].kind {
+            StmtKind::Import(imp) => {
+                assert_eq!(imp.path, vec!["MySite", "Blog", "Controllers"]);
+                if let ImportKind::Selective(items) = &imp.kind {
+                    assert_eq!(items.len(), 1);
+                    assert_eq!(items[0].name, "PostsController");
                 } else {
                     panic!("expected selective");
                 }
@@ -3324,9 +3451,9 @@ mod tests {
     }
 
     #[test]
-    fn parse_raise() {
-        let prog = parse("raise \"error\"");
-        assert!(matches!(prog.statements[0].kind, StmtKind::Raise(_)));
+    fn parse_fail() {
+        let prog = parse("fail \"error\"");
+        assert!(matches!(prog.statements[0].kind, StmtKind::Fail(_)));
     }
 
     #[test]
@@ -3394,14 +3521,14 @@ mod tests {
         let source = "save!(record)\n";
         let program = parse(source);
         match &program.statements[0].kind {
-            StmtKind::Expr(expr) => {
-                match &expr.kind {
-                    ExprKind::Call { function, .. } => {
-                        assert!(matches!(&function.kind, ExprKind::Identifier(name) if name == "save!"));
-                    }
-                    _ => panic!("expected Call"),
+            StmtKind::Expr(expr) => match &expr.kind {
+                ExprKind::Call { function, .. } => {
+                    assert!(
+                        matches!(&function.kind, ExprKind::Identifier(name) if name == "save!")
+                    );
                 }
-            }
+                _ => panic!("expected Call"),
+            },
             _ => panic!("expected Expr"),
         }
     }

@@ -1,0 +1,4 @@
+# expect: /blog/posts
+import MySite.Routes
+
+print(MySite.Routes.posts_path)

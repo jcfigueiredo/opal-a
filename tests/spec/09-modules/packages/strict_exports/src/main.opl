@@ -1,0 +1,4 @@
+# expect-error: MySite.Secret.secret_value
+from MySite.Secret import secret_value
+
+print(secret_value)

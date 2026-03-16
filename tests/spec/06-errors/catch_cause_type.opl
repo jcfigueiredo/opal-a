@@ -20,14 +20,14 @@ end
 
 # catch e (no type filter) — binds the Error wrapper
 r2 = try
-  raise "generic error"
+  fail "generic error"
 catch e
   f"caught: {e.message}"
 end
 
 # Access Error wrapper via catch e
 r3 = try
-  raise "oops"
+  fail "oops"
 catch e
   f"wrapper: {e.message}"
 end

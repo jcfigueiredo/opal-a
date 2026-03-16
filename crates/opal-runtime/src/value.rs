@@ -127,6 +127,7 @@ pub enum BuiltinType {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeInfo {
     Builtin(BuiltinType),
+    Alias(String),
     Class(ClassId),
     Protocol(ProtocolId),
     Enum(EnumId),
@@ -171,9 +172,11 @@ impl fmt::Display for Value {
             Value::NativeFunction(id) => write!(f, "<native fn #{}>", id.0),
             Value::Macro(id) => write!(f, "<macro #{}>", id.0),
             Value::Protocol(id) => write!(f, "<protocol #{}>", id.0),
-            Value::Type(info) => {
-                match info {
-                    TypeInfo::Builtin(b) => write!(f, "{}", match b {
+            Value::Type(info) => match info {
+                TypeInfo::Builtin(b) => write!(
+                    f,
+                    "{}",
+                    match b {
                         BuiltinType::Int => "Int",
                         BuiltinType::Float => "Float",
                         BuiltinType::String => "String",
@@ -184,19 +187,26 @@ impl fmt::Display for Value {
                         BuiltinType::Dict => "Dict",
                         BuiltinType::Range => "Range",
                         BuiltinType::Fn => "Fn",
-                    }),
-                    TypeInfo::Class(id) => write!(f, "<type class #{}>", id.0),
-                    TypeInfo::Protocol(id) => write!(f, "<type protocol #{}>", id.0),
-                    TypeInfo::Enum(id) => write!(f, "<type enum #{}>", id.0),
-                    TypeInfo::EnumVariant(id, v) => write!(f, "<type enum #{} variant {}>", id.0, v),
-                }
-            }
-            Value::EnumVariant { enum_id, variant_index, fields } => {
+                    }
+                ),
+                TypeInfo::Alias(name) => write!(f, "{}", name),
+                TypeInfo::Class(id) => write!(f, "<type class #{}>", id.0),
+                TypeInfo::Protocol(id) => write!(f, "<type protocol #{}>", id.0),
+                TypeInfo::Enum(id) => write!(f, "<type enum #{}>", id.0),
+                TypeInfo::EnumVariant(id, v) => write!(f, "<type enum #{} variant {}>", id.0, v),
+            },
+            Value::EnumVariant {
+                enum_id,
+                variant_index,
+                fields,
+            } => {
                 write!(f, "<enum #{}.{}", enum_id.0, variant_index)?;
                 if !fields.is_empty() {
                     write!(f, "(")?;
                     for (i, v) in fields.iter().enumerate() {
-                        if i > 0 { write!(f, ", ")?; }
+                        if i > 0 {
+                            write!(f, ", ")?;
+                        }
                         write!(f, "{}", v)?;
                     }
                     write!(f, ")")?;
@@ -234,7 +244,11 @@ impl Value {
         match self {
             Value::Bool(false) | Value::Null => false,
             // Error (Result enum_id=0, variant_index=1) is falsy
-            Value::EnumVariant { enum_id, variant_index: 1, .. } if enum_id.0 == 0 => false,
+            Value::EnumVariant {
+                enum_id,
+                variant_index: 1,
+                ..
+            } if enum_id.0 == 0 => false,
             _ => true,
         }
     }

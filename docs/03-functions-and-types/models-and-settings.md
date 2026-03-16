@@ -288,7 +288,7 @@ Environment variables are strings. Settings automatically coerces:
 - `settings model X` makes the root a settings model with `.load()`.
 - Nested groups are regular `model` -- only the root loads from sources.
 - Env delimiter defaults to `__`, configurable via `env_delimiter:`.
-- Required fields (no default) raise `SettingsError` if missing from all sources.
+- Required fields (no default) fail with `SettingsError` if missing from all sources.
 - All validation runs after merging -- same as regular models.
 - Settings are immutable after loading, like all models.
 - Supported config formats: TOML, JSON.

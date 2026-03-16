@@ -12,7 +12,8 @@ for test_file in $(find "$SPEC_DIR" -name '*.opl' -type f | sort); do
     expect_line=$(head -1 "$test_file")
 
     if [[ "$expect_line" =~ ^#\ expect:\ (.+)$ ]]; then
-        expected="${BASH_REMATCH[1]}"
+        expected_raw="${BASH_REMATCH[1]}"
+        expected=$(printf '%b' "$expected_raw")
         actual=$($OPAL_BIN run "$test_file" 2>&1) || true
 
         if [[ "$actual" == "$expected" ]]; then

@@ -1,0 +1,4 @@
+export { value }
+
+print("loading counter")
+value = 42

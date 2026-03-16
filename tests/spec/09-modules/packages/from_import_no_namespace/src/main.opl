@@ -1,0 +1,4 @@
+# expect-error: NameError: MySite
+from MySite.Routes import posts_path
+
+print(MySite.Routes.posts_path)

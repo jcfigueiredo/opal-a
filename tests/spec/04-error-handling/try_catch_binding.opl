@@ -3,20 +3,20 @@
 results = []
 
 try
-  raise "oops"
+  fail "oops"
 catch e
   results = results.push(e.message)
 end
 
 try
-  raise "boom"
+  fail "boom"
 catch e
   results = results.push(f"caught: {e.message}")
 end
 
 x = "start"
 try
-  raise "err"
+  fail "err"
 catch e
   x = f"{x} caught"
 ensure

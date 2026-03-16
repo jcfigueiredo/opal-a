@@ -1,0 +1,5 @@
+from MySite.A import value_a
+
+export { value_b }
+
+value_b = value_a

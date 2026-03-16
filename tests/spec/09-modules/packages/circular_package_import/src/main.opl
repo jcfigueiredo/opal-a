@@ -1,0 +1,4 @@
+# expect-error: circular dependency detected: MySite.A -> MySite.B -> MySite.A
+from MySite.A import value_a
+
+print(value_a)
