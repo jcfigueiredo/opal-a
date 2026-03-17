@@ -108,6 +108,12 @@ pub struct ProtocolId(pub usize);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EnumId(pub usize);
 
+/// Well-known builtin enum IDs and variant indices.
+/// These match the registration order in `register_builtin_enums()`.
+pub const RESULT_ENUM_ID: EnumId = EnumId(0);
+pub const RESULT_ERROR_VARIANT: usize = 1;
+pub const OPTION_ENUM_ID: EnumId = EnumId(1);
+
 /// Built-in type identifiers
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BuiltinType {
@@ -243,12 +249,12 @@ impl Value {
     pub fn is_truthy(&self) -> bool {
         match self {
             Value::Bool(false) | Value::Null => false,
-            // Error (Result enum_id=0, variant_index=1) is falsy
+            // Legacy Result::Error variant is falsy
             Value::EnumVariant {
                 enum_id,
-                variant_index: 1,
+                variant_index,
                 ..
-            } if enum_id.0 == 0 => false,
+            } if *enum_id == RESULT_ENUM_ID && *variant_index == RESULT_ERROR_VARIANT => false,
             _ => true,
         }
     }
@@ -275,17 +281,17 @@ mod tests {
         assert!(!Value::Bool(false).is_truthy());
         assert!(!Value::Null.is_truthy());
 
-        // Error (enum_id 0, variant_index 1) should be falsy
+        // Legacy Result::Error variant should be falsy
         let error_val = Value::EnumVariant {
-            enum_id: EnumId(0),
-            variant_index: 1,
+            enum_id: RESULT_ENUM_ID,
+            variant_index: RESULT_ERROR_VARIANT,
             fields: vec![Value::String("test error".into())],
         };
         assert!(!error_val.is_truthy(), "Error should be falsy");
 
-        // Ok (enum_id 0, variant_index 0) should still be truthy
+        // Result::Ok should still be truthy
         let ok_val = Value::EnumVariant {
-            enum_id: EnumId(0),
+            enum_id: RESULT_ENUM_ID,
             variant_index: 0,
             fields: vec![Value::Integer(42)],
         };
@@ -293,7 +299,7 @@ mod tests {
 
         // Other enum variants should remain truthy
         let some_val = Value::EnumVariant {
-            enum_id: EnumId(1),
+            enum_id: OPTION_ENUM_ID,
             variant_index: 0,
             fields: vec![Value::Integer(42)],
         };

@@ -7,7 +7,8 @@ use opal_parser::ast::*;
 #[allow(unused_imports)]
 use opal_runtime::{
     ActorDefId, ActorId, AstId, BuiltinType, ClassId, ClosureId, EnumId, Environment, FunctionId,
-    InstanceId, MacroId, ModuleId, NativeFunctionId, NativeObjectId, ProtocolId, TypeInfo, Value,
+    InstanceId, MacroId, ModuleId, NativeFunctionId, NativeObjectId, OPTION_ENUM_ID, ProtocolId,
+    RESULT_ENUM_ID, RESULT_ERROR_VARIANT, TypeInfo, Value,
 };
 use thiserror::Error;
 
@@ -980,7 +981,7 @@ impl<W: Write> Interpreter<W> {
                                 variant_index: 1,
                                 ..
                             } = &next_val
-                                && enum_id.0 == 1
+                                && *enum_id == OPTION_ENUM_ID
                             {
                                 break;
                             }
@@ -991,7 +992,7 @@ impl<W: Write> Interpreter<W> {
                                 fields,
                             } = &next_val
                             {
-                                if enum_id.0 == 1 {
+                                if *enum_id == OPTION_ENUM_ID {
                                     fields[0].clone()
                                 } else {
                                     next_val.clone()
@@ -2775,7 +2776,7 @@ impl<W: Write> Interpreter<W> {
                             variant_index: 0,
                             fields,
                         } = value
-                            && enum_id.0 == 1
+                            && *enum_id == OPTION_ENUM_ID
                             && sub_patterns.len() == 1
                         {
                             return self.match_pattern(&sub_patterns[0], &fields[0]);
@@ -2788,7 +2789,7 @@ impl<W: Write> Interpreter<W> {
                             variant_index: 1,
                             fields,
                         } = value
-                            && enum_id.0 == 1
+                            && *enum_id == OPTION_ENUM_ID
                             && fields.is_empty()
                         {
                             return Some(vec![]);
@@ -3634,7 +3635,7 @@ impl<W: Write> Interpreter<W> {
     // Helper constructors for built-in Result/Option enum values
     fn make_ok(val: Value) -> Value {
         Value::EnumVariant {
-            enum_id: EnumId(0),
+            enum_id: RESULT_ENUM_ID,
             variant_index: 0,
             fields: vec![val],
         }
@@ -3683,14 +3684,14 @@ impl<W: Write> Interpreter<W> {
     }
     fn make_some(val: Value) -> Value {
         Value::EnumVariant {
-            enum_id: EnumId(1),
+            enum_id: OPTION_ENUM_ID,
             variant_index: 0,
             fields: vec![val],
         }
     }
     fn make_none() -> Value {
         Value::EnumVariant {
-            enum_id: EnumId(1),
+            enum_id: OPTION_ENUM_ID,
             variant_index: 1,
             fields: vec![],
         }
@@ -3702,7 +3703,7 @@ impl<W: Write> Interpreter<W> {
                 enum_id,
                 variant_index: 0,
                 fields,
-            } if enum_id.0 == 0 => fields.first(),
+            } if *enum_id == RESULT_ENUM_ID => fields.first(),
             _ => None,
         }
     }
@@ -3710,9 +3711,9 @@ impl<W: Write> Interpreter<W> {
         match val {
             Value::EnumVariant {
                 enum_id,
-                variant_index: 1,
+                variant_index: RESULT_ERROR_VARIANT,
                 fields,
-            } if enum_id.0 == 0 => fields.first(),
+            } if *enum_id == RESULT_ENUM_ID => fields.first(),
             _ => None,
         }
     }
@@ -3845,7 +3846,7 @@ impl<W: Write> Interpreter<W> {
                 let e = &self.enums[enum_id.0];
                 let v = &e.variants[*variant_index];
                 // Special display for Result/Option (indices 0/1)
-                if enum_id.0 <= 1 {
+                if *enum_id == RESULT_ENUM_ID || *enum_id == OPTION_ENUM_ID {
                     if fields.is_empty() {
                         return v.name.clone();
                     } else {
