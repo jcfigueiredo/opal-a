@@ -265,12 +265,174 @@ mod tests {
     use super::*;
 
     #[test]
-    fn display_values() {
+    fn display_primitives() {
         assert_eq!(Value::Integer(42).to_string(), "42");
+        assert_eq!(Value::Float(1.0).to_string(), "1.0");
         assert_eq!(Value::Float(1.23).to_string(), "1.23");
         assert_eq!(Value::String("hello".into()).to_string(), "hello");
         assert_eq!(Value::Bool(true).to_string(), "true");
+        assert_eq!(Value::Bool(false).to_string(), "false");
         assert_eq!(Value::Null.to_string(), "null");
+    }
+
+    #[test]
+    fn display_ids() {
+        assert_eq!(Value::Function(FunctionId(0)).to_string(), "<function #0>");
+        assert_eq!(
+            Value::MultiFunction(vec![FunctionId(0), FunctionId(1)]).to_string(),
+            "<function (2 variants)>"
+        );
+        assert_eq!(Value::Closure(ClosureId(3)).to_string(), "<closure #3>");
+        assert_eq!(Value::Class(ClassId(1)).to_string(), "<class #1>");
+        assert_eq!(Value::Instance(InstanceId(5)).to_string(), "<instance #5>");
+        assert_eq!(Value::Module(ModuleId(0)).to_string(), "<module #0>");
+        assert_eq!(Value::Actor(ActorId(2)).to_string(), "<actor #2>");
+        assert_eq!(
+            Value::ActorClass(ActorDefId(0)).to_string(),
+            "<actor class #0>"
+        );
+        assert_eq!(Value::Ast(AstId(0)).to_string(), "<ast #0>");
+        assert_eq!(
+            Value::NativeObject(NativeObjectId(0)).to_string(),
+            "<native #0>"
+        );
+        assert_eq!(
+            Value::NativeFunction(NativeFunctionId(0)).to_string(),
+            "<native fn #0>"
+        );
+        assert_eq!(Value::Macro(MacroId(0)).to_string(), "<macro #0>");
+        assert_eq!(Value::Protocol(ProtocolId(0)).to_string(), "<protocol #0>");
+    }
+
+    #[test]
+    fn display_symbol() {
+        assert_eq!(Value::Symbol("ok".into()).to_string(), ":ok");
+    }
+
+    #[test]
+    fn display_collections() {
+        // List
+        assert_eq!(Value::List(vec![]).to_string(), "[]");
+        assert_eq!(
+            Value::List(vec![Value::Integer(1), Value::Integer(2)]).to_string(),
+            "[1, 2]"
+        );
+        // Dict
+        assert_eq!(
+            Value::Dict(vec![
+                ("a".into(), Value::Integer(1)),
+                ("b".into(), Value::Integer(2)),
+            ])
+            .to_string(),
+            "{a: 1, b: 2}"
+        );
+        // Range
+        assert_eq!(
+            Value::Range {
+                start: 1,
+                end: 10,
+                inclusive: false
+            }
+            .to_string(),
+            "1..10"
+        );
+        assert_eq!(
+            Value::Range {
+                start: 1,
+                end: 10,
+                inclusive: true
+            }
+            .to_string(),
+            "1...10"
+        );
+    }
+
+    #[test]
+    fn display_enum_variant() {
+        // No fields
+        assert_eq!(
+            Value::EnumVariant {
+                enum_id: EnumId(2),
+                variant_index: 0,
+                fields: vec![],
+            }
+            .to_string(),
+            "<enum #2.0>"
+        );
+        // With fields
+        assert_eq!(
+            Value::EnumVariant {
+                enum_id: EnumId(0),
+                variant_index: 1,
+                fields: vec![Value::String("err".into())],
+            }
+            .to_string(),
+            "<enum #0.1(err)>"
+        );
+    }
+
+    #[test]
+    fn display_type_info() {
+        assert_eq!(
+            Value::Type(TypeInfo::Builtin(BuiltinType::Int)).to_string(),
+            "Int"
+        );
+        assert_eq!(
+            Value::Type(TypeInfo::Builtin(BuiltinType::Float)).to_string(),
+            "Float"
+        );
+        assert_eq!(
+            Value::Type(TypeInfo::Builtin(BuiltinType::String)).to_string(),
+            "String"
+        );
+        assert_eq!(
+            Value::Type(TypeInfo::Builtin(BuiltinType::Bool)).to_string(),
+            "Bool"
+        );
+        assert_eq!(
+            Value::Type(TypeInfo::Builtin(BuiltinType::Null)).to_string(),
+            "Null"
+        );
+        assert_eq!(
+            Value::Type(TypeInfo::Builtin(BuiltinType::Symbol)).to_string(),
+            "Symbol"
+        );
+        assert_eq!(
+            Value::Type(TypeInfo::Builtin(BuiltinType::List)).to_string(),
+            "List"
+        );
+        assert_eq!(
+            Value::Type(TypeInfo::Builtin(BuiltinType::Dict)).to_string(),
+            "Dict"
+        );
+        assert_eq!(
+            Value::Type(TypeInfo::Builtin(BuiltinType::Range)).to_string(),
+            "Range"
+        );
+        assert_eq!(
+            Value::Type(TypeInfo::Builtin(BuiltinType::Fn)).to_string(),
+            "Fn"
+        );
+        assert_eq!(
+            Value::Type(TypeInfo::Alias("MyType".into())).to_string(),
+            "MyType"
+        );
+        assert_eq!(
+            Value::Type(TypeInfo::Class(ClassId(0))).to_string(),
+            "<type class #0>"
+        );
+        assert_eq!(
+            Value::Type(TypeInfo::Protocol(ProtocolId(0))).to_string(),
+            "<type protocol #0>"
+        );
+        assert_eq!(
+            Value::Type(TypeInfo::Enum(EnumId(0))).to_string(),
+            "<type enum #0>"
+        );
+        assert_eq!(
+            Value::Type(TypeInfo::EnumVariant(EnumId(0), 1)).to_string(),
+            "<type enum #0 variant 1>"
+        );
     }
 
     #[test]
