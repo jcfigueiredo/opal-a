@@ -1,3 +1,4 @@
+mod class_methods;
 mod dict_methods;
 pub mod eval;
 mod instance_methods;
