@@ -76,7 +76,7 @@ impl EvalError {
 
 /// Method visibility level
 #[derive(Clone, Copy, PartialEq)]
-enum Visibility {
+pub(crate) enum Visibility {
     Public,
     Private,
     #[allow(dead_code)]
@@ -85,19 +85,19 @@ enum Visibility {
 
 /// A stored user-defined function
 #[derive(Clone)]
-struct StoredFunction {
+pub(crate) struct StoredFunction {
     #[allow(dead_code)]
-    name: String,
-    params: Vec<String>,
-    param_types: Vec<Option<String>>,
-    param_defaults: Vec<Option<Expr>>,
-    body: Vec<Stmt>,
+    pub(crate) name: String,
+    pub(crate) params: Vec<String>,
+    pub(crate) param_types: Vec<Option<String>>,
+    pub(crate) param_defaults: Vec<Option<Expr>>,
+    pub(crate) body: Vec<Stmt>,
     /// Captured environment from defining scope (for module-level functions)
-    captured_env: Option<Environment>,
+    pub(crate) captured_env: Option<Environment>,
     /// Annotations from @[...] declarations
-    annotations: Vec<Vec<(String, Value)>>,
+    pub(crate) annotations: Vec<Vec<(String, Value)>>,
     /// Visibility (public, private, protected)
-    visibility: Visibility,
+    pub(crate) visibility: Visibility,
 }
 
 /// A stored closure
@@ -110,31 +110,31 @@ struct StoredClosure {
 
 /// A stored class definition
 #[derive(Clone)]
-struct StoredClass {
+pub(crate) struct StoredClass {
     #[allow(dead_code)]
-    name: String,
-    parent: Option<ClassId>,
-    needs: Vec<(String, Option<String>, Option<Expr>)>,
-    methods: Vec<StoredFunction>,
-    static_methods: Vec<StoredFunction>,
+    pub(crate) name: String,
+    pub(crate) parent: Option<ClassId>,
+    pub(crate) needs: Vec<(String, Option<String>, Option<Expr>)>,
+    pub(crate) methods: Vec<StoredFunction>,
+    pub(crate) static_methods: Vec<StoredFunction>,
 }
 
 /// A stored protocol definition
 #[derive(Clone)]
-struct StoredProtocol {
+pub(crate) struct StoredProtocol {
     #[allow(dead_code)]
-    name: String,
+    pub(crate) name: String,
     /// Default methods (with bodies) that get copied to implementing classes
-    default_methods: Vec<StoredFunction>,
+    pub(crate) default_methods: Vec<StoredFunction>,
     /// Required method names (no bodies) that classes must define
-    required_methods: Vec<String>,
+    pub(crate) required_methods: Vec<String>,
 }
 
 /// A stored instance
 #[derive(Clone)]
-struct StoredInstance {
-    class_id: ClassId,
-    fields: HashMap<String, Value>,
+pub(crate) struct StoredInstance {
+    pub(crate) class_id: ClassId,
+    pub(crate) fields: HashMap<String, Value>,
 }
 
 /// A stored module
@@ -189,27 +189,27 @@ struct StoredEnumVariant {
 }
 
 pub struct Interpreter<W: Write> {
-    env: Environment,
+    pub(crate) env: Environment,
     writer: W,
     functions: Vec<StoredFunction>,
     closures: Vec<StoredClosure>,
-    classes: Vec<StoredClass>,
-    instances: Vec<StoredInstance>,
+    pub(crate) classes: Vec<StoredClass>,
+    pub(crate) instances: Vec<StoredInstance>,
     modules: Vec<StoredModule>,
     actor_defs: Vec<StoredActorDef>,
     actors: Vec<StoredActorInstance>,
     /// Current `self` instance for method calls
-    current_self: Option<InstanceId>,
+    pub(crate) current_self: Option<InstanceId>,
     /// Current method name (for super() dispatch)
-    current_method_name: Option<String>,
+    pub(crate) current_method_name: Option<String>,
     /// Current class id where the executing method is defined (for super() dispatch)
-    current_class_id: Option<ClassId>,
+    pub(crate) current_class_id: Option<ClassId>,
     /// Current actor for receive handlers
     current_actor: Option<ActorId>,
     /// True when loading a file-based module (functions should capture env)
     loading_module: bool,
     macros: Vec<StoredMacro>,
-    protocols: Vec<StoredProtocol>,
+    pub(crate) protocols: Vec<StoredProtocol>,
     enums: Vec<StoredEnum>,
     type_aliases: HashMap<String, TypeExpr>,
     ast_nodes: Vec<Vec<Stmt>>,
@@ -226,13 +226,13 @@ pub struct Interpreter<W: Write> {
     /// Track the current module load stack for circular dependency errors.
     module_load_stack: Vec<(PathBuf, String)>,
     /// Model class metadata: class_id -> list of (field_name, validator_expr)
-    model_classes: HashMap<ClassId, Vec<(String, Expr)>>,
+    pub(crate) model_classes: HashMap<ClassId, Vec<(String, Expr)>>,
     /// Frozen (immutable) instance IDs (model instances)
-    frozen_instances: HashSet<InstanceId>,
+    pub(crate) frozen_instances: HashSet<InstanceId>,
     /// Event handlers: maps event class name to list of (param_name, body)
     event_handlers: HashMap<String, Vec<(String, Vec<Stmt>)>>,
     /// Per-container DI registrations: instance_id -> (protocol/class name -> value)
-    container_registrations: HashMap<InstanceId, HashMap<String, Value>>,
+    pub(crate) container_registrations: HashMap<InstanceId, HashMap<String, Value>>,
     /// Cached ClassId for the built-in Error class (set during register_error_class)
     error_class_id: ClassId,
 }
@@ -1781,7 +1781,7 @@ impl<W: Write> Interpreter<W> {
         Ok(())
     }
 
-    fn eval_expr(&mut self, expr: &Expr) -> Result<Value, EvalError> {
+    pub(crate) fn eval_expr(&mut self, expr: &Expr) -> Result<Value, EvalError> {
         match &expr.kind {
             ExprKind::Integer(n) => Ok(Value::Integer(*n)),
             ExprKind::Float(n) => Ok(Value::Float(*n)),
@@ -3457,253 +3457,7 @@ impl<W: Write> Interpreter<W> {
 
             // Instance methods — dispatch to class
             (Value::Instance(instance_id), _) => {
-                let instance = self.instances[instance_id.0].clone();
-                let class = self.classes[instance.class_id.0].clone();
-
-                // Container built-in methods
-                if class.name == "Container" {
-                    match method {
-                        "register" => {
-                            let proto_name = match &args[0] {
-                                Value::Protocol(pid) => self.protocols[pid.0].name.clone(),
-                                Value::Class(cid) => self.classes[cid.0].name.clone(),
-                                _ => {
-                                    return Err(EvalError::Panic(
-                                        PanicKind::TypeError,
-                                        "register() first arg must be a Protocol or Class".into(),
-                                    ));
-                                }
-                            };
-                            self.container_registrations
-                                .entry(*instance_id)
-                                .or_default()
-                                .insert(proto_name, args[1].clone());
-                            return Ok(Value::Null);
-                        }
-                        "resolve" => {
-                            let (target_class_id, target_class) = match &args[0] {
-                                Value::Class(cid) => (*cid, self.classes[cid.0].clone()),
-                                _ => {
-                                    return Err(EvalError::Panic(
-                                        PanicKind::TypeError,
-                                        "resolve() arg must be a Class".into(),
-                                    ));
-                                }
-                            };
-                            let regs = self
-                                .container_registrations
-                                .get(instance_id)
-                                .cloned()
-                                .unwrap_or_default();
-
-                            let mut fields = HashMap::new();
-                            for (need_name, type_ann, default) in &target_class.needs {
-                                if let Some(type_name) = type_ann
-                                    && let Some(val) = regs.get(type_name)
-                                {
-                                    fields.insert(need_name.clone(), val.clone());
-                                    continue;
-                                }
-                                if let Some(default_expr) = default {
-                                    let val = self.eval_expr(default_expr)?;
-                                    fields.insert(need_name.clone(), val);
-                                    continue;
-                                }
-                                return Err(EvalError::Fail(Value::String(format!(
-                                    "Container cannot resolve '{}' for {}.new() — no registration for {}",
-                                    need_name,
-                                    target_class.name,
-                                    type_ann.as_deref().unwrap_or("unknown")
-                                ))));
-                            }
-
-                            let new_instance_id = InstanceId(self.instances.len());
-                            self.instances.push(StoredInstance {
-                                class_id: target_class_id,
-                                fields,
-                            });
-                            return Ok(Value::Instance(new_instance_id));
-                        }
-                        "resolve_name" => {
-                            let name = match &args[0] {
-                                Value::String(s) => s.clone(),
-                                _ => {
-                                    return Err(EvalError::Panic(
-                                        PanicKind::TypeError,
-                                        "resolve_name() arg must be a String".into(),
-                                    ));
-                                }
-                            };
-                            let regs = self
-                                .container_registrations
-                                .get(instance_id)
-                                .cloned()
-                                .unwrap_or_default();
-                            if let Some(val) = regs.get(&name) {
-                                return Ok(val.clone());
-                            }
-                            return Err(EvalError::Fail(Value::String(format!(
-                                "No registration for {}",
-                                name
-                            ))));
-                        }
-                        _ => {}
-                    }
-                }
-
-                // Auto-methods for model instances
-                if self.model_classes.contains_key(&instance.class_id) {
-                    if method == "to_dict" {
-                        let entries: Vec<(String, Value)> = class
-                            .needs
-                            .iter()
-                            .map(|(name, _, _)| {
-                                let val = instance.fields.get(name).cloned().unwrap_or(Value::Null);
-                                (name.clone(), val)
-                            })
-                            .collect();
-                        return Ok(Value::Dict(entries));
-                    }
-                    if method == "copy" {
-                        // Create a new instance with fields overridden by named args
-                        let mut new_fields = instance.fields.clone();
-                        for (name, val) in &named_args {
-                            if let Some(name) = name {
-                                new_fields.insert(name.clone(), val.clone());
-                            }
-                        }
-                        let new_instance_id = InstanceId(self.instances.len());
-                        self.instances.push(StoredInstance {
-                            class_id: instance.class_id,
-                            fields: new_fields,
-                        });
-                        // Run validators on the new instance
-                        if let Some(validators) =
-                            self.model_classes.get(&instance.class_id).cloned()
-                        {
-                            for (field_name, validator_expr) in &validators {
-                                let field_val = self.instances[new_instance_id.0]
-                                    .fields
-                                    .get(field_name)
-                                    .cloned()
-                                    .unwrap_or(Value::Null);
-                                let validator_fn = self.eval_expr(validator_expr)?;
-                                let result =
-                                    self.call_value(validator_fn, vec![(None, field_val)])?;
-                                if !result.is_truthy() {
-                                    return Err(EvalError::Panic(
-                                        PanicKind::RuntimeError,
-                                        format!(
-                                            "validation failed for field '{}' in {}.copy()",
-                                            field_name, class.name
-                                        ),
-                                    ));
-                                }
-                            }
-                        }
-                        self.frozen_instances.insert(new_instance_id);
-                        return Ok(Value::Instance(new_instance_id));
-                    }
-                }
-
-                // Find method in class — dispatch by name + arity + type
-                let method_fn: Option<(StoredFunction, ClassId)> = class
-                    .methods
-                    .iter()
-                    // 1. Exact type + arity match
-                    .find(|m| {
-                        m.name == method
-                            && m.params.len() == args.len()
-                            && self.args_match_types(&args, &m.param_types)
-                    })
-                    // 2. Arity match (untyped)
-                    .or_else(|| {
-                        class.methods.iter().find(|m| {
-                            m.name == method
-                                && m.params.len() == args.len()
-                                && m.param_types.iter().all(|t| t.is_none())
-                        })
-                    })
-                    // 3. Any arity match
-                    .or_else(|| {
-                        class
-                            .methods
-                            .iter()
-                            .find(|m| m.name == method && m.params.len() == args.len())
-                    })
-                    // 4. Fallback to name match
-                    .or_else(|| class.methods.iter().find(|m| m.name == method))
-                    .map(|f| (f.clone(), instance.class_id));
-
-                // Walk parent chain if method not found on this class
-                let method_fn = method_fn.or_else(|| {
-                    let mut current = class.parent;
-                    while let Some(pid) = current {
-                        let parent_class = &self.classes[pid.0];
-                        if let Some(f) = parent_class.methods.iter().find(|m| m.name == method) {
-                            return Some((f.clone(), pid));
-                        }
-                        current = parent_class.parent;
-                    }
-                    None
-                });
-
-                if let Some((func, found_class_id)) = method_fn {
-                    // Enforce visibility: private methods only callable from same class
-                    if func.visibility == Visibility::Private {
-                        let caller_class =
-                            self.current_self.map(|id| self.instances[id.0].class_id);
-                        if caller_class != Some(instance.class_id) {
-                            return Err(EvalError::Panic(
-                                PanicKind::RuntimeError,
-                                format!(
-                                    "private method '{}' cannot be called from outside the class",
-                                    method
-                                ),
-                            ));
-                        }
-                    }
-                    if args.len() != func.params.len() {
-                        return Err(EvalError::Panic(
-                            PanicKind::TypeError,
-                            format!(
-                                "{}() expected {} arguments, got {}",
-                                method,
-                                func.params.len(),
-                                args.len()
-                            ),
-                        ));
-                    }
-
-                    // Set self, method tracking, and push scope
-                    let prev_self = self.current_self;
-                    let prev_method = self.current_method_name.take();
-                    let prev_class = self.current_class_id.take();
-                    self.current_self = Some(*instance_id);
-                    self.current_method_name = Some(method.to_string());
-                    self.current_class_id = Some(found_class_id);
-                    self.env.push_scope();
-                    for (param_name, arg_val) in func.params.iter().zip(args) {
-                        self.env.set(String::clone(param_name), arg_val);
-                    }
-
-                    let result = self.eval_block(&func.body);
-                    self.env.pop_scope();
-                    self.current_self = prev_self;
-                    self.current_method_name = prev_method;
-                    self.current_class_id = prev_class;
-
-                    match result {
-                        Ok(val) => self.maybe_auto_throw(val),
-                        Err(EvalError::Flow(FlowSignal::Return(val))) => self.maybe_auto_throw(val),
-                        Err(e) => Err(e),
-                    }
-                } else {
-                    Err(EvalError::Panic(
-                        PanicKind::TypeError,
-                        format!("no method '{}' on instance of class", method),
-                    ))
-                }
+                self.call_instance_method(instance_id, method, args, &named_args)
             }
 
             // Enum variant construction: EnumName.Variant(args)
@@ -3988,7 +3742,7 @@ impl<W: Write> Interpreter<W> {
     }
 
     /// Check if argument values match the expected parameter types (including protocols)
-    fn args_match_types(&self, args: &[Value], param_types: &[Option<String>]) -> bool {
+    pub(crate) fn args_match_types(&self, args: &[Value], param_types: &[Option<String>]) -> bool {
         for (arg, expected_type) in args.iter().zip(param_types.iter()) {
             if let Some(type_name) = expected_type
                 && !self.value_matches_type(arg, type_name)
@@ -4440,7 +4194,7 @@ impl<W: Write> Interpreter<W> {
     }
 
     /// Auto-throw if value is an Error class instance
-    fn maybe_auto_throw(&self, val: Value) -> Result<Value, EvalError> {
+    pub(crate) fn maybe_auto_throw(&self, val: Value) -> Result<Value, EvalError> {
         if self.is_error_instance(&val) {
             return Err(EvalError::Fail(val));
         }
@@ -4637,7 +4391,7 @@ impl<W: Write> Interpreter<W> {
     }
 
     /// Call a value (closure or function) with the given args
-    fn call_value(
+    pub(crate) fn call_value(
         &mut self,
         val: Value,
         named_args: Vec<(Option<String>, Value)>,
@@ -4680,7 +4434,7 @@ impl<W: Write> Interpreter<W> {
         }
     }
 
-    fn eval_block(&mut self, stmts: &[Stmt]) -> Result<Value, EvalError> {
+    pub(crate) fn eval_block(&mut self, stmts: &[Stmt]) -> Result<Value, EvalError> {
         let mut last = Value::Null;
         for stmt in stmts {
             match &stmt.kind {
