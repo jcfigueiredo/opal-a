@@ -78,3 +78,23 @@ jobs:
           name: coverage-lcov
           path: lcov.info
           retention-days: 30
+
+  tree-sitter:
+    name: Tree-sitter Grammar Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install dependencies
+        run: cd tree-sitter-opal && pnpm install
+
+      - name: Run tree-sitter tests
+        run: cd tree-sitter-opal && pnpm run test
