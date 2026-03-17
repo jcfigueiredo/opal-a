@@ -4840,11 +4840,7 @@ impl<W: Write> Interpreter<W> {
     /// Check if a value is an Error class instance
     fn is_error_instance(&self, val: &Value) -> bool {
         if let Value::Instance(iid) = val && let Some(inst) = self.instances.get(iid.0) {
-            return self
-                .classes
-                .get(inst.class_id.0)
-                .map(|c| c.name == "Error")
-                .unwrap_or(false);
+            return inst.class_id == self.error_class_id;
         }
         false
     }
