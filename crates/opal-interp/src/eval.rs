@@ -4997,8 +4997,7 @@ impl<W: Write> Interpreter<W> {
         if let Value::Instance(id) = value {
             // Error instances display as their message
             let inst = &self.instances[id.0];
-            let class = &self.classes[inst.class_id.0];
-            if class.name == "Error" && let Some(msg) = inst.fields.get("message").cloned() {
+            if inst.class_id == self.error_class_id && let Some(msg) = inst.fields.get("message").cloned() {
                 return self.format_value_display(&msg);
             }
             if let Some(s) = self.try_instance_to_string(*id) {
@@ -5038,7 +5037,7 @@ impl<W: Write> Interpreter<W> {
             Value::Instance(id) => {
                 let inst = &self.instances[id.0];
                 let class = &self.classes[inst.class_id.0];
-                if class.name == "Error" && let Some(msg) = inst.fields.get("message") {
+                if inst.class_id == self.error_class_id && let Some(msg) = inst.fields.get("message") {
                     return format!("Error({})", self.format_value(msg));
                 }
                 format!("<{} instance>", class.name)
