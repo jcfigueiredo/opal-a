@@ -11,8 +11,8 @@ env:
   RUSTFLAGS: -Dwarnings
 
 jobs:
-  check:
-    name: Check & Test
+  rust:
+    name: Rust Check & Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,5 +32,11 @@ jobs:
       - name: Build
         run: cargo build --all-targets
 
-      - name: Test
+      - name: Unit tests
         run: cargo test --all
+
+      - name: Build release binary
+        run: cargo build --release --bin opal
+
+      - name: Spec tests
+        run: OPAL_BIN="./target/release/opal" ./tests/run_spec.sh
