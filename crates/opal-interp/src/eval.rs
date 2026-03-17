@@ -1519,7 +1519,7 @@ impl<W: Write> Interpreter<W> {
                         self.eval_block(&stmts)?;
                     }
                     Ok(_) => {} // macro returned non-AST, ignore
-                    Err(EvalError::Return(Value::Ast(ast_id))) => {
+                    Err(EvalError::Flow(FlowSignal::Return(Value::Ast(ast_id)))) => {
                         let stmts = self.ast_nodes[ast_id.0].clone();
                         self.eval_block(&stmts)?;
                     }
@@ -2011,7 +2011,7 @@ impl<W: Write> Interpreter<W> {
                 self.current_class_id = prev_class;
 
                 match result {
-                    Err(EvalError::Return(v)) => Ok(v),
+                    Err(EvalError::Flow(FlowSignal::Return(v))) => Ok(v),
                     other => other,
                 }
             }
@@ -4113,7 +4113,7 @@ impl<W: Write> Interpreter<W> {
                         self.current_class_id = prev_class;
                         match result {
                             Ok(_) => {}
-                            Err(EvalError::Return(_)) => {}
+                            Err(EvalError::Flow(FlowSignal::Return(_))) => {}
                             Err(e) => return Err(e),
                         }
                     }
@@ -4180,7 +4180,7 @@ impl<W: Write> Interpreter<W> {
                     self.env.pop_scope();
                     return match result {
                         Ok(val) => self.maybe_auto_throw(val),
-                        Err(EvalError::Return(v)) => self.maybe_auto_throw(v),
+                        Err(EvalError::Flow(FlowSignal::Return(v))) => self.maybe_auto_throw(v),
                         Err(e) => Err(e),
                     };
                 }
@@ -4430,7 +4430,7 @@ impl<W: Write> Interpreter<W> {
 
                     match result {
                         Ok(val) => self.maybe_auto_throw(val),
-                        Err(EvalError::Return(val)) => self.maybe_auto_throw(val),
+                        Err(EvalError::Flow(FlowSignal::Return(val))) => self.maybe_auto_throw(val),
                         Err(e) => Err(e),
                     }
                 } else {
@@ -4512,7 +4512,7 @@ impl<W: Write> Interpreter<W> {
                     self.env.pop_scope();
                     return match result {
                         Ok(val) => Ok(val),
-                        Err(EvalError::Return(val)) => Ok(val),
+                        Err(EvalError::Flow(FlowSignal::Return(val))) => Ok(val),
                         Err(e) => Err(e),
                     };
                 }
@@ -5039,7 +5039,7 @@ impl<W: Write> Interpreter<W> {
             self.current_class_id = prev_class;
             match result {
                 Ok(Value::String(s)) => Some(s),
-                Err(EvalError::Return(Value::String(s))) => Some(s),
+                Err(EvalError::Flow(FlowSignal::Return(Value::String(s)))) => Some(s),
                 _ => None,
             }
         } else {
@@ -5169,7 +5169,7 @@ impl<W: Write> Interpreter<W> {
 
         match result {
             Ok(val) => self.maybe_auto_throw(val),
-            Err(EvalError::Return(val)) => self.maybe_auto_throw(val),
+            Err(EvalError::Flow(FlowSignal::Return(val))) => self.maybe_auto_throw(val),
             Err(e) => Err(e),
         }
     }
@@ -5406,7 +5406,7 @@ impl<W: Write> Interpreter<W> {
 
         match result {
             Ok(val) => self.maybe_auto_throw(val),
-            Err(EvalError::Return(val)) => self.maybe_auto_throw(val),
+            Err(EvalError::Flow(FlowSignal::Return(val))) => self.maybe_auto_throw(val),
             Err(e) => Err(e),
         }
     }
