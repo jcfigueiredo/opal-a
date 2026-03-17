@@ -13,7 +13,6 @@ pub fn document_symbols(program: &Program, source: &str) -> Vec<DocumentSymbol> 
     symbols
 }
 
-
 #[allow(deprecated)]
 fn stmt_to_symbol(stmt: &Stmt, source: &str) -> Option<DocumentSymbol> {
     let range = span_to_range(stmt.span, source);

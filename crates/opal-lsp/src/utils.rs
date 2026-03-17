@@ -1,4 +1,4 @@
-use opal_lexer::{source_location, Span};
+use opal_lexer::{Span, source_location};
 use tower_lsp::lsp_types::*;
 
 pub fn span_to_range(span: Span, source: &str) -> Range {
