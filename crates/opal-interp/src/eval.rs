@@ -4072,13 +4072,19 @@ impl<W: Write> Interpreter<W> {
                     matched = true;
                     let closure_id = ClosureId(route.handler_id);
 
-                    // Pass route params as a simple argument if any exist
-                    let handler_args = if params.is_empty() {
+                    // Build handler args: pass route params or Null to match closure arity
+                    let param_count = self.closures[closure_id.0].params.len();
+                    let handler_args = if param_count == 0 {
                         vec![]
+                    } else if params.is_empty() {
+                        vec![Value::Null; param_count]
                     } else {
-                        vec![Value::String(
-                            params.values().next().unwrap_or(&String::new()).clone(),
-                        )]
+                        params
+                            .values()
+                            .map(|v| Value::String(v.clone()))
+                            .chain(std::iter::repeat(Value::Null))
+                            .take(param_count)
+                            .collect()
                     };
 
                     let result = self.call_closure(closure_id, handler_args);
@@ -4164,6 +4170,18 @@ impl<W: Write> Interpreter<W> {
         arg_values: Vec<Value>,
     ) -> Result<Value, EvalError> {
         let stored = self.closures[id.0].clone();
+
+        // Validate arity
+        if arg_values.len() != stored.params.len() {
+            return Err(EvalError::Panic(
+                PanicKind::TypeError,
+                format!(
+                    "closure expected {} arguments, got {}",
+                    stored.params.len(),
+                    arg_values.len()
+                ),
+            ));
+        }
 
         // Save current env, switch to captured env
         let saved_env = std::mem::replace(&mut self.env, stored.captured_env.clone());
