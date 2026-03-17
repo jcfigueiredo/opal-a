@@ -8,6 +8,7 @@ use tower_lsp::{Client, LanguageServer, LspService, Server};
 mod diagnostics;
 mod goto_def;
 mod symbols;
+mod utils;
 
 #[derive(Debug)]
 struct OpalBackend {

@@ -1,6 +1,7 @@
-use opal_lexer::{Span, source_location};
 use opal_parser::{Program, Stmt, StmtKind};
 use tower_lsp::lsp_types::*;
+
+use crate::utils::span_to_range;
 
 pub fn document_symbols(program: &Program, source: &str) -> Vec<DocumentSymbol> {
     let mut symbols = Vec::new();
@@ -12,20 +13,6 @@ pub fn document_symbols(program: &Program, source: &str) -> Vec<DocumentSymbol> 
     symbols
 }
 
-fn span_to_range(span: Span, source: &str) -> Range {
-    let (start_line, start_col) = source_location(source, span.start);
-    let (end_line, end_col) = source_location(source, span.end);
-    Range::new(
-        Position::new(
-            start_line.saturating_sub(1) as u32,
-            start_col.saturating_sub(1) as u32,
-        ),
-        Position::new(
-            end_line.saturating_sub(1) as u32,
-            end_col.saturating_sub(1) as u32,
-        ),
-    )
-}
 
 #[allow(deprecated)]
 fn stmt_to_symbol(stmt: &Stmt, source: &str) -> Option<DocumentSymbol> {

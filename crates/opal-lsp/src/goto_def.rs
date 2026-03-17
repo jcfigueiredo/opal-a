@@ -1,6 +1,8 @@
-use opal_lexer::{Span, source_location};
+use opal_lexer::Span;
 use opal_parser::*;
 use tower_lsp::lsp_types::*;
+
+use crate::utils::span_to_range;
 
 /// Find the definition location for the symbol at the given position.
 pub fn goto_definition(program: &Program, source: &str, position: Position) -> Option<Range> {
@@ -159,19 +161,4 @@ fn collect_definitions(stmts: &[Stmt], symbols: &mut Vec<(String, Span)>) {
             _ => {}
         }
     }
-}
-
-fn span_to_range(span: Span, source: &str) -> Range {
-    let (start_line, start_col) = source_location(source, span.start);
-    let (end_line, end_col) = source_location(source, span.end);
-    Range::new(
-        Position::new(
-            start_line.saturating_sub(1) as u32,
-            start_col.saturating_sub(1) as u32,
-        ),
-        Position::new(
-            end_line.saturating_sub(1) as u32,
-            end_col.saturating_sub(1) as u32,
-        ),
-    )
 }
