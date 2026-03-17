@@ -916,7 +916,7 @@ impl<W: Write> Interpreter<W> {
                     Some(e) => self.eval_expr(e)?,
                     None => Value::Null,
                 };
-                return Err(EvalError::Return(val));
+                return Err(EvalError::ret(val));
             }
             StmtKind::For {
                 var,
@@ -1436,14 +1436,14 @@ impl<W: Write> Interpreter<W> {
                     .set(name.clone(), Value::ActorClass(ActorDefId(def_idx)));
             }
             StmtKind::Break => {
-                return Err(EvalError::Break);
+                return Err(EvalError::brk());
             }
             StmtKind::Next => {
-                return Err(EvalError::Next);
+                return Err(EvalError::nxt());
             }
             StmtKind::Reply(expr) => {
                 let val = self.eval_expr(expr)?;
-                return Err(EvalError::Reply(val));
+                return Err(EvalError::reply(val));
             }
             StmtKind::InstanceAssign { field, value } => {
                 let val = self.eval_expr(value)?;
