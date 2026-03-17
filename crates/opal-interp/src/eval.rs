@@ -707,7 +707,7 @@ impl<W: Write> Interpreter<W> {
         Ok(())
     }
 
-    /// Register the built-in Container class for dependency injection
+    /// Register the built-in Error class for error handling
     fn register_error_class(&mut self) {
         // Error class has message and cause fields, but the constructor
         // is handled specially (not via the standard .new() path)
@@ -719,6 +719,7 @@ impl<W: Write> Interpreter<W> {
             methods: vec![],
             static_methods: vec![],
         });
+        self.error_class_id = class_id;
         self.env.set("Error".to_string(), Value::Class(class_id));
     }
 
