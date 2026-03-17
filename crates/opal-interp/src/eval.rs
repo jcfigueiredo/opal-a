@@ -205,6 +205,8 @@ pub struct Interpreter<W: Write> {
     event_handlers: HashMap<String, Vec<(String, Vec<Stmt>)>>,
     /// Per-container DI registrations: instance_id -> (protocol/class name -> value)
     container_registrations: HashMap<InstanceId, HashMap<String, Value>>,
+    /// Cached ClassId for the built-in Error class (set during register_error_class)
+    error_class_id: ClassId,
 }
 
 impl Interpreter<std::io::Stdout> {
@@ -239,6 +241,7 @@ impl Interpreter<std::io::Stdout> {
             frozen_instances: HashSet::new(),
             event_handlers: HashMap::new(),
             container_registrations: HashMap::new(),
+            error_class_id: ClassId(usize::MAX),
         };
         interp.register_builtin_enums();
         interp.register_error_class();
@@ -285,6 +288,7 @@ impl<W: Write> Interpreter<W> {
             frozen_instances: HashSet::new(),
             event_handlers: HashMap::new(),
             container_registrations: HashMap::new(),
+            error_class_id: ClassId(usize::MAX),
         };
         interp.register_builtin_enums();
         interp.register_error_class();
