@@ -3997,7 +3997,7 @@ impl<W: Write> Interpreter<W> {
                         }
                         match self.eval_block(&case.body) {
                             Ok(_) => {}
-                            Err(EvalError::Reply(val)) => {
+                            Err(EvalError::Flow(FlowSignal::Reply(val))) => {
                                 reply_val = val;
                             }
                             Err(e) => {
