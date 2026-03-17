@@ -30,20 +30,48 @@ impl std::fmt::Display for PanicKind {
     }
 }
 
+#[derive(Debug)]
+pub enum FlowSignal {
+    Return(Value),
+    Break,
+    Next,
+    Reply(Value),
+}
+
+impl std::fmt::Display for FlowSignal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FlowSignal::Return(_) => write!(f, "return"),
+            FlowSignal::Break => write!(f, "break"),
+            FlowSignal::Next => write!(f, "next"),
+            FlowSignal::Reply(_) => write!(f, "reply"),
+        }
+    }
+}
+
 #[derive(Error, Debug)]
 pub enum EvalError {
     #[error("{0}: {1}")]
     Panic(PanicKind, String),
-    #[error("return")]
-    Return(Value),
     #[error("{0}")]
     Fail(Value),
-    #[error("reply")]
-    Reply(Value),
-    #[error("break")]
-    Break,
-    #[error("next")]
-    Next,
+    #[error("{0}")]
+    Flow(FlowSignal),
+}
+
+impl EvalError {
+    fn ret(v: Value) -> Self {
+        Self::Flow(FlowSignal::Return(v))
+    }
+    fn brk() -> Self {
+        Self::Flow(FlowSignal::Break)
+    }
+    fn nxt() -> Self {
+        Self::Flow(FlowSignal::Next)
+    }
+    fn reply(v: Value) -> Self {
+        Self::Flow(FlowSignal::Reply(v))
+    }
 }
 
 /// Method visibility level
