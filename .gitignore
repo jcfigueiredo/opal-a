@@ -2,3 +2,4 @@
 /target
 **/*.rs.bk
 zed-opal-extension/
+.claude/settings.local.json
