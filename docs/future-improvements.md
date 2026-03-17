@@ -12,10 +12,11 @@ Ice box of ideas and deferred decisions. Items here are not planned — they're 
 
 ## Structural Refactoring
 
-- **Decompose `eval.rs`** (~7,500 lines): Extract `call_method` (1,400 lines), `eval_stmt` (1,000 lines), `eval_expr` (734 lines) into separate modules under `eval/`.
-- **Separate `ControlFlow` from `EvalError`**: `Return`, `Break`, `Next` are control flow signals, not errors. A dedicated enum would make the distinction explicit and prevent silent propagation bugs.
-- **Cache `error_class_id`**: The `Error` class is identified by string `"Error"` in 3 places with a linear scan. Cache `ClassId` as a field on `Interpreter` during `register_error_class()`.
-- **Remove `.expect()` in `make_error_instance`**: Production code path at `eval.rs:4828`. Replace with cached `error_class_id` field.
+- ~~**Decompose `call_method`** (1,400 → 178 lines): Extracted into `string_methods.rs`, `dict_methods.rs`, `list_methods.rs`, `instance_methods.rs`, `class_methods.rs`.~~ DONE
+- ~~**Separate `ControlFlow` from `EvalError`**: Nested `FlowSignal` enum inside `EvalError::Flow(...)`.~~ DONE
+- ~~**Cache `error_class_id`**: Cached as `ClassId` field on `Interpreter`, set during registration.~~ DONE
+- ~~**Remove `.expect()` in `make_error_instance`**: Replaced with cached `error_class_id` field.~~ DONE
+- **Continue decomposing `eval.rs`** (~6,300 lines remaining): Extract `eval_stmt` (~1,000 lines) and `eval_expr` (~734 lines) into separate modules, following the same split-`impl`-block pattern used for `call_method`.
 - **Extract `StoredFunction` construction helper**: Copy-pasted 4 times across `eval_stmt` arms. A `funcdef_to_stored()` helper would eliminate duplication.
 - **Fix `call_closure` default params**: `call_function` handles default params; `call_closure` silently ignores missing args. Behavioral inconsistency.
 - **Move stored types to `opal-runtime`**: `StoredFunction`, `StoredClass`, `StoredInstance`, etc. are logically part of the interpreter's heap and could live alongside `Value`.
