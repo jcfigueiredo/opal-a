@@ -18,10 +18,10 @@ Ice box of ideas and deferred decisions. Items here are not planned — they're 
 - ~~**Remove `.expect()` in `make_error_instance`**: Replaced with cached `error_class_id` field.~~ DONE
 - **Continue decomposing `eval.rs`** (~6,300 lines remaining): Extract `eval_stmt` (~1,000 lines) and `eval_expr` (~734 lines) into separate modules, following the same split-`impl`-block pattern used for `call_method`.
 - **Extract `StoredFunction` construction helper**: Copy-pasted 4 times across `eval_stmt` arms. A `funcdef_to_stored()` helper would eliminate duplication.
-- **Fix `call_closure` default params**: `call_function` handles default params; `call_closure` silently ignores missing args. Behavioral inconsistency.
+- ~~**Fix `call_closure` arity validation**: Added argument count check; fixed HTTP handler to match closure param counts.~~ DONE
 - **Move stored types to `opal-runtime`**: `StoredFunction`, `StoredClass`, `StoredInstance`, etc. are logically part of the interpreter's heap and could live alongside `Value`.
 - ~~**Re-export `PanicKind` from crate root**: Now re-exported from `opal-interp` crate root.~~ DONE
-- **Remove `Value::is_truthy` magic enum index**: `EnumId(0), variant_index: 1` in `opal-runtime` encodes knowledge about the interpreter's builtin enum registration order. Leaky abstraction.
+- ~~**Remove `Value::is_truthy` magic enum index**: Replaced with named constants `RESULT_ENUM_ID`, `RESULT_ERROR_VARIANT`, `OPTION_ENUM_ID`.~~ DONE
 
 ## Performance
 
