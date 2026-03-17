@@ -20,7 +20,7 @@ Ice box of ideas and deferred decisions. Items here are not planned — they're 
 - **Extract `StoredFunction` construction helper**: Copy-pasted 4 times across `eval_stmt` arms. A `funcdef_to_stored()` helper would eliminate duplication.
 - **Fix `call_closure` default params**: `call_function` handles default params; `call_closure` silently ignores missing args. Behavioral inconsistency.
 - **Move stored types to `opal-runtime`**: `StoredFunction`, `StoredClass`, `StoredInstance`, etc. are logically part of the interpreter's heap and could live alongside `Value`.
-- **Re-export `PanicKind` from crate root**: Consumers can't match on `EvalError::Panic(PanicKind::TypeError, _)` without reaching into `eval::PanicKind`.
+- ~~**Re-export `PanicKind` from crate root**: Now re-exported from `opal-interp` crate root.~~ DONE
 - **Remove `Value::is_truthy` magic enum index**: `EnumId(0), variant_index: 1` in `opal-runtime` encodes knowledge about the interpreter's builtin enum registration order. Leaky abstraction.
 
 ## Performance
@@ -33,7 +33,7 @@ Ice box of ideas and deferred decisions. Items here are not planned — they're 
 
 - **Parse-result caching**: LSP re-parses on every `goto_definition` and `document_symbol` request. Cache the parse result per document version.
 - **LSP integration tests actually test LSP**: Current tests test the parser, not `goto_def::goto_definition` or symbol extraction.
-- **Deduplicate `span_to_range`**: Identical implementations in `symbols.rs` and `goto_def.rs`.
+- ~~**Deduplicate `span_to_range`**: Extracted to shared `utils.rs` module.~~ DONE
 
 ## Test Infrastructure
 
