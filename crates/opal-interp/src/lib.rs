@@ -1,5 +1,6 @@
 mod dict_methods;
 pub mod eval;
+mod list_methods;
 pub mod loader;
 mod string_methods;
 
