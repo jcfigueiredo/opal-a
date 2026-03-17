@@ -6,4 +6,4 @@ mod list_methods;
 pub mod loader;
 mod string_methods;
 
-pub use eval::{EvalError, Interpreter};
+pub use eval::{EvalError, Interpreter, PanicKind};
