@@ -96,5 +96,8 @@ jobs:
       - name: Install dependencies
         run: cd tree-sitter-opal && pnpm install
 
+      - name: Generate parser
+        run: cd tree-sitter-opal && pnpm run generate
+
       - name: Run tree-sitter tests
         run: cd tree-sitter-opal && pnpm run test
