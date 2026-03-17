@@ -2712,11 +2712,7 @@ impl<W: Write> Interpreter<W> {
                         // Match Error class instance — extract .message
                         if let Value::Instance(iid) = value
                             && let Some(inst) = self.instances.get(iid.0)
-                            && self
-                                .classes
-                                .get(inst.class_id.0)
-                                .map(|c| c.name == "Error")
-                                .unwrap_or(false)
+                            && inst.class_id == self.error_class_id
                             && sub_patterns.len() == 1
                         {
                             let msg = inst
