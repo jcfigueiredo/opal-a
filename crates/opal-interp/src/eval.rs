@@ -4826,17 +4826,12 @@ impl<W: Write> Interpreter<W> {
             Value::String(s) => (s.clone(), Value::Null),
             other => (format!("{}", other), val.clone()),
         };
-        let error_class_id = self
-            .classes
-            .iter()
-            .position(|c| c.name == "Error")
-            .expect("Error class not registered");
         let instance_id = InstanceId(self.instances.len());
         let mut fields = HashMap::new();
         fields.insert("message".to_string(), Value::String(message));
         fields.insert("cause".to_string(), cause);
         self.instances.push(StoredInstance {
-            class_id: ClassId(error_class_id),
+            class_id: self.error_class_id,
             fields,
         });
         Value::Instance(instance_id)
