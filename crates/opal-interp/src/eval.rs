@@ -941,8 +941,8 @@ impl<W: Write> Interpreter<W> {
                             let result = self.eval_block(body);
                             self.env.pop_scope();
                             match result {
-                                Err(EvalError::Break) => break,
-                                Err(EvalError::Next) => continue,
+                                Err(EvalError::Flow(FlowSignal::Break)) => break,
+                                Err(EvalError::Flow(FlowSignal::Next)) => continue,
                                 other => {
                                     other?;
                                 }
@@ -961,8 +961,8 @@ impl<W: Write> Interpreter<W> {
                             let result = self.eval_block(body);
                             self.env.pop_scope();
                             match result {
-                                Err(EvalError::Break) => break,
-                                Err(EvalError::Next) => continue,
+                                Err(EvalError::Flow(FlowSignal::Break)) => break,
+                                Err(EvalError::Flow(FlowSignal::Next)) => continue,
                                 other => {
                                     other?;
                                 }
@@ -1005,8 +1005,8 @@ impl<W: Write> Interpreter<W> {
                             self.env.pop_scope();
                             match result {
                                 Ok(_) => {}
-                                Err(EvalError::Break) => break,
-                                Err(EvalError::Next) => continue,
+                                Err(EvalError::Flow(FlowSignal::Break)) => break,
+                                Err(EvalError::Flow(FlowSignal::Next)) => continue,
                                 Err(e) => return Err(e),
                             }
                         }
@@ -1019,8 +1019,8 @@ impl<W: Write> Interpreter<W> {
                     break;
                 }
                 match self.eval_block(body) {
-                    Err(EvalError::Break) => break,
-                    Err(EvalError::Next) => continue,
+                    Err(EvalError::Flow(FlowSignal::Break)) => break,
+                    Err(EvalError::Flow(FlowSignal::Next)) => continue,
                     other => {
                         other?;
                     }
