@@ -379,4 +379,53 @@ mod tests {
         assert_eq!(module_segment_to_file_segment("HTTPServer"), "http_server");
         assert_eq!(module_segment_to_file_segment("数学"), "数学");
     }
+
+    #[test]
+    fn resolve_error_display() {
+        let err = ResolveError {
+            module_path: vec!["Math".to_string(), "Vector".to_string()],
+            searched_paths: vec![PathBuf::from("/tmp/math/vector.opl")],
+        };
+        assert_eq!(err.to_string(), "module 'Math.Vector' not found");
+    }
+
+    #[test]
+    fn resolve_nonexistent_module_returns_error() {
+        let root = temp_dir("notfound");
+        let loader = ModuleLoader::new(&root);
+        let result = loader.resolve(&["Nonexistent".to_string()]);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(!err.searched_paths.is_empty());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn discover_nonexistent_dir_returns_none() {
+        let result = SearchRoot::discover(Path::new("/nonexistent/path"), false);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn discover_dir_without_package_file() {
+        let root = temp_dir("nopackage");
+        let result = SearchRoot::discover(&root, false);
+        assert!(result.is_some());
+        let sr = result.unwrap();
+        assert!(sr.package_prefix.is_none());
+        assert!(sr.package_root_file.is_none());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn package_name_to_file_stem_cases() {
+        assert_eq!(package_name_to_file_stem("my_web_app"), "my_web_app");
+        assert_eq!(package_name_to_file_stem("opal-http"), "opal_http");
+    }
+
+    #[test]
+    fn package_name_to_module_prefix_cases() {
+        assert_eq!(package_name_to_module_prefix("my_web_app"), "MyWebApp");
+        assert_eq!(package_name_to_module_prefix("opal-http"), "OpalHttp");
+    }
 }
