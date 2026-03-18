@@ -3532,4 +3532,123 @@ mod tests {
             _ => panic!("expected Expr"),
         }
     }
+
+    #[test]
+    fn parse_event_def() {
+        let prog = parse("event UserCreated(name: String, age: Int)");
+        match &prog.statements[0].kind {
+            StmtKind::EventDef { name, fields } => {
+                assert_eq!(name, "UserCreated");
+                assert_eq!(fields.len(), 2);
+                assert_eq!(fields[0].name, "name");
+                assert_eq!(fields[1].name, "age");
+            }
+            _ => panic!("expected EventDef"),
+        }
+    }
+
+    #[test]
+    fn parse_on_handler() {
+        let prog = parse("on UserCreated do |e|\n  print(e)\nend");
+        match &prog.statements[0].kind {
+            StmtKind::OnHandler {
+                event_name, param, ..
+            } => {
+                assert_eq!(event_name, "UserCreated");
+                assert_eq!(param, "e");
+            }
+            _ => panic!("expected OnHandler"),
+        }
+    }
+
+    #[test]
+    fn parse_annotation() {
+        let prog = parse("@[deprecated]\ndef old_func()\n  1\nend");
+        match &prog.statements[0].kind {
+            StmtKind::Annotated {
+                annotations,
+                statement,
+            } => {
+                assert_eq!(annotations.len(), 1);
+                assert_eq!(annotations[0].entries[0].key, "deprecated");
+                assert!(matches!(&statement.kind, StmtKind::FuncDef { .. }));
+            }
+            _ => panic!("expected Annotated"),
+        }
+    }
+
+    #[test]
+    fn parse_annotation_with_value() {
+        let prog = parse("@[since: 2]\ndef new_func()\n  1\nend");
+        match &prog.statements[0].kind {
+            StmtKind::Annotated { annotations, .. } => {
+                assert_eq!(annotations[0].entries[0].key, "since");
+                assert!(annotations[0].entries[0].value.is_some());
+            }
+            _ => panic!("expected Annotated"),
+        }
+    }
+
+    #[test]
+    fn parse_range_pattern_exclusive() {
+        let prog = parse("match x\n  case 1..10\n    print(x)\nend");
+        match &prog.statements[0].kind {
+            StmtKind::Expr(expr) => match &expr.kind {
+                ExprKind::Match { cases, .. } => {
+                    assert!(matches!(
+                        &cases[0].pattern,
+                        Pattern::Range {
+                            start: 1,
+                            end: 10,
+                            inclusive: false
+                        }
+                    ));
+                }
+                _ => panic!("expected Match expr"),
+            },
+            _ => panic!("expected Expr"),
+        }
+    }
+
+    #[test]
+    fn parse_range_pattern_inclusive() {
+        let prog = parse("match x\n  case 1...10\n    print(x)\nend");
+        match &prog.statements[0].kind {
+            StmtKind::Expr(expr) => match &expr.kind {
+                ExprKind::Match { cases, .. } => {
+                    assert!(matches!(
+                        &cases[0].pattern,
+                        Pattern::Range {
+                            start: 1,
+                            end: 10,
+                            inclusive: true
+                        }
+                    ));
+                }
+                _ => panic!("expected Match expr"),
+            },
+            _ => panic!("expected Expr"),
+        }
+    }
+
+    #[test]
+    fn parse_class_with_private_method() {
+        let prog = parse("class Foo\n  private def secret()\n    42\n  end\nend");
+        match &prog.statements[0].kind {
+            StmtKind::ClassDef { name, methods, .. } => {
+                assert_eq!(name, "Foo");
+                assert_eq!(methods.len(), 1);
+                match &methods[0].kind {
+                    StmtKind::FuncDef {
+                        name, visibility, ..
+                    } => {
+                        assert_eq!(name, "secret");
+                        assert_eq!(visibility.as_deref(), Some("private"));
+                    }
+                    _ => panic!("expected FuncDef"),
+                }
+            }
+            _ => panic!("expected ClassDef"),
+        }
+    }
 }
