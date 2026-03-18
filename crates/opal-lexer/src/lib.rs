@@ -177,4 +177,71 @@ mod tests {
         assert_eq!(source_location("hello\nworld", 6), (2, 1));
         assert_eq!(source_location("hello\nworld", 8), (2, 3));
     }
+
+    #[test]
+    fn lex_triple_double_string_multiline() {
+        let tokens = lex("\"\"\"hello\nworld\"\"\"").unwrap();
+        assert_eq!(tokens.len(), 1);
+        assert!(matches!(tokens[0].token, Token::TripleDoubleString));
+    }
+
+    #[test]
+    fn lex_triple_single_string_multiline() {
+        let tokens = lex("'''hello\nworld'''").unwrap();
+        assert_eq!(tokens.len(), 1);
+        assert!(matches!(tokens[0].token, Token::TripleSingleString));
+    }
+
+    #[test]
+    fn lex_triple_double_string() {
+        let tokens = lex(r#""""hello world""""#).unwrap();
+        assert_eq!(tokens.len(), 1);
+        assert!(matches!(tokens[0].token, Token::TripleDoubleString));
+    }
+
+    #[test]
+    fn lex_triple_single_string() {
+        let tokens = lex("'''hello world'''").unwrap();
+        assert_eq!(tokens.len(), 1);
+        assert!(matches!(tokens[0].token, Token::TripleSingleString));
+    }
+
+    #[test]
+    fn lex_unterminated_triple_string() {
+        let result = lex(r#""""no closing"#);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn lex_fstring_with_escape() {
+        let tokens = lex(r#"f"hello \"world\" {x}""#).unwrap();
+        assert_eq!(tokens.len(), 1);
+        assert!(matches!(tokens[0].token, Token::FString));
+    }
+
+    #[test]
+    fn lex_fsingle_with_escape() {
+        let tokens = lex(r"f'hello \'world\' {x}'").unwrap();
+        assert_eq!(tokens.len(), 1);
+        assert!(matches!(tokens[0].token, Token::FSingleString));
+    }
+
+    #[test]
+    fn lex_fstring_single_with_nested_single_quotes() {
+        let tokens = lex(r#"f'value: {d.get('key')}'"#).unwrap();
+        assert_eq!(tokens.len(), 1);
+        assert!(matches!(tokens[0].token, Token::FSingleString));
+    }
+
+    #[test]
+    fn lex_unterminated_fstring() {
+        let result = lex(r#"f"no closing"#);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn lex_unterminated_fsingle() {
+        let result = lex("f'no closing");
+        assert!(result.is_err());
+    }
 }
