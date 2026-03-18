@@ -13,3 +13,16 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
     let mut parser = Parser::new(source, tokens);
     parser.parse_program()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_lex_error_propagates() {
+        // Unterminated triple-quoted string triggers a lex error
+        let result = parse(r#""""no closing"#);
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), ParseError::LexError { .. }));
+    }
+}
